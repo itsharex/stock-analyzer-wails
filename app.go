@@ -104,14 +104,17 @@ func (a *App) checkPositionLogics() {
 			continue
 		}
 
+		// 2. 执行移动止损算法 (M4)
+		a.updateTrailingStop(pos, stock.Price)
+
 		violatedReasons := make([]string, 0)
 		
-		// 2. 校验止损位 (硬性逻辑)
+		// 3. 校验止损位 (硬性逻辑)
 		if stock.Price < pos.Strategy.StopLossPrice {
 			violatedReasons = append(violatedReasons, fmt.Sprintf("股价(%.2f)已跌破止损位(%.2f)", stock.Price, pos.Strategy.StopLossPrice))
 		}
 
-		// 3. 校验资金流逻辑 (基于 AI 设定的核心理由)
+		// 4. 校验资金流逻辑 (基于 AI 设定的核心理由)
 		for _, reason := range pos.Strategy.CoreReasons {
 			if reason.Type == "money_flow" {
 				// 简单启发式：如果今日主力净流出超过 5000 万，且理由中包含主力流入
@@ -121,7 +124,7 @@ func (a *App) checkPositionLogics() {
 			}
 		}
 
-		// 4. 如果逻辑失效，触发预警并更新状态
+		// 5. 如果逻辑失效，触发预警并更新状态
 		if len(violatedReasons) > 0 && pos.LogicStatus != "violated" {
 			pos.LogicStatus = "violated"
 			pos.UpdatedAt = time.Now()
@@ -139,6 +142,51 @@ func (a *App) checkPositionLogics() {
 				zap.String("code", pos.StockCode), 
 				zap.Strings("reasons", violatedReasons))
 		}
+	}
+}
+
+// updateTrailingStop 动态更新移动止损位 (M4)
+func (a *App) updateTrailingStop(pos *models.Position, currentPrice float64) {
+	// 只有当股价高于买入价时，才启动移动止损逻辑
+	if currentPrice <= pos.EntryPrice {
+		return
+	}
+
+	// 计算当前盈利比例
+	profitRate := (currentPrice - pos.EntryPrice) / pos.EntryPrice
+	
+	// 动态调整止损位 (阶梯式移动止损)
+	// 规则：盈利超过 5% 后，止损位上移至 (当前价 - 3%)
+	newStopLoss := pos.Strategy.StopLossPrice
+	
+	if profitRate > 0.05 {
+		// 保护性止损：至少保本 (买入价 + 0.5% 手续费)
+		potentialStop := currentPrice * 0.97 
+		if potentialStop > pos.Strategy.StopLossPrice {
+			newStopLoss = potentialStop
+		}
+	}
+
+	// 只有当新的止损位高于旧的止损位时才更新 (止损位只能上移，不能下移)
+	if newStopLoss > pos.Strategy.StopLossPrice {
+		oldStop := pos.Strategy.StopLossPrice
+		pos.Strategy.StopLossPrice = newStopLoss
+		pos.UpdatedAt = time.Now()
+		a.positionStorage.SavePosition(pos)
+
+		// 发送 Wails 事件通知用户止损位已上移
+		runtime.EventsEmit(a.ctx, "stop_loss_raised", map[string]interface{}{
+			"code":    pos.StockCode,
+			"name":    pos.StockName,
+			"oldStop": oldStop,
+			"newStop": newStopLoss,
+			"price":   currentPrice,
+		})
+		
+		logger.Info("移动止损位上移", 
+			zap.String("code", pos.StockCode), 
+			zap.Float64("old", oldStop), 
+			zap.Float64("new", newStopLoss))
 	}
 }
 

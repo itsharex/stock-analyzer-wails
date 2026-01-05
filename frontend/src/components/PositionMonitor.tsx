@@ -28,12 +28,23 @@ const PositionMonitor: React.FC<PositionMonitorProps> = ({ positions, onRefresh 
   useEffect(() => {
     // 监听来自后端的逻辑失效事件
     // @ts-ignore
-    const unsubscribe = window.runtime.EventsOn('logic_violation', (data: any) => {
+    const unsubscribeViolation = window.runtime.EventsOn('logic_violation', (data: any) => {
       setViolations(prev => [data, ...prev].slice(0, 5))
       onRefresh() // 刷新持仓列表状态
     })
 
-    return () => unsubscribe()
+    // 监听移动止损位上移事件
+    // @ts-ignore
+    const unsubscribeStopLoss = window.runtime.EventsOn('stop_loss_raised', (data: any) => {
+      // 可以添加一个轻量级的提示
+      console.log(`止损位上移: ${data.name} 新止损价 ${data.newStop.toFixed(2)}`)
+      onRefresh()
+    })
+
+    return () => {
+      unsubscribeViolation()
+      unsubscribeStopLoss()
+    }
   }, [onRefresh])
 
   const activePositions = Object.values(positions)
