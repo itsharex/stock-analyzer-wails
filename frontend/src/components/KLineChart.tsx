@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { createChart, ColorType, IChartApi, PaneSize } from 'lightweight-charts'
+import { createChart, ColorType, IChartApi } from 'lightweight-charts'
 import type { KLineData } from '../types'
 
 interface KLineChartProps {
@@ -52,7 +52,6 @@ function KLineChart({ data, height = 600, showMACD = false, showKDJ = false, sho
     })
 
     // 3. MACD (Pane 2)
-    let macdSeries: any = null
     if (showMACD) {
       const difSeries = chart.addLineSeries({ color: '#2196F3', lineWidth: 1, pane: 2, title: 'DIF' })
       const deaSeries = chart.addLineSeries({ color: '#FF9800', lineWidth: 1, pane: 2, title: 'DEA' })
@@ -65,7 +64,6 @@ function KLineChart({ data, height = 600, showMACD = false, showKDJ = false, sho
         value: d.macd?.bar || 0,
         color: (d.macd?.bar || 0) >= 0 ? '#ef444480' : '#22c55e80'
       })))
-      macdSeries = { difSeries, deaSeries, barSeries }
     }
 
     // 4. KDJ (Pane 3)
@@ -84,11 +82,6 @@ function KLineChart({ data, height = 600, showMACD = false, showKDJ = false, sho
       const rsiSeries = chart.addLineSeries({ color: '#00BCD4', lineWidth: 1, pane: 4, title: 'RSI' })
       rsiSeries.setData(data.map(d => ({ time: d.time, value: d.rsi || 0 })))
     }
-
-    // 设置 Pane 比例
-    const panesCount = 2 + (showMACD ? 1 : 0) + (showKDJ ? 1 : 0) + (showRSI ? 1 : 0)
-    // 简单分配比例：主图占 50%，其余平分
-    // 注意：lightweight-charts 的 pane 比例设置较为复杂，这里通过 height 间接控制或使用默认分配
 
     const formattedData = data.map(d => ({
       time: d.time,

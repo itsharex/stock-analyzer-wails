@@ -22,6 +22,24 @@ export interface StockData {
 }
 
 /**
+ * MACD 指标
+ */
+export interface MACD {
+  dif: number
+  dea: number
+  bar: number
+}
+
+/**
+ * KDJ 指标
+ */
+export interface KDJ {
+  k: number
+  d: number
+  j: number
+}
+
+/**
  * K线数据点
  */
 export interface KLineData {
@@ -31,6 +49,9 @@ export interface KLineData {
   low: number               // 最低价
   close: number             // 收盘价
   volume: number            // 成交量
+  macd?: MACD               // MACD 指标
+  kdj?: KDJ                 // KDJ 指标
+  rsi?: number              // RSI 指标
 }
 
 /**
