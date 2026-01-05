@@ -113,8 +113,8 @@ func (a *App) AnalyzeStock(code string) (*models.AnalysisReport, error) {
 	return a.aiService.AnalyzeStock(stock)
 }
 
-// AnalyzeTechnical 深度技术面分析（支持绘图数据）
-func (a *App) AnalyzeTechnical(code string, period string) (*models.TechnicalAnalysisResult, error) {
+// AnalyzeTechnical 深度技术面分析（支持多角色切换和绘图数据）
+func (a *App) AnalyzeTechnical(code string, period string, role string) (*models.TechnicalAnalysisResult, error) {
 	if a.aiService == nil {
 		return nil, fmt.Errorf("AI服务未就绪")
 	}
@@ -129,7 +129,7 @@ func (a *App) AnalyzeTechnical(code string, period string) (*models.TechnicalAna
 		return nil, err
 	}
 
-	return a.aiService.AnalyzeTechnical(stock, klines)
+	return a.aiService.AnalyzeTechnical(stock, klines, role)
 }
 
 // SearchStock 搜索股票

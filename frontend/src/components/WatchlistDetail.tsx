@@ -16,7 +16,10 @@ import {
   PencilRuler,
   ShieldCheck,
   Zap,
-  BarChart3
+  BarChart3,
+  Anchor,
+  Sword,
+  Cpu
 } from 'lucide-react'
 import { GlossaryPanel, GlossaryTooltip } from './GlossaryTooltip'
 import { STOCK_GLOSSARY } from '../utils/glossary'
@@ -32,6 +35,13 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
   const [loading, setLoading] = useState(false)
   const [analysisLoading, setAnalysisLoading] = useState(false)
   const [analysisResult, setAnalysisResult] = useState<TechnicalAnalysisResult | null>(null)
+  const [role, setRole] = useState('technical')
+
+  const roles = [
+    { id: 'technical', name: '技术派大师', icon: Cpu, color: 'text-blue-500', bg: 'bg-blue-50' },
+    { id: 'conservative', name: '稳健老船长', icon: Anchor, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+    { id: 'aggressive', name: '激进先锋官', icon: Sword, color: 'text-rose-600', bg: 'bg-rose-50' },
+  ]
   
   // 指标显示控制
   const [showMACD, setShowMACD] = useState(false)
@@ -55,10 +65,10 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
     }
   }
 
-  const handleAnalyze = async () => {
+  const handleAnalyze = async (selectedRole = role) => {
     setAnalysisLoading(true)
     try {
-      const result = await analyzeTechnical(stock.code, period)
+      const result = await analyzeTechnical(stock.code, period, selectedRole)
       setAnalysisResult(result)
       setShowAIDrawings(true)
     } catch (error) {
@@ -200,21 +210,45 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
 
         {/* 右侧技术分析师面板 */}
         <div className="w-[480px] bg-slate-50 border-l border-slate-200 flex flex-col shadow-[-10px_0_30px_rgba(0,0,0,0.03)] z-10">
-          <div className="p-5 border-b border-slate-200 flex items-center justify-between bg-white/50 backdrop-blur-sm">
-            <div className="flex items-center space-x-2.5 text-blue-600">
-              <div className="p-1.5 bg-blue-50 rounded-lg">
-                <BrainCircuit className="w-5 h-5" />
+          <div className="p-5 border-b border-slate-200 flex flex-col space-y-4 bg-white/50 backdrop-blur-sm">
+            <div className="flex items-center justify-between w-full">
+              <div className="flex items-center space-x-2.5 text-blue-600">
+                <div className="p-1.5 bg-blue-50 rounded-lg">
+                  <BrainCircuit className="w-5 h-5" />
+                </div>
+                <h3 className="font-bold text-slate-800 tracking-tight">AI 投资顾问</h3>
               </div>
-              <h3 className="font-bold text-slate-800 tracking-tight">技术分析师</h3>
+              <button 
+                onClick={() => handleAnalyze()}
+                disabled={analysisLoading || klineData.length === 0}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white text-xs font-bold rounded-xl transition-all shadow-sm hover:shadow-md flex items-center space-x-1.5"
+              >
+                {analysisLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <LineChartIcon className="w-3.5 h-3.5" />}
+                <span>{analysisResult ? '重新分析' : '开始深度分析'}</span>
+              </button>
             </div>
-            <button 
-              onClick={handleAnalyze}
-              disabled={analysisLoading || klineData.length === 0}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white text-xs font-bold rounded-xl transition-all shadow-sm hover:shadow-md flex items-center space-x-1.5"
-            >
-              {analysisLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <LineChartIcon className="w-3.5 h-3.5" />}
-              <span>{analysisResult ? '重新分析' : '开始深度分析'}</span>
-            </button>
+
+            {/* 角色切换器 */}
+            <div className="flex p-1 bg-slate-100 rounded-2xl border border-slate-200">
+              {roles.map((r) => (
+                <button
+                  key={r.id}
+                  onClick={() => {
+                    setRole(r.id);
+                    handleAnalyze(r.id);
+                  }}
+                  disabled={analysisLoading}
+                  className={`flex-1 flex items-center justify-center space-x-2 py-2 rounded-xl transition-all ${
+                    role === r.id 
+                      ? 'bg-white shadow-sm text-slate-800' 
+                      : 'text-slate-500 hover:text-slate-700'
+                  }`}
+                >
+                  <r.icon className={`w-3.5 h-3.5 ${role === r.id ? r.color : 'text-slate-400'}`} />
+                  <span className={`text-[11px] font-bold ${role === r.id ? '' : 'opacity-70'}`}>{r.name}</span>
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="flex-1 overflow-y-auto p-6 custom-scrollbar bg-gradient-to-b from-white/30 to-transparent">

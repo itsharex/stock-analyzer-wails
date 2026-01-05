@@ -114,8 +114,32 @@ func (s *AIService) AnalyzeStock(stock *models.StockData) (*models.AnalysisRepor
 	return report, nil
 }
 
-// AnalyzeTechnical 深度技术面分析（支持绘图数据和风险评估）
-func (s *AIService) AnalyzeTechnical(stock *models.StockData, klines []*models.KLineData) (*models.TechnicalAnalysisResult, error) {
+// AnalyzeTechnical 深度技术面分析（支持多角色切换、绘图数据和风险评估）
+func (s *AIService) AnalyzeTechnical(stock *models.StockData, klines []*models.KLineData, role string) (*models.TechnicalAnalysisResult, error) {
+	// 角色 Prompt 定义
+	rolePrompts := map[string]struct {
+		System string
+		Style  string
+	}{
+		"conservative": {
+			System: "你是一位名为'稳健老船长'的资深投资顾问。你极度厌恶风险，推崇价值投资和安全边际。",
+			Style:  "你的语言风格沉稳、老练，经常使用航海比喻。你对仓位控制非常严格，止损位设置较宽以防洗盘，但对基本面瑕疵零容忍。",
+		},
+		"aggressive": {
+			System: "你是一位名为'激进先锋官'的短线交易高手。你追求资金效率，擅长捕捉热点和动能爆发。",
+			Style:  "你的语言风格果断、充满激情，经常使用军事比喻。你关注量价齐升，止盈目标宏大，敢于在趋势确认时重仓出击。",
+		},
+		"technical": {
+			System: "你是一位名为'技术派大师'的量化分析专家。你只相信数据和图形，不带任何感情色彩。",
+			Style:  "你的语言风格冷静、客观、专业。你专注于指标背离、形态识别和支撑阻力位，给出的建议极其精确，不废话。",
+		},
+	}
+
+	// 默认使用技术派
+	selectedRole, ok := rolePrompts[role]
+	if !ok {
+		selectedRole = rolePrompts["technical"]
+	}
 	var klineSummary []string
 	startIdx := len(klines) - 60
 	if startIdx < 0 { startIdx = 0 }
@@ -147,8 +171,9 @@ func (s *AIService) AnalyzeTechnical(stock *models.StockData, klines []*models.K
 		indicatorInfo += fmt.Sprintf("RSI:%.1f; ", lastK.RSI)
 	}
 
-	prompt := fmt.Sprintf(`你是一位顶级全能投资分析师。请对股票 %s (%s) 进行深度多维度评估。
-	你的受众包含大量股票新手，请在提到专业术语时，使用括号附带通俗易懂的解释。
+		prompt := fmt.Sprintf(`%s 请对股票 %s (%s) 进行深度多维度评估。
+		%s
+		你的受众包含大量股票新手，请在提到专业术语时，使用括号附带通俗易懂的解释。
 	
 	最近60个交易日数据(T-0为最新):
 	%s
@@ -170,13 +195,13 @@ func (s *AIService) AnalyzeTechnical(stock *models.StockData, klines []*models.K
 	  "takeProfit": 18.5,
 	  "riskRewardRatio": 2.5,
 	  "strategy": "分批建仓，突破压力位后可加仓"
-	}`, stock.Name, stock.Code, strings.Join(klineSummary, "\n"), indicatorInfo)
-
-	ctx := context.Background()
-	messages := []*schema.Message{
-		schema.SystemMessage("你是一个精通K线绘图和风险管理的顶级技术分析师。你擅长用通俗易懂的语言向新手解释复杂的金融术语。"),
-		schema.UserMessage(prompt),
-	}
+		}`, selectedRole.System, stock.Name, stock.Code, selectedRole.Style, strings.Join(klineSummary, "\n"), indicatorInfo)
+	
+		ctx := context.Background()
+		messages := []*schema.Message{
+			schema.SystemMessage(selectedRole.System + " 你精通K线绘图和风险管理，擅长用通俗易懂的语言向新手解释复杂的金融术语。"),
+			schema.UserMessage(prompt),
+		}
 
 	resp, err := s.chatModel.Generate(ctx, messages)
 	if err != nil {

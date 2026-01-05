@@ -17,9 +17,9 @@ export const useWailsAPI = () => {
     return window.go.main.App.AnalyzeStock(code)
   }, [])
 
-  const analyzeTechnical = useCallback(async (code: string, period: string): Promise<TechnicalAnalysisResult> => {
+  const analyzeTechnical = useCallback(async (code: string, period: string, role: string = 'technical'): Promise<TechnicalAnalysisResult> => {
     // @ts-ignore
-    return window.go.main.App.AnalyzeTechnical(code, period)
+    return window.go.main.App.AnalyzeTechnical(code, period, role)
   }, [])
 
   const searchStock = useCallback(async (keyword: string): Promise<StockData[]> => {
