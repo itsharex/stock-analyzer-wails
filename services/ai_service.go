@@ -42,7 +42,7 @@ func NewAIService(cfg AIResolvedConfig) (*AIService, error) {
 func (s *AIService) AnalyzeStock(stock *models.StockData) (*models.AnalysisReport, error) {
 	ctx := context.Background()
 	
-	systemPrompt := `你是一个专业的A股股票分析师。请根据提供的股票实时行情数据，给出一份简短、专业且具有深度的分析报告。
+	systemPrompt := `你是一个专业的A股股票分析师。你的受众包含大量股票新手，请在提到专业术语时，使用括号附带通俗易懂的解释。
 报告必须包含以下部分：
 1. 分析摘要：简要概括当前走势。
 2. 基本面分析：基于市盈率、市净率、市值等数据评估。
@@ -148,6 +148,7 @@ func (s *AIService) AnalyzeTechnical(stock *models.StockData, klines []*models.K
 	}
 
 	prompt := fmt.Sprintf(`你是一位顶级技术分析师。请对股票 %s (%s) 进行深度形态识别和风险评估。
+你的受众包含大量股票新手，请在提到专业术语时，使用括号附带通俗易懂的解释。
 
 最近60个交易日数据(T-0为最新):
 %s
@@ -168,7 +169,7 @@ JSON 格式示例：
 
 	ctx := context.Background()
 	messages := []*schema.Message{
-		schema.SystemMessage("你是一个精通K线绘图和风险管理的顶级技术分析师。"),
+		schema.SystemMessage("你是一个精通K线绘图和风险管理的顶级技术分析师。你擅长用通俗易懂的语言向新手解释复杂的金融术语。"),
 		schema.UserMessage(prompt),
 	}
 
