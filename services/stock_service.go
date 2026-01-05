@@ -451,6 +451,102 @@ func (s *StockService) SearchStockLegacy(keyword string) ([]*models.StockData, e
 	return results, nil
 }
 
+// GetStockHealthCheck 执行股票深度体检算法
+func (s *StockService) GetStockHealthCheck(code string) (*models.HealthCheckResult, error) {
+	stock, err := s.GetStockByCode(code)
+	if err != nil {
+		return nil, err
+	}
+
+	items := make([]models.HealthItem, 0)
+	score := 100
+
+	// 1. 财务排雷 (基于估值和市值)
+	peStatus := "正常"
+	peDesc := fmt.Sprintf("当前市盈率 %.2f，处于行业合理区间。", stock.PE)
+	if stock.PE < 0 {
+		peStatus = "异常"
+		peDesc = "公司目前处于亏损状态，财务基本面存在较大不确定性。"
+		score -= 20
+	} else if stock.PE > 100 {
+		peStatus = "警告"
+		peDesc = "市盈率过高，估值存在泡沫风险，需警惕回调。"
+		score -= 10
+	}
+	items = append(items, models.HealthItem{
+		Category: "财务",
+		Name:     "估值水平",
+		Value:    fmt.Sprintf("%.2f PE", stock.PE),
+		Status:   peStatus,
+		Description: peDesc,
+	})
+
+	// 2. 资金面检测 (基于换手率)
+	turnoverStatus := "正常"
+	turnoverDesc := "换手率适中，交投活跃度正常。"
+	if stock.Turnover > 15 {
+		turnoverStatus = "警告"
+		turnoverDesc = "换手率极高，说明筹码松动，主力可能在进行高位派发。"
+		score -= 15
+	} else if stock.Turnover < 0.5 {
+		turnoverStatus = "警告"
+		turnoverDesc = "成交极其低迷，属于“僵尸股”，流动性风险较大。"
+		score -= 10
+	}
+	items = append(items, models.HealthItem{
+		Category: "资金",
+		Name:     "流动性检测",
+		Value:    fmt.Sprintf("%.2f%%", stock.Turnover),
+		Status:   turnoverStatus,
+		Description: turnoverDesc,
+	})
+
+	// 3. 技术面检测 (基于涨跌幅和振幅)
+	ampStatus := "正常"
+	ampDesc := "股价波动在正常范围内。"
+	if stock.Amplitude > 10 {
+		ampStatus = "警告"
+		ampDesc = "日内振幅巨大，说明多空分歧极严重，容易出现极端走势。"
+		score -= 10
+	}
+	items = append(items, models.HealthItem{
+		Category: "技术",
+		Name:     "波动风险",
+		Value:    fmt.Sprintf("%.2f%%", stock.Amplitude),
+		Status:   ampStatus,
+		Description: ampDesc,
+	})
+
+	// 综合状态判定
+	status := "健康"
+	riskLevel := "低"
+	if score < 60 {
+		status = "风险"
+		riskLevel = "高"
+	} else if score < 85 {
+		status = "亚健康"
+		riskLevel = "中"
+	}
+
+	return &models.HealthCheckResult{
+		Score:     score,
+		Status:    status,
+		Items:     items,
+		RiskLevel: riskLevel,
+		UpdatedAt: time.Now().Format("2006-01-02 15:04:05"),
+		Summary:   fmt.Sprintf("%s目前综合评分为 %d 分。%s", stock.Name, score, getHealthSummary(status, score)),
+	}, nil
+}
+
+func getHealthSummary(status string, score int) string {
+	if status == "健康" {
+		return "各项指标表现良好，基本面稳健，适合中长期关注。"
+	} else if status == "亚健康" {
+		return "部分指标出现预警，建议控制仓位，观察关键支撑位的表现。"
+	}
+	return "存在明显财务或交易风险，建议新手暂时回避，等待风险释放。"
+}
+
 // 辅助解析函数
 func getString(v interface{}) string {
 	if s, ok := v.(string); ok {

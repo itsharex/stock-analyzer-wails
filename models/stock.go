@@ -71,6 +71,25 @@ type MoneyFlowResponse struct {
 	Description string          `json:"description"` // 状态详细描述
 }
 
+// HealthCheckResult 股票深度体检结果
+type HealthCheckResult struct {
+	Score       int            `json:"score"`       // 综合评分 (0-100)
+	Status      string         `json:"status"`      // "健康", "亚健康", "风险"
+	Items       []HealthItem   `json:"items"`       // 体检项
+	Summary     string         `json:"summary"`     // AI 总结
+	RiskLevel   string         `json:"riskLevel"`   // 风险等级: "低", "中", "高"
+	UpdatedAt   string         `json:"updatedAt"`   // 更新时间
+}
+
+// HealthItem 体检子项
+type HealthItem struct {
+	Category    string `json:"category"`    // 类别: "财务", "资金", "技术", "舆情"
+	Name        string `json:"name"`        // 项目名称
+	Value       string `json:"value"`       // 检测值
+	Status      string `json:"status"`      // "正常", "警告", "异常"
+	Description string `json:"description"` // 详细解释
+}
+
 type MACD struct {
 	DIF float64 `json:"dif"`
 	DEA float64 `json:"dea"`

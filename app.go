@@ -273,6 +273,14 @@ func (a *App) GetMoneyFlowData(code string) (*models.MoneyFlowResponse, error) {
 	return a.stockService.GetMoneyFlowData(code)
 }
 
+// GetStockHealthCheck 获取股票深度体检报告
+func (a *App) GetStockHealthCheck(code string) (*models.HealthCheckResult, error) {
+	if code == "" {
+		return nil, fmt.Errorf("股票代码不能为空")
+	}
+	return a.stockService.GetStockHealthCheck(code)
+}
+
 // GetKLineData 获取K线数据，支持周期参数
 func (a *App) GetKLineData(code string, limit int, period string) ([]*models.KLineData, error) {
 	if code == "" {

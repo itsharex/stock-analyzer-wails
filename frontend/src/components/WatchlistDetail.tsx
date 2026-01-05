@@ -1,12 +1,13 @@
 import { useState, useEffect, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { StockData, KLineData, TechnicalAnalysisResult, IntradayData, MoneyFlowResponse } from '../types'
+import { StockData, KLineData, TechnicalAnalysisResult, IntradayData, MoneyFlowResponse, HealthCheckResult } from '../types'
 import { useWailsAPI } from '../hooks/useWailsAPI'
 import KLineChart from './KLineChart'
 import IntradayChart from './IntradayChart'
 import MoneyFlowChart from './MoneyFlowChart'
 import SignalTicker from './SignalTicker'
+import StockHealthPanel from './StockHealthPanel'
 import RadarChart from './RadarChart'
 import TradePlanCard from './TradePlanCard'
 import { 
@@ -36,10 +37,11 @@ interface WatchlistDetailProps {
 }
 
 function WatchlistDetail({ stock }: WatchlistDetailProps) {
-  const { getKLineData, analyzeTechnical, getIntradayData, getMoneyFlowData } = useWailsAPI()
+  const { getKLineData, analyzeTechnical, getIntradayData, getMoneyFlowData, getStockHealthCheck } = useWailsAPI()
   const [klineData, setKlineData] = useState<KLineData[]>([])
   const [intradayData, setIntradayData] = useState<IntradayData[]>([])
   const [moneyFlowResponse, setMoneyFlowResponse] = useState<MoneyFlowResponse | null>(null)
+  const [healthCheck, setHealthCheck] = useState<HealthCheckResult | null>(null)
   const [preClose, setPreClose] = useState<number>(0)
   const [chartType, setChartType] = useState<'intraday' | 'kline'>('intraday')
   const [period, setPeriod] = useState<string>('daily')
@@ -78,19 +80,21 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
     if (chartType !== 'intraday') return
     setLoading(true)
     try {
-      const [intraResp, flowResp] = await Promise.all([
+      const [intraResp, flowResp, healthResp] = await Promise.all([
         getIntradayData(stock.code),
-        getMoneyFlowData(stock.code)
+        getMoneyFlowData(stock.code),
+        getStockHealthCheck(stock.code)
       ])
       setIntradayData(intraResp.data)
       setPreClose(intraResp.preClose)
       setMoneyFlowResponse(flowResp)
+      setHealthCheck(healthResp)
     } catch (error) {
       console.error('加载分时/资金流向数据失败:', error)
     } finally {
       setLoading(false)
     }
-  }, [stock.code, chartType, getIntradayData, getMoneyFlowData])
+  }, [stock.code, chartType, getIntradayData, getMoneyFlowData, getStockHealthCheck])
 
   useEffect(() => {
     if (chartType === 'kline') {
@@ -283,6 +287,13 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
             {chartType === 'intraday' && moneyFlowResponse && (
               <div className="mb-4 rounded-lg overflow-hidden border border-slate-800">
                 <SignalTicker data={moneyFlowResponse.data} />
+              </div>
+            )}
+
+            {/* AI 深度体检报告 */}
+            {healthCheck && (
+              <div className="mb-6">
+                <StockHealthPanel data={healthCheck} />
               </div>
             )}
 

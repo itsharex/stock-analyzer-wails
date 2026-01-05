@@ -98,6 +98,26 @@ export interface MoneyFlowResponse {
 }
 
 /**
+ * 股票深度体检结果
+ */
+export interface HealthItem {
+  category: string
+  name: string
+  value: string
+  status: '正常' | '警告' | '异常'
+  description: string
+}
+
+export interface HealthCheckResult {
+  score: number
+  status: string
+  items: HealthItem[]
+  summary: string
+  riskLevel: string
+  updatedAt: string
+}
+
+/**
  * AI 分析报告类型定义
  */
 export interface AnalysisReport {
