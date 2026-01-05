@@ -8,7 +8,7 @@ interface SettingsProps {
 
 function Settings({ onConfigSaved }: SettingsProps) {
   const [config, setConfig] = useState<AppConfig>({
-    provider: 'DashScope',
+    provider: 'Qwen',
     apiKey: '',
     baseUrl: '',
     model: '',
@@ -48,6 +48,7 @@ function Settings({ onConfigSaved }: SettingsProps) {
 
   const getBaseURLForProvider = (provider: string) => {
     switch (provider) {
+      case 'Qwen':
       case 'DashScope': return 'https://dashscope.aliyuncs.com/compatible-mode/v1'
       case 'DeepSeek': return 'https://api.deepseek.com'
       case 'OpenAI': return 'https://api.openai.com/v1'

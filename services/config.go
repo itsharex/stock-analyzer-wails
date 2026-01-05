@@ -1,6 +1,7 @@
 package services
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -15,6 +16,7 @@ import (
 type Provider string
 
 const (
+	ProviderQwen      Provider = "Qwen"
 	ProviderDashScope Provider = "DashScope"
 	ProviderDeepSeek  Provider = "DeepSeek"
 	ProviderOpenAI    Provider = "OpenAI"
@@ -26,6 +28,7 @@ const (
 
 // 供应商及其默认模型
 var ProviderModels = map[Provider][]string{
+	ProviderQwen:      {"qwen-plus", "qwen-max", "qwen-turbo", "qwen-long"},
 	ProviderDashScope: {"qwen-plus", "qwen-max", "qwen-turbo", "qwen-long"},
 	ProviderDeepSeek:  {"deepseek-chat", "deepseek-reasoner"},
 	ProviderOpenAI:    {"gpt-4o", "gpt-4o-mini", "gpt-4-turbo"},
@@ -47,19 +50,19 @@ type appYAML struct {
 }
 
 type AIResolvedConfig struct {
-	Provider       Provider              `json:"provider"`
-	APIKey         string                `json:"apiKey"`
-	BaseURL        string                `json:"baseUrl"`
-	Model          string                `json:"model"`
+	Provider       Provider            `json:"provider"`
+	APIKey         string              `json:"apiKey"`
+	BaseURL        string              `json:"baseUrl"`
+	Model          string              `json:"model"`
 	ProviderModels map[Provider][]string `json:"providerModels"`
 }
 
 func LoadAIConfig() (AIResolvedConfig, error) {
 	start := time.Now()
 	var cfg appYAML
-
+	
 	// 默认值
-	cfg.AI.Provider = ProviderDashScope
+	cfg.AI.Provider = ProviderQwen
 	cfg.AI.Model = "qwen-plus"
 	cfg.AI.BaseURL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 
