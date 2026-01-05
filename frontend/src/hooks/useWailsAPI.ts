@@ -1,5 +1,5 @@
 import { useCallback } from 'react'
-import type { StockData, AnalysisReport, AppConfig, KLineData, TechnicalAnalysisResult, IntradayResponse } from '../types'
+import type { StockData, AnalysisReport, AppConfig, KLineData, TechnicalAnalysisResult, IntradayResponse, MoneyFlowResponse } from '../types'
 
 export const useWailsAPI = () => {
   const getStockData = useCallback(async (code: string): Promise<StockData> => {
@@ -12,10 +12,15 @@ export const useWailsAPI = () => {
 	    return window.go.main.App.GetKLineData(code, limit, period)
 	  }, [])
 	
-	  const getIntradayData = useCallback(async (code: string): Promise<IntradayResponse> => {
-	    // @ts-ignore
-	    return window.go.main.App.GetIntradayData(code)
-	  }, [])
+const getIntradayData = useCallback(async (code: string): Promise<IntradayResponse> => {
+    // @ts-ignore
+    return window.go.main.App.GetIntradayData(code)
+  }, [])
+
+  const getMoneyFlowData = useCallback(async (code: string): Promise<MoneyFlowResponse> => {
+    // @ts-ignore
+    return window.go.main.App.GetMoneyFlowData(code)
+  }, [])
 
   const analyzeStock = useCallback(async (code: string): Promise<AnalysisReport> => {
     // @ts-ignore
@@ -83,10 +88,11 @@ export const useWailsAPI = () => {
     return window.go.main.App.RemoveAlert(stockCode, alertType, price)
   }, [])
 
-	  return {
-	    getStockData,
-	    getIntradayData,
-	    getKLineData,
+return {
+    getStockData,
+    getIntradayData,
+    getMoneyFlowData,
+    getKLineData,
 	    analyzeStock,
 	    analyzeTechnical,
 	    searchStock,

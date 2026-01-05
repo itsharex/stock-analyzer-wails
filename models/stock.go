@@ -24,32 +24,51 @@ type StockData struct {
 }
 
 // KLineData K线数据点
-	type KLineData struct {
-		Time   string  `json:"time"`   // 时间 (YYYY-MM-DD)
-		Open   float64 `json:"open"`   // 开盘价
-		High   float64 `json:"high"`   // 最高价
-		Low    float64 `json:"low"`    // 最低价
-		Close  float64 `json:"close"`  // 收盘价
-		Volume int64   `json:"volume"` // 成交量
-		MACD   *MACD   `json:"macd,omitempty"`
-		KDJ    *KDJ    `json:"kdj,omitempty"`
-		RSI    float64 `json:"rsi,omitempty"`
-	}
+type KLineData struct {
+	Time   string  `json:"time"`   // 时间 (YYYY-MM-DD)
+	Open   float64 `json:"open"`   // 开盘价
+	High   float64 `json:"high"`   // 最高价
+	Low    float64 `json:"low"`    // 最低价
+	Close  float64 `json:"close"`  // 收盘价
+	Volume int64   `json:"volume"` // 成交量
+	MACD   *MACD   `json:"macd,omitempty"`
+	KDJ    *KDJ    `json:"kdj,omitempty"`
+	RSI    float64 `json:"rsi,omitempty"`
+}
 
-	// IntradayData 分时数据点
-	type IntradayData struct {
-		Time      string  `json:"time"`      // 时间 (HH:MM)
-		Price     float64 `json:"price"`     // 价格
-		AvgPrice  float64 `json:"avgPrice"`  // 均价
-		Volume    int64   `json:"volume"`    // 成交量
-		PreClose  float64 `json:"preClose"`  // 昨收价
-	}
+// IntradayData 分时数据点
+type IntradayData struct {
+	Time      string  `json:"time"`      // 时间 (HH:MM)
+	Price     float64 `json:"price"`     // 价格
+	AvgPrice  float64 `json:"avgPrice"`  // 均价
+	Volume    int64   `json:"volume"`    // 成交量
+	PreClose  float64 `json:"preClose"`  // 昨收价
+}
 
-	// IntradayResponse 分时数据响应结构
-	type IntradayResponse struct {
-		Data      []IntradayData `json:"data"`
-		PreClose  float64        `json:"preClose"`
-	}
+// IntradayResponse 分时数据响应结构
+type IntradayResponse struct {
+	Data      []IntradayData `json:"data"`
+	PreClose  float64        `json:"preClose"`
+}
+
+// MoneyFlowData 资金流向数据点
+type MoneyFlowData struct {
+	Time       string  `json:"time"`       // 时间 (HH:MM)
+	SuperLarge float64 `json:"superLarge"` // 特大单净流入
+	Large      float64 `json:"large"`      // 大单净流入
+	Medium     float64 `json:"medium"`     // 中单净流入
+	Small      float64 `json:"small"`      // 小单净流入
+	MainNet    float64 `json:"mainNet"`    // 主力净流入 (特大单+大单)
+}
+
+// MoneyFlowResponse 资金流向响应结构
+type MoneyFlowResponse struct {
+	Data        []MoneyFlowData `json:"data"`
+	TodayMain   float64         `json:"todayMain"`   // 今日主力净流入总额
+	TodayRetail float64         `json:"todayRetail"` // 今日散户净流入总额
+	Status      string          `json:"status"`      // 智能识别状态: "主力建仓", "散户追高", "机构洗盘", "平稳运行"
+	Description string          `json:"description"` // 状态详细描述
+}
 
 type MACD struct {
 	DIF float64 `json:"dif"`

@@ -74,6 +74,29 @@ export interface IntradayResponse {
 }
 
 /**
+ * 资金流向数据点
+ */
+export interface MoneyFlowData {
+  time: string
+  superLarge: number
+  large: number
+  medium: number
+  small: number
+  mainNet: number
+}
+
+/**
+ * 资金流向响应结构
+ */
+export interface MoneyFlowResponse {
+  data: MoneyFlowData[]
+  todayMain: number
+  todayRetail: number
+  status: string
+  description: string
+}
+
+/**
  * AI 分析报告类型定义
  */
 export interface AnalysisReport {

@@ -279,6 +279,96 @@ func (s *StockService) GetIntradayData(code string) (*models.IntradayResponse, e
 	}, nil
 }
 
+// GetMoneyFlowData 获取资金流向数据并进行智能识别
+func (s *StockService) GetMoneyFlowData(code string) (*models.MoneyFlowResponse, error) {
+	secid := s.getSecID(code)
+	if secid == "" {
+		return nil, fmt.Errorf("无效的股票代码")
+	}
+
+	// 东方财富资金流向 API
+	url := fmt.Sprintf("https://push2.eastmoney.com/api/qt/stock/fflow/kline/get?secid=%s&fields1=f1,f2,f3,f7&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61,f62,f63,f64,f65&klt=1&lmt=240", secid)
+
+	resp, err := s.client.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	var result struct {
+		Data struct {
+			Klines []string `json:"klines"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, err
+	}
+
+	moneyFlows := make([]models.MoneyFlowData, 0)
+	var totalMain, totalRetail float64
+
+	for _, line := range result.Data.Klines {
+		parts := strings.Split(line, ",")
+		if len(parts) < 13 {
+			continue
+		}
+		
+		// f51:时间, f52:主力净流入, f53:小单, f54:中单, f55:大单, f56:特大单
+		mainNet := s.parsePrice(parts[1])
+		small := s.parsePrice(parts[2])
+		medium := s.parsePrice(parts[3])
+		large := s.parsePrice(parts[4])
+		superLarge := s.parsePrice(parts[5])
+
+		moneyFlows = append(moneyFlows, models.MoneyFlowData{
+			Time:       parts[0],
+			SuperLarge: superLarge,
+			Large:      large,
+			Medium:     medium,
+			Small:      small,
+			MainNet:    mainNet,
+		})
+		
+		totalMain += mainNet
+		totalRetail += small
+	}
+
+	// 智能识别逻辑
+	status := "平稳运行"
+	description := "当前资金进出相对平衡，建议关注趋势确认。"
+
+	if len(moneyFlows) > 0 {
+		lastFlow := moneyFlows[len(moneyFlows)-1]
+		
+		// 1. 主力建仓识别: 主力资金持续流入且占比高
+		if totalMain > 0 && lastFlow.MainNet > 0 {
+			status = "主力建仓"
+			description = "主力资金正在持续流入，且单笔成交金额较大，说明机构看好后市，正在积极吸筹。"
+		}
+		
+		// 2. 散户追高识别: 股价上涨但主力流出，散户大幅流入
+		if totalMain < 0 && totalRetail > 0 {
+			status = "散户追高"
+			description = "当前股价上涨主要由散户情绪推动，主力资金正在趁高点派发筹码，请警惕冲高回落风险。"
+		}
+		
+		// 3. 机构洗盘识别: 股价下跌但主力流入
+		if totalMain > 0 && totalRetail < 0 {
+			status = "机构洗盘"
+			description = "主力资金在股价回调时默默接盘，散户因恐慌抛售，这通常是拉升前的洗盘行为。"
+		}
+	}
+
+	return &models.MoneyFlowResponse{
+		Data:        moneyFlows,
+		TodayMain:   totalMain,
+		TodayRetail: totalRetail,
+		Status:      status,
+		Description: description,
+	}, nil
+}
+
 func (s *StockService) getSecID(code string) string {
 	if len(code) != 6 {
 		return ""

@@ -265,6 +265,14 @@ func (a *App) GetIntradayData(code string) (*models.IntradayResponse, error) {
 	return a.stockService.GetIntradayData(code)
 }
 
+// GetMoneyFlowData 获取资金流向数据
+func (a *App) GetMoneyFlowData(code string) (*models.MoneyFlowResponse, error) {
+	if code == "" {
+		return nil, fmt.Errorf("股票代码不能为空")
+	}
+	return a.stockService.GetMoneyFlowData(code)
+}
+
 // GetKLineData 获取K线数据，支持周期参数
 func (a *App) GetKLineData(code string, limit int, period string) ([]*models.KLineData, error) {
 	if code == "" {

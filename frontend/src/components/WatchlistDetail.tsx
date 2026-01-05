@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { StockData, KLineData, TechnicalAnalysisResult, IntradayData } from '../types'
+import { StockData, KLineData, TechnicalAnalysisResult, IntradayData, MoneyFlowResponse } from '../types'
 import { useWailsAPI } from '../hooks/useWailsAPI'
 import KLineChart from './KLineChart'
 import IntradayChart from './IntradayChart'
+import MoneyFlowChart from './MoneyFlowChart'
 import RadarChart from './RadarChart'
 import TradePlanCard from './TradePlanCard'
 import { 
@@ -20,7 +21,11 @@ import {
   BarChart3,
   Anchor,
   Sword,
-  Cpu
+  Cpu,
+  TrendingUp,
+  AlertTriangle,
+  Info,
+  Wallet
 } from 'lucide-react'
 import { GlossaryPanel, GlossaryTooltip } from './GlossaryTooltip'
 import { STOCK_GLOSSARY } from '../utils/glossary'
@@ -30,9 +35,10 @@ interface WatchlistDetailProps {
 }
 
 function WatchlistDetail({ stock }: WatchlistDetailProps) {
-  const { getKLineData, analyzeTechnical, getIntradayData } = useWailsAPI()
+  const { getKLineData, analyzeTechnical, getIntradayData, getMoneyFlowData } = useWailsAPI()
   const [klineData, setKlineData] = useState<KLineData[]>([])
   const [intradayData, setIntradayData] = useState<IntradayData[]>([])
+  const [moneyFlowResponse, setMoneyFlowResponse] = useState<MoneyFlowResponse | null>(null)
   const [preClose, setPreClose] = useState<number>(0)
   const [chartType, setChartType] = useState<'intraday' | 'kline'>('intraday')
   const [period, setPeriod] = useState<string>('daily')
@@ -52,6 +58,7 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
   const [showKDJ, setShowKDJ] = useState(false)
   const [showRSI, setShowRSI] = useState(false)
   const [showAIDrawings, setShowAIDrawings] = useState(true)
+  const [showMoneyFlow, setShowMoneyFlow] = useState(true)
 
   const loadKLineData = useCallback(async () => {
     if (chartType !== 'kline') return
@@ -70,15 +77,19 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
     if (chartType !== 'intraday') return
     setLoading(true)
     try {
-      const resp = await getIntradayData(stock.code)
-      setIntradayData(resp.data)
-      setPreClose(resp.preClose)
+      const [intraResp, flowResp] = await Promise.all([
+        getIntradayData(stock.code),
+        getMoneyFlowData(stock.code)
+      ])
+      setIntradayData(intraResp.data)
+      setPreClose(intraResp.preClose)
+      setMoneyFlowResponse(flowResp)
     } catch (error) {
-      console.error('加载分时数据失败:', error)
+      console.error('加载分时/资金流向数据失败:', error)
     } finally {
       setLoading(false)
     }
-  }, [stock.code, chartType, getIntradayData])
+  }, [stock.code, chartType, getIntradayData, getMoneyFlowData])
 
   useEffect(() => {
     if (chartType === 'kline') {
@@ -88,7 +99,7 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
     }
   }, [chartType, loadKLineData, loadIntradayData])
 
-  // 分时图自动刷新逻辑 (每30秒)
+  // 自动刷新逻辑 (每30秒)
   useEffect(() => {
     if (chartType !== 'intraday') return
     
@@ -117,6 +128,24 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
       case '买入': case '增持': return 'bg-red-500 text-white'
       case '卖出': case '减持': return 'bg-green-500 text-white'
       default: return 'bg-slate-500 text-white'
+    }
+  }
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case '主力建仓': return <TrendingUp className="w-4 h-4 text-red-500" />
+      case '散户追高': return <AlertTriangle className="w-4 h-4 text-amber-500" />
+      case '机构洗盘': return <Activity className="w-4 h-4 text-blue-500" />
+      default: return <Info className="w-4 h-4 text-slate-500" />
+    }
+  }
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case '主力建仓': return 'bg-red-50 text-red-700 border-red-100'
+      case '散户追高': return 'bg-amber-50 text-amber-700 border-amber-100'
+      case '机构洗盘': return 'bg-blue-50 text-blue-700 border-blue-100'
+      default: return 'bg-slate-50 text-slate-700 border-slate-100'
     }
   }
 
@@ -183,7 +212,7 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
                   </button>
                 </div>
 
-                {chartType === 'kline' && (
+                {chartType === 'kline' ? (
                   <>
                     <div className="relative">
                       <select 
@@ -231,6 +260,15 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
                       </button>
                     )}
                   </>
+                ) : (
+                  <div className="flex bg-slate-100 rounded-lg p-1">
+                    <button 
+                      onClick={() => setShowMoneyFlow(!showMoneyFlow)}
+                      className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${showMoneyFlow ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                    >
+                      资金流向
+                    </button>
+                  </div>
                 )}
               </div>
 
@@ -240,28 +278,50 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
               </div>
             </div>
 
-            {/* 图表容器 */}
-            <div className="flex-1 relative min-h-[500px] bg-slate-50 rounded-lg border border-slate-100 overflow-hidden">
-              {loading && (
-                <div className="absolute inset-0 flex items-center justify-center bg-white/80 z-10">
-                  <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+            {/* 智能资金状态标签 */}
+            {chartType === 'intraday' && moneyFlowResponse && (
+              <div className={`mb-4 p-3 rounded-xl border flex items-start space-x-3 transition-all ${getStatusColor(moneyFlowResponse.status)}`}>
+                <div className="mt-0.5">{getStatusIcon(moneyFlowResponse.status)}</div>
+                <div>
+                  <div className="flex items-center space-x-2">
+                    <span className="font-bold text-sm">智能资金识别：{moneyFlowResponse.status}</span>
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-white/50 font-medium">实时监控中</span>
+                  </div>
+                  <p className="text-xs mt-1 opacity-90 leading-relaxed">{moneyFlowResponse.description}</p>
                 </div>
-              )}
-              
-              {chartType === 'kline' ? (
-                <KLineChart 
-                  data={klineData} 
-                  drawings={showAIDrawings ? analysisResult?.drawings : []}
-                  showMACD={showMACD} 
-                  showKDJ={showKDJ} 
-                  showRSI={showRSI} 
-                />
-              ) : (
-                <IntradayChart 
-                  data={intradayData}
-                  preClose={preClose}
-                  height={500}
-                />
+              </div>
+            )}
+
+            {/* 图表容器 */}
+            <div className="flex-1 flex flex-col space-y-2 min-h-[500px]">
+              <div className="flex-[2] relative bg-slate-50 rounded-lg border border-slate-100 overflow-hidden">
+                {loading && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-white/80 z-10">
+                    <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+                  </div>
+                )}
+                
+                {chartType === 'kline' ? (
+                  <KLineChart 
+                    data={klineData} 
+                    drawings={showAIDrawings ? analysisResult?.drawings : []}
+                    showMACD={showMACD} 
+                    showKDJ={showKDJ} 
+                    showRSI={showRSI} 
+                  />
+                ) : (
+                  <IntradayChart 
+                    data={intradayData}
+                    preClose={preClose}
+                    height={400}
+                  />
+                )}
+              </div>
+
+              {chartType === 'intraday' && showMoneyFlow && moneyFlowResponse && (
+                <div className="flex-1 relative bg-slate-50 rounded-lg border border-slate-100 overflow-hidden">
+                  <MoneyFlowChart data={moneyFlowResponse.data} height={180} />
+                </div>
               )}
             </div>
           </div>
@@ -270,6 +330,30 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
         {/* 右侧技术分析师面板 */}
         <div className="w-[480px] bg-slate-50 border-l border-slate-200 flex flex-col shadow-[-10px_0_30px_rgba(0,0,0,0.03)] z-10">
           <div className="p-5 border-b border-slate-200 flex flex-col space-y-4 bg-white/50 backdrop-blur-sm">
+            {/* 资金概览卡片 */}
+            {chartType === 'intraday' && moneyFlowResponse && (
+              <div className="grid grid-cols-2 gap-3 mb-2">
+                <div className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
+                  <div className="flex items-center space-x-2 text-slate-400 mb-1">
+                    <Wallet className="w-3 h-3" />
+                    <span className="text-[10px] font-bold uppercase tracking-wider">主力净流入</span>
+                  </div>
+                  <div className={`text-lg font-mono font-bold ${moneyFlowResponse.todayMain >= 0 ? 'text-red-500' : 'text-green-500'}`}>
+                    {moneyFlowResponse.todayMain >= 0 ? '+' : ''}{(moneyFlowResponse.todayMain / 10000).toFixed(2)}万
+                  </div>
+                </div>
+                <div className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
+                  <div className="flex items-center space-x-2 text-slate-400 mb-1">
+                    <Activity className="w-3 h-3" />
+                    <span className="text-[10px] font-bold uppercase tracking-wider">散户净流入</span>
+                  </div>
+                  <div className={`text-lg font-mono font-bold ${moneyFlowResponse.todayRetail >= 0 ? 'text-red-500' : 'text-green-500'}`}>
+                    {moneyFlowResponse.todayRetail >= 0 ? '+' : ''}{(moneyFlowResponse.todayRetail / 10000).toFixed(2)}万
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="flex items-center justify-between w-full">
               <div className="flex items-center space-x-2.5 text-blue-600">
                 <div className="p-1.5 bg-blue-50 rounded-lg">
