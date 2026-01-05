@@ -191,3 +191,30 @@ export interface AppConfig {
  * 导航菜单项
  */
 export type NavItem = 'analysis' | 'watchlist' | 'alerts' | 'settings'
+
+export interface CoreReason {
+  type: 'fundamental' | 'technical' | 'money_flow'
+  description: string
+  threshold: string
+}
+
+export interface EntryStrategyResult {
+  recommendation: string
+  entryPriceRange: string
+  initialPosition: string
+  stopLossPrice: number
+  takeProfitPrice: number
+  coreReasons: CoreReason[]
+  riskRewardRatio: number
+  actionPlan: string
+}
+
+export interface Position {
+  stockCode: string
+  stockName: string
+  entryPrice: number
+  entryTime: string
+  strategy: EntryStrategyResult
+  currentStatus: 'holding' | 'closed'
+  logicStatus: 'valid' | 'violated' | 'warning'
+}

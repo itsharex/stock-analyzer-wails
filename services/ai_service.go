@@ -149,6 +149,73 @@ func (s *AIService) GenerateAlertAdvice(stockName, alertType, label, role string
 	return strings.TrimSpace(resp.Content), nil
 }
 
+func (s *AIService) AnalyzeEntryStrategy(stock *models.StockData, klines []*models.KLineData, moneyFlow *models.MoneyFlowResponse, health *models.HealthCheckResult) (*models.EntryStrategyResult, error) {
+	ctx := context.Background()
+
+	// 构建 K 线摘要
+	klineSummary := ""
+	for i, k := range klines {
+		if i > len(klines)-10 { // 只取最近10天
+			klineSummary += fmt.Sprintf("日期:%s,收盘:%.2f,涨跌:%.2f%%; ", k.Time, k.Close, (k.Close-klines[i-1].Close)/klines[i-1].Close*100)
+		}
+	}
+
+	systemPrompt := `你是一位资深的量化交易员和风险管理专家。你的任务是根据提供的股票数据，为用户生成一份极具实战价值的“智能建仓方案”。
+你的分析必须严谨，给出的价格和比例必须具体。
+
+请按以下 JSON 格式输出：
+{
+  "recommendation": "建议类型(立即建仓/分批建仓/等待回调/暂时观望)",
+  "entryPriceRange": "建议买入价格区间",
+  "initialPosition": "建议首仓比例(如20%)",
+  "stopLossPrice": 止损价(数字),
+  "takeProfitPrice": 目标止盈价(数字),
+  "coreReasons": [
+    {"type": "fundamental/technical/money_flow", "description": "理由描述", "threshold": "逻辑失效的触发阈值"}
+  ],
+  "riskRewardRatio": 预估盈亏比(数字),
+  "actionPlan": "具体操作步骤描述"
+}`
+
+	userPrompt := fmt.Sprintf(`股票: %s (%s)
+当前价: %.2f, 涨跌幅: %.2f%%, 换手率: %.2f%%
+体检评分: %d, 风险等级: %s
+今日资金流向: 主力净流入 %.2f 万, 状态: %s
+最近K线走势: %s
+
+请基于以上数据，给出深度建仓分析方案。`, 
+		stock.Name, stock.Code, stock.Price, stock.ChangeRate, stock.Turnover,
+		health.Score, health.RiskLevel, moneyFlow.TodayMain/10000, moneyFlow.Status, klineSummary)
+
+	messages := []*schema.Message{
+		schema.SystemMessage(systemPrompt),
+		schema.UserMessage(userPrompt),
+	}
+
+	resp, err := s.chatModel.Generate(ctx, messages)
+	if err != nil {
+		return nil, err
+	}
+
+	// 解析 JSON
+	cleanJSON := s.extractJSON(resp.Content)
+	var result models.EntryStrategyResult
+	if err := json.Unmarshal([]byte(cleanJSON), &result); err != nil {
+		return nil, fmt.Errorf("解析建仓方案失败: %w, content: %s", err, cleanJSON)
+	}
+
+	return &result, nil
+}
+
+func (s *AIService) extractJSON(content string) string {
+	start := strings.Index(content, "{")
+	end := strings.LastIndex(content, "}")
+	if start != -1 && end != -1 && end > start {
+		return content[start : end+1]
+	}
+	return content
+}
+
 func (s *AIService) AnalyzeTechnical(stock *models.StockData, klines []*models.KLineData, role string) (*models.TechnicalAnalysisResult, error) {
 	// 1. 尝试从缓存获取
 	period := "daily" // 默认周期，实际可从外部传入

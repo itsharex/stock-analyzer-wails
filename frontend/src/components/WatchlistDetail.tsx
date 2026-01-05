@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { StockData, KLineData, TechnicalAnalysisResult, IntradayData, MoneyFlowResponse, HealthCheckResult } from '../types'
+import { StockData, KLineData, TechnicalAnalysisResult, IntradayData, MoneyFlowResponse, HealthCheckResult, EntryStrategyResult } from '../types'
 import { useWailsAPI } from '../hooks/useWailsAPI'
 import KLineChart from './KLineChart'
 import IntradayChart from './IntradayChart'
@@ -10,6 +10,7 @@ import SignalTicker from './SignalTicker'
 import StockHealthPanel from './StockHealthPanel'
 import RadarChart from './RadarChart'
 import TradePlanCard from './TradePlanCard'
+import EntryStrategyPanel from './EntryStrategyPanel'
 import { 
   Activity, 
   Clock, 
@@ -27,7 +28,8 @@ import {
   TrendingUp,
   AlertTriangle,
   Info,
-  Wallet
+  Wallet,
+  Target
 } from 'lucide-react'
 import { GlossaryPanel, GlossaryTooltip } from './GlossaryTooltip'
 import { STOCK_GLOSSARY } from '../utils/glossary'
@@ -37,7 +39,7 @@ interface WatchlistDetailProps {
 }
 
 function WatchlistDetail({ stock }: WatchlistDetailProps) {
-  const { getKLineData, analyzeTechnical, getIntradayData, getMoneyFlowData, getStockHealthCheck } = useWailsAPI()
+  const { getKLineData, analyzeTechnical, getIntradayData, getMoneyFlowData, getStockHealthCheck, analyzeEntryStrategy } = useWailsAPI()
   const [klineData, setKlineData] = useState<KLineData[]>([])
   const [intradayData, setIntradayData] = useState<IntradayData[]>([])
   const [moneyFlowResponse, setMoneyFlowResponse] = useState<MoneyFlowResponse | null>(null)
@@ -50,6 +52,8 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
   // 使用全局或更高层级的缓存（简单起见，这里先用组件外变量模拟，实际生产环境建议用 Context 或全局 Store）
   // 但为了保持组件独立性，我们先通过优化 useEffect 逻辑来实现
   const [analysisResult, setAnalysisResult] = useState<TechnicalAnalysisResult | null>(null)
+  const [entryStrategy, setEntryStrategy] = useState<EntryStrategyResult | null>(null)
+  const [entryLoading, setEntryLoading] = useState(false)
   const [role, setRole] = useState('technical')
 
   const roles = [
@@ -102,6 +106,7 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
   useEffect(() => {
     setAnalysisResult(null)
     setHealthCheck(null)
+    setEntryStrategy(null)
   }, [stock.code])
 
   useEffect(() => {
@@ -133,6 +138,18 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
       console.error('技术分析失败:', error)
     } finally {
       setAnalysisLoading(false)
+    }
+  }
+
+  const handleEntryAnalyze = async () => {
+    setEntryLoading(true)
+    try {
+      const result = await analyzeEntryStrategy(stock.code)
+      setEntryStrategy(result)
+    } catch (error) {
+      console.error('建仓分析失败:', error)
+    } finally {
+      setEntryLoading(false)
     }
   }
 
@@ -389,14 +406,24 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
                 </div>
                 <h3 className="font-bold text-slate-800 tracking-tight">AI 投资顾问</h3>
               </div>
-              <button 
-                onClick={() => handleAnalyze()}
-                disabled={analysisLoading || (chartType === 'kline' ? klineData.length === 0 : intradayData.length === 0)}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white text-xs font-bold rounded-xl transition-all shadow-sm hover:shadow-md flex items-center space-x-1.5"
-              >
-                {analysisLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <LineChartIcon className="w-3.5 h-3.5" />}
-                <span>{analysisResult ? '重新分析' : '开始深度分析'}</span>
-              </button>
+              <div className="flex items-center space-x-2">
+                <button 
+                  onClick={() => handleEntryAnalyze()}
+                  disabled={entryLoading || analysisLoading}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white text-xs font-bold rounded-xl transition-all shadow-sm hover:shadow-md flex items-center space-x-1.5"
+                >
+                  {entryLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Target className="w-3.5 h-3.5" />}
+                  <span>{entryStrategy ? '重新评估建仓' : 'AI 建仓分析'}</span>
+                </button>
+                <button 
+                  onClick={() => handleAnalyze()}
+                  disabled={analysisLoading || (chartType === 'kline' ? klineData.length === 0 : intradayData.length === 0)}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white text-xs font-bold rounded-xl transition-all shadow-sm hover:shadow-md flex items-center space-x-1.5"
+                >
+                  {analysisLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <LineChartIcon className="w-3.5 h-3.5" />}
+                  <span>{analysisResult ? '重新分析' : '开始深度分析'}</span>
+                </button>
+              </div>
             </div>
 
             {/* 角色切换器 */}
@@ -423,6 +450,16 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
           </div>
 
           <div className="flex-1 overflow-y-auto p-6 custom-scrollbar bg-gradient-to-b from-white/30 to-transparent">
+            {/* 建仓分析面板 */}
+            {entryStrategy && (
+              <div className="mb-8">
+                <EntryStrategyPanel 
+                  strategy={entryStrategy} 
+                  onConfirm={() => alert('建仓功能开发中，敬请期待！')} 
+                />
+              </div>
+            )}
+
             {analysisLoading ? (
               <div className="flex flex-col items-center justify-center h-64 space-y-5 text-slate-400">
                 <div className="relative">

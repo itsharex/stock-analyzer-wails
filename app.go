@@ -286,6 +286,35 @@ func (a *App) GetStockHealthCheck(code string) (*models.HealthCheckResult, error
 	return a.stockService.GetStockHealthCheck(code)
 }
 
+// AnalyzeEntryStrategy 获取 AI 智能建仓方案
+func (a *App) AnalyzeEntryStrategy(code string) (*models.EntryStrategyResult, error) {
+	if a.aiService == nil {
+		return nil, fmt.Errorf("AI服务未就绪")
+	}
+	
+	stock, err := a.stockService.GetStockByCode(code)
+	if err != nil {
+		return nil, err
+	}
+
+	klines, err := a.stockService.GetKLineData(code, 100, "daily")
+	if err != nil {
+		return nil, err
+	}
+
+	moneyFlow, err := a.stockService.GetMoneyFlowData(code)
+	if err != nil {
+		return nil, err
+	}
+
+	health, err := a.stockService.GetStockHealthCheck(code)
+	if err != nil {
+		return nil, err
+	}
+
+	return a.aiService.AnalyzeEntryStrategy(stock, klines, moneyFlow, health)
+}
+
 // BatchAnalyzeStocks 批量分析股票
 func (a *App) BatchAnalyzeStocks(codes []string, role string) error {
 	if a.aiService == nil {

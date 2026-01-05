@@ -182,6 +182,36 @@ type AlertHistory struct {
 	Time      time.Time `json:"time"`
 }
 
+// EntryStrategyResult 智能建仓方案结构
+type EntryStrategyResult struct {
+	Recommendation    string        `json:"recommendation"`    // 总体建议
+	EntryPriceRange   string        `json:"entryPriceRange"`   // 建议买入价格区间
+	InitialPosition   string        `json:"initialPosition"`   // 建议首仓比例
+	StopLossPrice     float64       `json:"stopLossPrice"`     // 止损价
+	TakeProfitPrice   float64       `json:"takeProfitPrice"`   // 目标止盈价
+	CoreReasons       []CoreReason  `json:"coreReasons"`       // 核心建仓理由
+	RiskRewardRatio   float64       `json:"riskRewardRatio"`   // 预估盈亏比
+	ActionPlan        string        `json:"actionPlan"`        // 具体操作步骤
+}
+
+// CoreReason 核心建仓理由
+type CoreReason struct {
+	Type        string `json:"type"`        // fundamental, technical, money_flow
+	Description string `json:"description"`
+	Threshold   string `json:"threshold"`   // 逻辑失效的触发阈值
+}
+
+// Position 持仓记录（用于逻辑跟踪）
+type Position struct {
+	StockCode     string              `json:"stockCode"`
+	StockName     string              `json:"stockName"`
+	EntryPrice    float64             `json:"entryPrice"`
+	EntryTime     time.Time           `json:"entryTime"`
+	Strategy      EntryStrategyResult `json:"strategy"`
+	CurrentStatus string              `json:"currentStatus"` // "holding", "closed"
+	LogicStatus   string              `json:"logicStatus"`   // "valid", "violated", "warning"
+}
+
 // EastMoneyResponse 东方财富API响应结构
 type EastMoneyResponse struct {
 	RC   int    `json:"rc"`
