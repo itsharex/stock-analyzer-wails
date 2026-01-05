@@ -1,11 +1,11 @@
 # A股股票分析AI-Agent
 
-基于Go + Wails框架的A股股票分析桌面应用程序，通过东方财富API获取实时股票数据，结合OpenAI进行智能分析，生成专业的投资建议报告。
+基于Go + Wails框架的A股股票分析桌面应用程序，通过东方财富API获取实时股票数据，结合 **CloudWeGo Eino** 框架和 **阿里百炼 (DashScope)** 进行智能分析，生成专业的投资建议报告。
 
 ## 功能特性
 
 - **股票数据获取**：通过东方财富API实时获取A股股票行情数据
-- **AI智能分析**：集成OpenAI GPT模型，对股票进行深度分析
+- **AI智能分析**：集成 **Eino** 框架和 **阿里百炼 (DashScope)** 进行智能股票分析
 - **专业报告生成**：自动生成包含基本面分析、技术面分析和投资建议的专业报告
 - **现代化界面**：基于React的美观用户界面
 - **跨平台支持**：支持Windows、macOS和Linux
@@ -14,8 +14,9 @@
 
 - **后端**：Go 1.22+
 - **框架**：Wails v2
+- **AI框架**：CloudWeGo Eino
 - **前端**：React + TypeScript + TailwindCSS
-- **AI服务**：OpenAI API
+- **AI服务**：阿里百炼 (DashScope) - 通义千问 (Qwen)
 - **数据源**：东方财富网API
 
 ## 前置要求
@@ -80,15 +81,17 @@ sudo apt-get install libgtk-3-dev libwebkit2gtk-4.0-dev
 将项目文件解压到本地目录，例如：`/path/to/stock-analyzer-wails`
 
 ### 2. 配置环境变量
-
 创建 `.env` 文件（或设置系统环境变量）：
 
 ```bash
-# OpenAI API密钥
-export OPENAI_API_KEY="your-openai-api-key-here"
+# 阿里百炼 API密钥
+export DASHSCOPE_API_KEY="your-dashscope-api-key-here"
 
-# 可选：OpenAI API基础URL（如使用代理或第三方服务）
-export OPENAI_BASE_URL="https://api.openai.com/v1"
+# 可选：模型名称（默认 qwen-plus）
+export DASHSCOPE_MODEL="qwen-plus"
+
+# 可选：API基础URL
+export DASHSCOPE_BASE_URL="https://dashscope.aliyuncs.com/compatible-mode/v1"
 ```
 
 ### 3. 安装依赖
@@ -154,7 +157,7 @@ stock-analyzer-wails/
 ├── wails.json             # Wails配置文件
 ├── services/              # 业务服务层
 │   ├── stock_service.go   # 股票数据服务
-│   └── ai_service.go      # AI分析服务
+│   └── ai_service.go      # AI分析服务 (使用 Eino 框架)
 ├── models/                # 数据模型
 │   └── stock.go           # 股票数据模型
 ├── frontend/              # 前端代码
@@ -168,8 +171,15 @@ stock-analyzer-wails/
 └── README.md             # 项目文档
 ```
 
-## API说明
+## AI 框架：CloudWeGo Eino
 
+本项目使用字节跳动开源的 **Eino** 框架进行 AI 逻辑编排。Eino 提供了高度组件化和可扩展的 AI 应用开发体验。
+
+**核心组件**：
+- `ChatModel`: 使用 `eino-ext/components/model/qwen` 适配器接入阿里百炼。
+- `Schema`: 使用 Eino 标准消息结构进行提示词管理。
+
+## API说明
 ### 东方财富API
 
 应用使用东方财富网的公开API获取股票数据：
@@ -179,17 +189,11 @@ stock-analyzer-wails/
 http://78.push2.eastmoney.com/api/qt/clist/get
 ```
 
-**主要参数**：
-- `pn`: 页码
-- `pz`: 每页数量
-- `fields`: 返回字段（股票代码、名称、价格、涨跌幅等）
-- `fs`: 市场筛选（沪深A股）
+### 阿里百炼 (DashScope) API
 
-### OpenAI API
+使用阿里百炼提供的通义千问模型进行股票分析：
 
-使用OpenAI的GPT模型进行股票分析：
-
-**模型**：GPT-4或GPT-3.5-turbo
+**模型**：qwen-plus, qwen-max 等
 **功能**：
 - 基本面分析
 - 技术指标解读
@@ -198,8 +202,8 @@ http://78.push2.eastmoney.com/api/qt/clist/get
 
 ## 常见问题
 
-### Q: 如何获取OpenAI API密钥？
-A: 访问 https://platform.openai.com/ 注册账号并创建API密钥。
+### Q: 如何获取阿里百炼 API密钥？
+A: 访问 [阿里云百炼控制台](https://bailian.console.aliyun.com/) 申请 API Key。
 
 ### Q: 应用启动失败怎么办？
 A: 
@@ -208,32 +212,6 @@ A:
 3. 确认环境变量已正确配置
 4. 查看终端错误信息
 
-### Q: 股票数据获取失败？
-A: 
-1. 检查网络连接
-2. 确认输入的股票代码格式正确
-3. 东方财富API可能有访问频率限制
-
-### Q: AI分析响应慢？
-A: 
-1. OpenAI API响应时间取决于网络和服务器负载
-2. 可以考虑使用国内的OpenAI API代理服务
-3. 检查OPENAI_BASE_URL配置
-
-## 开发指南
-
-### 添加新功能
-
-1. **后端功能**：在 `services/` 目录添加新的服务文件
-2. **前端组件**：在 `frontend/src/components/` 添加React组件
-3. **数据模型**：在 `models/` 目录定义新的数据结构
-
-### 调试技巧
-
-- 使用 `wails dev` 启动开发模式，支持热重载
-- 在浏览器中调试：应用启动后访问 http://localhost:34115
-- 查看Go日志：在代码中使用 `runtime.LogInfo()` 等方法
-
 ## 许可证
 
 MIT License
@@ -241,10 +219,6 @@ MIT License
 ## 贡献
 
 欢迎提交Issue和Pull Request！
-
-## 联系方式
-
-如有问题或建议，请通过GitHub Issues联系。
 
 ---
 

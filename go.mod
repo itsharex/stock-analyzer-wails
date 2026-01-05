@@ -4,7 +4,8 @@ go 1.22
 
 require (
 	github.com/wailsapp/wails/v2 v2.11.0
-	github.com/sashabaranov/go-openai v1.35.7
+	github.com/cloudwego/eino v0.3.13
+	github.com/cloudwego/eino-ext/components/model/qwen v0.0.0-20250214074311-48906697843d
 )
 
 require (
