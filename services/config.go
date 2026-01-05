@@ -32,8 +32,10 @@ type DashscopeResolvedConfig struct {
 
 func LoadDashscopeConfig() (DashscopeResolvedConfig, error) {
 	const (
-		defaultModel   = "qwen-plus-2025-07-28"
-		defaultBaseURL = "https://dashscope.aliyuncs.com/compatible-moe/dv1"
+		defaultModel = "qwen-plus-2025-07-28"
+		// DashScope OpenAI 兼容模式（Chat Completions）
+		// 文档中常见写法为：https://dashscope.aliyuncs.com/compatible-mode/v1
+		defaultBaseURL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 	)
 
 	start := time.Now()
@@ -90,6 +92,15 @@ func LoadDashscopeConfig() (DashscopeResolvedConfig, error) {
 		strings.TrimSpace(os.Getenv("DASHSCOPE_BASE_URL")),
 		defaultBaseURL,
 	)
+	if normalized, changed := normalizeDashscopeBaseURL(baseURL); changed {
+		logger.Warn("DashScope base_url 已自动纠正",
+			zap.String("module", "services.config"),
+			zap.String("op", "LoadDashscopeConfig.normalizeDashscopeBaseURL"),
+			zap.String("base_url_before", baseURL),
+			zap.String("base_url_after", normalized),
+		)
+		baseURL = normalized
+	}
 
 	if apiKey == "" {
 		logger.Error("DashScope API Key 缺失",
@@ -124,6 +135,31 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
+// normalizeDashscopeBaseURL 用于将常见的历史/误写 base_url 自动纠正为可用的 DashScope OpenAI 兼容模式地址。
+//
+// 典型错误：
+// - compatible-moe -> compatible-mode
+// - dv1 -> v1
+// - 末尾多余的 /
+func normalizeDashscopeBaseURL(in string) (out string, changed bool) {
+	s := strings.TrimSpace(in)
+	if s == "" {
+		return s, false
+	}
+	s = strings.TrimRight(s, "/")
+
+	normalized := s
+	normalized = strings.ReplaceAll(normalized, "compatible-moe", "compatible-mode")
+	normalized = strings.ReplaceAll(normalized, "/dv1", "/v1")
+
+	// 允许用户仅写到 compatible-mode（补齐到 v1）
+	if strings.HasSuffix(normalized, "/compatible-mode") {
+		normalized += "/v1"
+	}
+
+	return normalized, normalized != s
+}
+
 func findConfigYAMLPath() (path string, ok bool, err error) {
 	paths := make([]string, 0, 2)
 
@@ -154,5 +190,3 @@ func findConfigYAMLPath() (path string, ok bool, err error) {
 
 	return "", false, nil
 }
-
-

@@ -39,8 +39,8 @@ func TestStockService_GetStockByCode(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			s := &StockService{
-				baseURL: tt.fields.baseURL,
-				client:  tt.fields.client,
+				//baseURL: tt.fields.baseURL,
+				client: tt.fields.client,
 			}
 			got, err := s.GetStockByCode(tt.args.code)
 			if (err != nil) != tt.wantErr {

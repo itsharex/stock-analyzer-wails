@@ -92,7 +92,7 @@ sudo apt-get install libgtk-3-dev libwebkit2gtk-4.0-dev
 dashscope:
   api_key: "your-dashscope-api-key-here"
   model: "qwen-plus-2025-07-28"
-  base_url: "https://dashscope.aliyuncs.com/compatible-moe/dv1"
+  base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
 ```
 
 **回退规则**：若未找到 `config.yaml` 或字段为空，将回退读取环境变量（兼容旧用法）。

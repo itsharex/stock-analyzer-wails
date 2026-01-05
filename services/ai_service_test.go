@@ -102,22 +102,9 @@ func TestAnalyzeStock_Mock(t *testing.T) {
 		ChangeRate: 1.5,
 	}
 
-	mockAIResponse := `## 摘要
-贵州茅台今日表现强劲。
-## 基本面分析
-公司盈利能力极强。
-## 技术面分析
-均线多头排列。
-## 投资建议
-建议持有。
-## 风险等级
-低风险。
-## 目标价位
-1800-1900元。`
-
 	// 2. 初始化带 Mock 的服务
 	mockModel := &MockChatModel{
-		mockResponse: mockAIResponse,
+
 	}
 	service := &AIService{
 		chatModel: mockModel,
@@ -141,5 +128,32 @@ func TestAnalyzeStock_Mock(t *testing.T) {
 
 	if report.RiskLevel != "\n低风险。\n" {
 		t.Errorf("风险等级提取错误, 实际: %q", report.RiskLevel)
+	}
+}
+
+
+func TestAnalyzeStock(t *testing.T) {
+	cfg, err := LoadDashscopeConfig()
+	if err != nil {
+		t.Fatalf("LoadDashscopeConfig 失败: %v", err)
+	}
+	aiService, err := NewAIService(cfg)
+	if err != nil {
+		t.Fatalf("NewAIService 失败: %v", err)
+	}
+	report, err := aiService.AnalyzeStock(&models.StockData{
+		Code: "600519",
+		Name: "贵州茅台",
+		Price: 1700.00,
+		ChangeRate: 1.5,
+	})
+	if err != nil {
+		t.Fatalf("AnalyzeStock 失败: %v", err)
+	}
+	if report.StockCode != "600519" {
+		t.Errorf("期望代码 600519, 实际 %s", report.StockCode)
+	}
+	if report.Summary != "\n贵州茅台今日表现强劲。\n" {
+		t.Errorf("摘要提取错误, 实际: %q", report.Summary)
 	}
 }
