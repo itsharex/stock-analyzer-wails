@@ -47,6 +47,8 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
   const [period, setPeriod] = useState<string>('daily')
   const [loading, setLoading] = useState(false)
   const [analysisLoading, setAnalysisLoading] = useState(false)
+  // 使用全局或更高层级的缓存（简单起见，这里先用组件外变量模拟，实际生产环境建议用 Context 或全局 Store）
+  // 但为了保持组件独立性，我们先通过优化 useEffect 逻辑来实现
   const [analysisResult, setAnalysisResult] = useState<TechnicalAnalysisResult | null>(null)
   const [role, setRole] = useState('technical')
 
@@ -95,6 +97,12 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
       setLoading(false)
     }
   }, [stock.code, chartType, getIntradayData, getMoneyFlowData, getStockHealthCheck])
+
+  // 初始加载逻辑：只在股票代码变化时重置分析结果
+  useEffect(() => {
+    setAnalysisResult(null)
+    setHealthCheck(null)
+  }, [stock.code])
 
   useEffect(() => {
     if (chartType === 'kline') {
