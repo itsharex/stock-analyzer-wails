@@ -15,8 +15,9 @@ import (
 )
 
 type AIService struct {
-	chatModel model.ChatModel
-	config    AIResolvedConfig
+	chatModel    model.ChatModel
+	config       AIResolvedConfig
+	cacheService *AnalysisCacheService
 }
 
 func NewAIService(cfg AIResolvedConfig) (*AIService, error) {
@@ -33,9 +34,12 @@ func NewAIService(cfg AIResolvedConfig) (*AIService, error) {
 		return nil, fmt.Errorf("创建 ChatModel 失败 (%s): %w", cfg.Provider, err)
 	}
 
+	cacheSvc, _ := NewAnalysisCacheService()
+
 	return &AIService{
-		chatModel: cm,
-		config:    cfg,
+		chatModel:    cm,
+		config:       cfg,
+		cacheService: cacheSvc,
 	}, nil
 }
 
@@ -146,6 +150,19 @@ func (s *AIService) GenerateAlertAdvice(stockName, alertType, label, role string
 }
 
 func (s *AIService) AnalyzeTechnical(stock *models.StockData, klines []*models.KLineData, role string) (*models.TechnicalAnalysisResult, error) {
+	// 1. 尝试从缓存获取
+	period := "daily" // 默认周期，实际可从外部传入
+	if len(klines) > 0 {
+		// 简单逻辑：根据K线间隔判断周期，这里简化处理
+	}
+	
+	if s.cacheService != nil {
+		if cached, ok := s.cacheService.Get(stock.Code, role, period); ok {
+			return cached, nil
+		}
+	}
+
+	// 2. 缓存未命中，执行 AI 分析
 	// 角色 Prompt 定义
 	rolePrompts := map[string]struct {
 		System string
@@ -282,14 +299,21 @@ func (s *AIService) AnalyzeTechnical(stock *models.StockData, klines []*models.K
 	cleanAnalysis = reRadar.ReplaceAllString(cleanAnalysis, "")
 	cleanAnalysis = reTrade.ReplaceAllString(cleanAnalysis, "")
 
-	return &models.TechnicalAnalysisResult{
+	result := &models.TechnicalAnalysisResult{
 		Analysis:     cleanAnalysis,
 		Drawings:     drawings,
 		RiskScore:    riskData.RiskScore,
 		ActionAdvice: riskData.ActionAdvice,
 		RadarData:    radarData,
 		TradePlan:    tradePlan,
-	}, nil
+	}
+
+	// 3. 存入缓存
+	if s.cacheService != nil {
+		s.cacheService.Set(stock.Code, role, period, *result)
+	}
+
+	return result, nil
 }
 
 // robustParseDrawings 递归模糊解析绘图数据
