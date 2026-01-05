@@ -1,7 +1,6 @@
 package services
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -50,17 +49,17 @@ type appYAML struct {
 }
 
 type AIResolvedConfig struct {
-	Provider       Provider            `json:"provider"`
-	APIKey         string              `json:"apiKey"`
-	BaseURL        string              `json:"baseUrl"`
-	Model          string              `json:"model"`
+	Provider       Provider              `json:"provider"`
+	APIKey         string                `json:"apiKey"`
+	BaseURL        string                `json:"baseUrl"`
+	Model          string                `json:"model"`
 	ProviderModels map[Provider][]string `json:"providerModels"`
 }
 
 func LoadAIConfig() (AIResolvedConfig, error) {
 	start := time.Now()
 	var cfg appYAML
-	
+
 	// 默认值
 	cfg.AI.Provider = ProviderQwen
 	cfg.AI.Model = "qwen-plus"
