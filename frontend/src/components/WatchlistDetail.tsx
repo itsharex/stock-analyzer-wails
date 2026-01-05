@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 import { StockData, KLineData, TechnicalAnalysisResult } from '../types'
 import { useWailsAPI } from '../hooks/useWailsAPI'
 import KLineChart from './KLineChart'
@@ -240,16 +242,18 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
                 </div>
 
                 {/* 核心结论 */}
+                <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 mb-4">
+                  <p className="text-blue-400 text-xs font-medium flex items-center">
+                    <Zap className="w-3 h-3 mr-1" />
+                    核心结论：{analysisResult.analysis.split('\n')[0].replace(/^[#\s*]+/, '')}
+                  </p>
+                </div>
+
+                {/* Markdown 渲染内容 */}
                 <div className="prose prose-invert prose-sm max-w-none">
-                  <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 mb-4">
-                    <p className="text-blue-400 text-xs font-medium flex items-center">
-                      <Zap className="w-3 h-3 mr-1" />
-                      核心结论：{analysisResult.analysis.split('\n')[0].replace(/^[#\s*]+/, '')}
-                    </p>
-                  </div>
-                  <div className="whitespace-pre-wrap text-slate-300 leading-relaxed text-xs">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
                     {analysisResult.analysis}
-                  </div>
+                  </ReactMarkdown>
                 </div>
               </div>
             ) : (
