@@ -109,7 +109,6 @@ func (s *StockService) GetKLineData(code string, limit int) ([]*models.KLineData
 		return nil, fmt.Errorf("无效的股票代码")
 	}
 
-	// 为了计算指标，我们需要比请求的 limit 更多的数据
 	fetchLimit := limit + 50
 	url := fmt.Sprintf("%s?secid=%s&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56&klt=101&fqt=1&end=20500101&lmt=%d", s.klineURL, secid, fetchLimit)
 
@@ -145,10 +144,8 @@ func (s *StockService) GetKLineData(code string, limit int) ([]*models.KLineData
 		})
 	}
 
-	// 计算技术指标
 	s.calculateIndicators(klines)
 
-	// 只返回用户请求的数量
 	if len(klines) > limit {
 		return klines[len(klines)-limit:], nil
 	}
@@ -160,7 +157,6 @@ func (s *StockService) calculateIndicators(klines []*models.KLineData) {
 		return
 	}
 
-	// 1. 计算 MACD (12, 26, 9)
 	ema12 := klines[0].Close
 	ema26 := klines[0].Close
 	dea := 0.0
@@ -180,7 +176,6 @@ func (s *StockService) calculateIndicators(klines []*models.KLineData) {
 		}
 	}
 
-	// 2. 计算 KDJ (9, 3, 3)
 	for i := 0; i < len(klines); i++ {
 		if i < 8 {
 			klines[i].KDJ = &models.KDJ{K: 50, D: 50, J: 50}
@@ -207,7 +202,6 @@ func (s *StockService) calculateIndicators(klines []*models.KLineData) {
 		}
 	}
 
-	// 3. 计算 RSI (14)
 	if len(klines) > 14 {
 		for i := 14; i < len(klines); i++ {
 			upSum := 0.0
@@ -281,4 +275,26 @@ func (s *StockService) SearchStockLegacy(keyword string) ([]*models.StockData, e
 		}
 	}
 	return results, nil
+}
+
+// 辅助解析函数
+func getString(v interface{}) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return ""
+}
+
+func getFloat(v interface{}) float64 {
+	if f, ok := v.(float64); ok {
+		return f
+	}
+	return 0
+}
+
+func getInt64(v interface{}) int64 {
+	if f, ok := v.(float64); ok {
+		return int64(f)
+	}
+	return 0
 }
