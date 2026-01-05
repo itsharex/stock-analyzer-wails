@@ -21,7 +21,7 @@ type AIService struct {
 
 func NewAIService(cfg AIResolvedConfig) (*AIService, error) {
 	ctx := context.Background()
-	
+
 	opts := &openai.ChatModelConfig{
 		APIKey:  cfg.APIKey,
 		BaseURL: cfg.BaseURL,
@@ -41,7 +41,7 @@ func NewAIService(cfg AIResolvedConfig) (*AIService, error) {
 
 func (s *AIService) AnalyzeStock(stock *models.StockData) (*models.AnalysisReport, error) {
 	ctx := context.Background()
-	
+
 	systemPrompt := `你是一个专业的A股股票分析师。你的受众包含大量股票新手，请在提到专业术语时，使用括号附带通俗易懂的解释。
 报告必须包含以下部分：
 1. 分析摘要：简要概括当前走势。
@@ -172,14 +172,20 @@ func (s *AIService) AnalyzeTechnical(stock *models.StockData, klines []*models.K
 	}
 	var klineSummary []string
 	startIdx := len(klines) - 60
-	if startIdx < 0 { startIdx = 0 }
-	
+	if startIdx < 0 {
+		startIdx = 0
+	}
+
 	var maxPrice, minPrice float64
 	for i := startIdx; i < len(klines); i++ {
 		k := klines[i]
-		if i == startIdx || k.High > maxPrice { maxPrice = k.High }
-		if i == startIdx || k.Low < minPrice { minPrice = k.Low }
-		
+		if i == startIdx || k.High > maxPrice {
+			maxPrice = k.High
+		}
+		if i == startIdx || k.Low < minPrice {
+			minPrice = k.Low
+		}
+
 		if i > len(klines)-15 || i%3 == 0 {
 			change := 0.0
 			if k.Open != 0 {
@@ -201,27 +207,27 @@ func (s *AIService) AnalyzeTechnical(stock *models.StockData, klines []*models.K
 		indicatorInfo += fmt.Sprintf("RSI:%.1f; ", lastK.RSI)
 	}
 
-			prompt := fmt.Sprintf("%s 请对股票 %s (%s) 进行深度多维度评估。\n"+
-				"%s\n"+
-				"你的受众包含大量股票新手，请在提到专业术语时，使用括号附带通俗易懂的解释。\n\n"+
-				"最近60个交易日数据(T-0为最新):\n%s\n\n"+
-				"当前指标: %s\n\n"+
-				"请输出五部分内容，**必须严格遵守以下标签格式，不要在标签内包含任何 Markdown 代码块标记（如 ```json）**：\n"+
-				"1. 【文字分析】：识别经典形态、量价配合、趋势阶段及操盘建议。\n"+
-				"2. 【风险评估】：请以纯 JSON 格式输出风险得分和操盘建议，放在 <RISK_JSON> 标签内。\n"+
-				"示例：<RISK_JSON>{\"riskScore\": 65, \"actionAdvice\": \"观望\"}</RISK_JSON>\n"+
-					"3. 【绘图数据】：请以纯 JSON 格式输出识别到的关键线段，放在 <DRAWING_JSON> 标签内。**注意：必须至少包含一个支撑位(support)和一个压力位(resistance)，如果趋势不明显，请选择最近的局部高低点。**\n"+
-				"4. 【多维度评分】：请以纯 JSON 格式输出五个维度的评分（0-100）及理由，放在 <RADAR_JSON> 标签内。\n"+
-				"5. 【智能交易计划】：请以纯 JSON 格式输出具体的交易建议，放在 <TRADE_JSON> 标签内。\n"+
-				"包括：建议仓位(suggestedPosition, 如\"30%%\")、止损价(stopLoss)、止盈价(takeProfit)、盈亏比(riskRewardRatio)、操作策略(strategy)。\n\n"+
-				"**重要：即使你正在扮演特定角色，也请确保 JSON 标签内的内容是纯净的 JSON 字符串，以便程序解析。**",
-				selectedRole.System, stock.Name, stock.Code, selectedRole.Style, strings.Join(klineSummary, "\n"), indicatorInfo)
-	
-		ctx := context.Background()
-		messages := []*schema.Message{
-			schema.SystemMessage(selectedRole.System + " 你精通K线绘图和风险管理，擅长用通俗易懂的语言向新手解释复杂的金融术语。"),
-			schema.UserMessage(prompt),
-		}
+	prompt := fmt.Sprintf("%s 请对股票 %s (%s) 进行深度多维度评估。\n"+
+		"%s\n"+
+		"你的受众包含大量股票新手，请在提到专业术语时，使用括号附带通俗易懂的解释。\n\n"+
+		"最近60个交易日数据(T-0为最新):\n%s\n\n"+
+		"当前指标: %s\n\n"+
+		"请输出五部分内容，**必须严格遵守以下标签格式，不要在标签内包含任何 Markdown 代码块标记（如 ```json）**：\n"+
+		"1. 【文字分析】：识别经典形态、量价配合、趋势阶段及操盘建议。\n"+
+		"2. 【风险评估】：请以纯 JSON 格式输出风险得分和操盘建议，放在 <RISK_JSON> 标签内。\n"+
+		"示例：<RISK_JSON>{\"riskScore\": 65, \"actionAdvice\": \"观望\"}</RISK_JSON>\n"+
+		"3. 【绘图数据】：请以纯 JSON 格式输出识别到的关键线段，放在 <DRAWING_JSON> 标签内。**注意：必须至少包含一个支撑位(support)和一个压力位(resistance)，如果趋势不明显，请选择最近的局部高低点。**\n"+
+		"4. 【多维度评分】：请以纯 JSON 格式输出五个维度的评分（0-100）及理由，放在 <RADAR_JSON> 标签内。\n"+
+		"5. 【智能交易计划】：请以纯 JSON 格式输出具体的交易建议，放在 <TRADE_JSON> 标签内。\n"+
+		"包括：建议仓位(suggestedPosition, 如\"30%%\")、止损价(stopLoss)、止盈价(takeProfit)、盈亏比(riskRewardRatio)、操作策略(strategy)。\n\n"+
+		"**重要：即使你正在扮演特定角色，也请确保 JSON 标签内的内容是纯净的 JSON 字符串，以便程序解析。**",
+		selectedRole.System, stock.Name, stock.Code, selectedRole.Style, strings.Join(klineSummary, "\n"), indicatorInfo)
+
+	ctx := context.Background()
+	messages := []*schema.Message{
+		schema.SystemMessage(selectedRole.System + " 你精通K线绘图和风险管理，擅长用通俗易懂的语言向新手解释复杂的金融术语。"),
+		schema.UserMessage(prompt),
+	}
 
 	resp, err := s.chatModel.Generate(ctx, messages)
 	if err != nil {
@@ -229,7 +235,7 @@ func (s *AIService) AnalyzeTechnical(stock *models.StockData, klines []*models.K
 	}
 
 	content := resp.Content
-	
+
 	// 辅助函数：清理 JSON 字符串中的 Markdown 标记
 	cleanJSON := func(s string) string {
 		s = strings.TrimSpace(s)
@@ -297,7 +303,9 @@ func robustParseDrawings(jsonStr string) []models.TechnicalDrawing {
 	// 辅助函数：尝试从 map 中获取 float64
 	getFloat := func(m map[string]interface{}, keys ...string) (float64, bool) {
 		for _, k := range keys {
-			if v, ok := m[k].(float64); ok { return v, true }
+			if v, ok := m[k].(float64); ok {
+				return v, true
+			}
 		}
 		return 0, false
 	}
@@ -305,7 +313,9 @@ func robustParseDrawings(jsonStr string) []models.TechnicalDrawing {
 	// 辅助函数：尝试从 map 中获取 string
 	getString := func(m map[string]interface{}, keys ...string) (string, bool) {
 		for _, k := range keys {
-			if v, ok := m[k].(string); ok { return v, true }
+			if v, ok := m[k].(string); ok {
+				return v, true
+			}
 		}
 		return "", false
 	}
@@ -314,21 +324,27 @@ func robustParseDrawings(jsonStr string) []models.TechnicalDrawing {
 	search = func(data interface{}) {
 		switch v := data.(type) {
 		case []interface{}:
-			for _, item := range v { search(item) }
+			for _, item := range v {
+				search(item)
+			}
 		case map[string]interface{}:
 			// 启发式识别：如果一个对象同时拥有“价格特征”
 			price, hasPrice := getFloat(v, "price", "level", "value", "val", "support", "resistance")
 			label, _ := getString(v, "label", "name", "desc", "role")
 			role, hasRole := getString(v, "type", "role", "kind")
-			
+
 			if hasPrice && price > 0 {
 				dType := role
 				if !hasRole {
 					// 如果没有明确 type，尝试从字段名推断
-					if _, ok := v["support"]; ok { dType = "support" }
-					if _, ok := v["resistance"]; ok { dType = "resistance" }
+					if _, ok := v["support"]; ok {
+						dType = "support"
+					}
+					if _, ok := v["resistance"]; ok {
+						dType = "resistance"
+					}
 				}
-				
+
 				results = append(results, models.TechnicalDrawing{
 					Price: price,
 					Type:  dType,
@@ -336,7 +352,9 @@ func robustParseDrawings(jsonStr string) []models.TechnicalDrawing {
 				})
 			}
 			// 继续深挖子节点（如 segments 数组）
-			for _, val := range v { search(val) }
+			for _, val := range v {
+				search(val)
+			}
 		}
 	}
 
