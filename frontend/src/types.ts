@@ -37,20 +37,15 @@ export interface AnalysisReport {
 }
 
 /**
- * 搜索结果类型定义
+ * 系统配置类型定义
  */
-export interface SearchResult {
-  code: string
-  name: string
-  price: number
-  changeRate: number
+export interface AppConfig {
+  apiKey: string
+  baseUrl: string
+  model: string
 }
 
 /**
- * API 错误响应类型定义
+ * 导航菜单项
  */
-export interface ApiError {
-  message: string
-  code?: string
-  details?: any
-}
+export type NavItem = 'analysis' | 'settings'

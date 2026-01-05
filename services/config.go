@@ -25,16 +25,14 @@ type appYAML struct {
 }
 
 type DashscopeResolvedConfig struct {
-	APIKey  string
-	Model   string
-	BaseURL string
+	APIKey  string `json:"apiKey"`
+	Model   string `json:"model"`
+	BaseURL string `json:"baseUrl"`
 }
 
 func LoadDashscopeConfig() (DashscopeResolvedConfig, error) {
 	const (
 		defaultModel = "qwen-plus-2025-07-28"
-		// DashScope OpenAI 兼容模式（Chat Completions）
-		// 文档中常见写法为：https://dashscope.aliyuncs.com/compatible-mode/v1
 		defaultBaseURL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 	)
 
@@ -56,24 +54,9 @@ func LoadDashscopeConfig() (DashscopeResolvedConfig, error) {
 		)
 		raw, err := os.ReadFile(path)
 		if err != nil {
-			logger.Error("读取 config.yaml 失败",
-				zap.String("module", "services.config"),
-				zap.String("op", "LoadDashscopeConfig.os.ReadFile"),
-				zap.String("config_path", path),
-				zap.Int64("duration_ms", time.Since(start).Milliseconds()),
-				zap.Error(err),
-			)
 			return DashscopeResolvedConfig{}, fmt.Errorf("读取配置文件失败: %s: %w", path, err)
 		}
 		if err := yaml.Unmarshal(raw, &cfg); err != nil {
-			logger.Error("解析 config.yaml 失败",
-				zap.String("module", "services.config"),
-				zap.String("op", "LoadDashscopeConfig.yaml.Unmarshal"),
-				zap.String("config_path", path),
-				zap.Int("body_size", len(raw)),
-				zap.Int64("duration_ms", time.Since(start).Milliseconds()),
-				zap.Error(err),
-			)
 			return DashscopeResolvedConfig{}, fmt.Errorf("解析配置文件失败: %s: %w", path, err)
 		}
 	}
@@ -93,37 +76,47 @@ func LoadDashscopeConfig() (DashscopeResolvedConfig, error) {
 		defaultBaseURL,
 	)
 	if normalized, changed := normalizeDashscopeBaseURL(baseURL); changed {
-		logger.Warn("DashScope base_url 已自动纠正",
-			zap.String("module", "services.config"),
-			zap.String("op", "LoadDashscopeConfig.normalizeDashscopeBaseURL"),
-			zap.String("base_url_before", baseURL),
-			zap.String("base_url_after", normalized),
-		)
 		baseURL = normalized
 	}
 
-	if apiKey == "" {
-		logger.Error("DashScope API Key 缺失",
-			zap.String("module", "services.config"),
-			zap.String("op", "LoadDashscopeConfig.validate"),
-			zap.Bool("has_yaml_api_key", strings.TrimSpace(cfg.Dashscope.APIKey) != ""),
-			zap.Bool("has_env_api_key", strings.TrimSpace(os.Getenv("DASHSCOPE_API_KEY")) != ""),
-		)
-		return DashscopeResolvedConfig{}, errors.New("DashScope API Key 缺失：请在 config.yaml 的 dashscope.api_key 或环境变量 DASHSCOPE_API_KEY 中配置")
-	}
-
-	logger.Info("DashScope 配置加载完成",
-		zap.String("module", "services.config"),
-		zap.String("op", "LoadDashscopeConfig"),
-		zap.String("model", model),
-		zap.String("base_url", baseURL),
-		zap.Int64("duration_ms", time.Since(start).Milliseconds()),
-	)
 	return DashscopeResolvedConfig{
 		APIKey:  apiKey,
 		Model:   model,
 		BaseURL: baseURL,
 	}, nil
+}
+
+// SaveDashscopeConfig 保存配置到 config.yaml
+func SaveDashscopeConfig(config DashscopeResolvedConfig) error {
+	path, ok, err := findConfigYAMLPath()
+	if err != nil {
+		return err
+	}
+	if !ok {
+		// 如果不存在，默认在当前工作目录创建
+		cwd, _ := os.Getwd()
+		path = filepath.Join(cwd, "config.yaml")
+	}
+
+	cfg := appYAML{
+		Dashscope: dashscopeYAML{
+			APIKey:  config.APIKey,
+			Model:   config.Model,
+			BaseURL: config.BaseURL,
+		},
+	}
+
+	data, err := yaml.Marshal(&cfg)
+	if err != nil {
+		return fmt.Errorf("序列化配置失败: %w", err)
+	}
+
+	err = os.WriteFile(path, data, 0644)
+	if err != nil {
+		return fmt.Errorf("写入配置文件失败: %w", err)
+	}
+
+	return nil
 }
 
 func firstNonEmpty(values ...string) string {
@@ -135,12 +128,6 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-// normalizeDashscopeBaseURL 用于将常见的历史/误写 base_url 自动纠正为可用的 DashScope OpenAI 兼容模式地址。
-//
-// 典型错误：
-// - compatible-moe -> compatible-mode
-// - dv1 -> v1
-// - 末尾多余的 /
 func normalizeDashscopeBaseURL(in string) (out string, changed bool) {
 	s := strings.TrimSpace(in)
 	if s == "" {
@@ -152,7 +139,6 @@ func normalizeDashscopeBaseURL(in string) (out string, changed bool) {
 	normalized = strings.ReplaceAll(normalized, "compatible-moe", "compatible-mode")
 	normalized = strings.ReplaceAll(normalized, "/dv1", "/v1")
 
-	// 允许用户仅写到 compatible-mode（补齐到 v1）
 	if strings.HasSuffix(normalized, "/compatible-mode") {
 		normalized += "/v1"
 	}
@@ -162,31 +148,20 @@ func normalizeDashscopeBaseURL(in string) (out string, changed bool) {
 
 func findConfigYAMLPath() (path string, ok bool, err error) {
 	paths := make([]string, 0, 2)
-
-	// 1) 可执行文件目录
 	exe, err := os.Executable()
-	if err != nil {
-		return "", false, fmt.Errorf("获取可执行文件路径失败: %w", err)
+	if err == nil {
+		paths = append(paths, filepath.Join(filepath.Dir(exe), "config.yaml"))
 	}
-	paths = append(paths, filepath.Join(filepath.Dir(exe), "config.yaml"))
-
-	// 2) 当前工作目录
 	cwd, err := os.Getwd()
-	if err != nil {
-		return "", false, fmt.Errorf("获取当前工作目录失败: %w", err)
+	if err == nil {
+		paths = append(paths, filepath.Join(cwd, "config.yaml"))
 	}
-	paths = append(paths, filepath.Join(cwd, "config.yaml"))
 
 	for _, p := range paths {
 		_, statErr := os.Stat(p)
 		if statErr == nil {
 			return p, true, nil
 		}
-		if errors.Is(statErr, os.ErrNotExist) {
-			continue
-		}
-		return "", false, fmt.Errorf("检查配置文件失败: %s: %w", p, statErr)
 	}
-
 	return "", false, nil
 }
