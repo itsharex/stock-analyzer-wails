@@ -1,209 +1,236 @@
 import { useState, useEffect } from 'react'
-import { useWailsAPI } from '../hooks/useWailsAPI'
+import { StockData, KLineData, TechnicalAnalysisResult } from '../types'
+import useWailsAPI from '../hooks/useWailsAPI'
 import KLineChart from './KLineChart'
-import type { StockData, KLineData } from '../types'
+import { 
+  TrendingUp, 
+  TrendingDown, 
+  BarChart2, 
+  Activity, 
+  Clock, 
+  ChevronDown,
+  BrainCircuit,
+  Loader2,
+  LineChart as LineChartIcon,
+  PencilRuler
+} from 'lucide-react'
 
 interface WatchlistDetailProps {
   stock: StockData
 }
 
-type Period = 'daily' | 'week' | 'month'
-
 function WatchlistDetail({ stock }: WatchlistDetailProps) {
-  const [klines, setKlines] = useState<KLineData[]>([])
-  const [loading, setLoading] = useState(true)
-  const [period, setPeriod] = useState<Period>('daily')
-  const [techAnalysis, setTechAnalysis] = useState<string>('')
-  const [analyzing, setAnalyzing] = useState(false)
-  const [indicators, setIndicators] = useState({
-    macd: false,
-    kdj: false,
-    rsi: false
-  })
   const { getKLineData, analyzeTechnical } = useWailsAPI()
+  const [klineData, setKlineData] = useState<KLineData[]>([])
+  const [period, setPeriod] = useState<string>('daily')
+  const [loading, setLoading] = useState(false)
+  const [analysisLoading, setAnalysisLoading] = useState(false)
+  const [analysisResult, setAnalysisResult] = useState<TechnicalAnalysisResult | null>(null)
+  
+  // 指标显示控制
+  const [showMACD, setShowMACD] = useState(false)
+  const [showKDJ, setShowKDJ] = useState(false)
+  const [showRSI, setShowRSI] = useState(false)
+  const [showAIDrawings, setShowAIDrawings] = useState(true)
 
   useEffect(() => {
-    loadKLines()
-    setTechAnalysis('') // 切换股票或周期时清空分析
+    loadKLineData()
   }, [stock.code, period])
 
-  const loadKLines = async () => {
+  const loadKLineData = async () => {
     setLoading(true)
     try {
-      const data = await getKLineData(stock.code, 150, period)
-      setKlines(data)
-    } catch (err) {
-      console.error('Failed to load K-lines:', err)
+      const data = await getKLineData(stock.code, 100, period)
+      setKlineData(data)
+    } catch (error) {
+      console.error('加载K线数据失败:', error)
     } finally {
       setLoading(false)
     }
   }
 
-  const handleTechnicalAnalysis = async () => {
-    setAnalyzing(true)
+  const handleAnalyze = async () => {
+    setAnalysisLoading(true)
     try {
       const result = await analyzeTechnical(stock.code, period)
-      setTechAnalysis(result)
-    } catch (err) {
-      console.error('Technical analysis failed:', err)
+      setAnalysisResult(result)
+      setShowAIDrawings(true)
+    } catch (error) {
+      console.error('技术分析失败:', error)
     } finally {
-      setAnalyzing(false)
+      setAnalysisLoading(false)
     }
   }
 
-  const toggleIndicator = (key: keyof typeof indicators) => {
-    setIndicators(prev => ({ ...prev, [key]: !prev[key] }))
-  }
-
-  const periodLabels: Record<Period, string> = {
-    daily: '日线',
-    week: '周线',
-    month: '月线'
-  }
-
   return (
-    <div className="space-y-6 pb-12">
-      {/* 头部概览 */}
-      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 flex items-center justify-between">
-        <div>
-          <div className="flex items-center space-x-3">
-            <h2 className="text-2xl font-bold text-gray-900">{stock.name}</h2>
-            <span className="px-2 py-1 bg-gray-100 text-gray-500 rounded text-xs font-mono">{stock.code}</span>
+    <div className="flex flex-col h-full bg-slate-50 overflow-hidden">
+      {/* 顶部行情概览 */}
+      <div className="bg-white p-4 border-b border-slate-200 flex items-center justify-between">
+        <div className="flex items-center space-x-4">
+          <div>
+            <h2 className="text-2xl font-bold text-slate-900">{stock.name}</h2>
+            <p className="text-sm text-slate-500">{stock.code}</p>
           </div>
-          <div className="flex items-center space-x-4 mt-2">
-            <span className="text-3xl font-mono font-bold text-gray-900">{stock.price.toFixed(2)}</span>
-            <div className={`flex flex-col ${stock.changeRate >= 0 ? 'text-red-500' : 'text-green-500'}`}>
-              <span className="text-sm font-bold">{stock.changeRate >= 0 ? '+' : ''}{stock.changeRate.toFixed(2)}%</span>
-              <span className="text-xs">{stock.change >= 0 ? '+' : ''}{stock.change.toFixed(2)}</span>
+          <div className="h-10 w-px bg-slate-200 mx-2" />
+          <div>
+            <div className={`text-2xl font-mono font-bold ${stock.change >= 0 ? 'text-red-500' : 'text-green-500'}`}>
+              {stock.price.toFixed(2)}
+            </div>
+            <div className={`text-sm font-medium ${stock.change >= 0 ? 'text-red-500' : 'text-green-500'}`}>
+              {stock.change >= 0 ? '+' : ''}{stock.change.toFixed(2)} ({stock.changeRate.toFixed(2)}%)
             </div>
           </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-8 text-right">
-          <div>
-            <p className="text-[10px] text-gray-400 uppercase font-bold">最高</p>
-            <p className="text-sm font-mono font-bold text-red-500">{stock.high.toFixed(2)}</p>
+        <div className="grid grid-cols-4 gap-8">
+          <div className="text-center">
+            <p className="text-xs text-slate-400 uppercase tracking-wider">最高</p>
+            <p className="text-sm font-semibold text-slate-700">{stock.high.toFixed(2)}</p>
           </div>
-          <div>
-            <p className="text-[10px] text-gray-400 uppercase font-bold">最低</p>
-            <p className="text-sm font-mono font-bold text-green-500">{stock.low.toFixed(2)}</p>
+          <div className="text-center">
+            <p className="text-xs text-slate-400 uppercase tracking-wider">最低</p>
+            <p className="text-sm font-semibold text-slate-700">{stock.low.toFixed(2)}</p>
           </div>
-          <div>
-            <p className="text-[10px] text-gray-400 uppercase font-bold">成交量</p>
-            <p className="text-sm font-mono font-bold text-gray-700">{(stock.volume / 10000).toFixed(2)}万</p>
+          <div className="text-center">
+            <p className="text-xs text-slate-400 uppercase tracking-wider">成交量</p>
+            <p className="text-sm font-semibold text-slate-700">{(stock.volume / 10000).toFixed(2)}万</p>
+          </div>
+          <div className="text-center">
+            <p className="text-xs text-slate-400 uppercase tracking-wider">换手率</p>
+            <p className="text-sm font-semibold text-slate-700">{stock.turnover.toFixed(2)}%</p>
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-6">
-        {/* 左侧：K线图 (占2列) */}
-        <div className="col-span-2 space-y-6">
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-            <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center space-x-4">
-                <h3 className="font-bold text-gray-800 flex items-center">
-                  <span className="mr-2">📈</span> 行情图表
-                </h3>
-                
-                <select 
-                  value={period}
-                  onChange={(e) => setPeriod(e.target.value as Period)}
-                  className="block pl-3 pr-10 py-1 text-xs font-bold border-gray-200 focus:outline-none focus:ring-blue-500 focus:border-blue-500 rounded-md bg-gray-50 text-gray-700 cursor-pointer"
-                >
-                  <option value="daily">日线</option>
-                  <option value="week">周线</option>
-                  <option value="month">月线</option>
-                </select>
-
-                <div className="flex bg-gray-100 p-1 rounded-lg">
-                  {['macd', 'kdj', 'rsi'].map((key) => (
-                    <button 
-                      key={key}
-                      onClick={() => toggleIndicator(key as any)}
-                      className={`px-3 py-1 rounded-md text-xs font-bold transition-all ${indicators[key as keyof typeof indicators] ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
-                    >
-                      {key.toUpperCase()}
-                    </button>
-                  ))}
+      {/* 主体内容区 */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* 左侧图表区 */}
+        <div className="flex-1 flex flex-col p-4 overflow-y-auto">
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex-1 flex flex-col">
+            {/* 图表控制栏 */}
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center space-x-2">
+                <div className="relative">
+                  <select 
+                    value={period}
+                    onChange={(e) => setPeriod(e.target.value)}
+                    className="appearance-none bg-slate-100 border-none rounded-lg px-4 py-2 pr-10 text-sm font-medium text-slate-700 focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                  >
+                    <option value="daily">日线</option>
+                    <option value="weekly">周线</option>
+                    <option value="monthly">月线</option>
+                  </select>
+                  <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
                 </div>
+                
+                <div className="h-6 w-px bg-slate-200 mx-2" />
+                
+                <div className="flex bg-slate-100 rounded-lg p-1">
+                  <button 
+                    onClick={() => setShowMACD(!showMACD)}
+                    className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${showMACD ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                  >
+                    MACD
+                  </button>
+                  <button 
+                    onClick={() => setShowKDJ(!showKDJ)}
+                    className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${showKDJ ? 'bg-white text-purple-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                  >
+                    KDJ
+                  </button>
+                  <button 
+                    onClick={() => setShowRSI(!showRSI)}
+                    className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${showRSI ? 'bg-white text-cyan-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                  >
+                    RSI
+                  </button>
+                </div>
+
+                {analysisResult && (
+                  <button 
+                    onClick={() => setShowAIDrawings(!showAIDrawings)}
+                    className={`flex items-center space-x-1 px-3 py-1 text-xs font-bold rounded-md transition-all ${showAIDrawings ? 'bg-blue-50 text-blue-600 border border-blue-200' : 'bg-slate-100 text-slate-500'}`}
+                  >
+                    <PencilRuler className="w-3 h-3" />
+                    <span>AI 绘图</span>
+                  </button>
+                )}
+              </div>
+
+              <div className="flex items-center text-slate-400 text-xs space-x-4">
+                <span className="flex items-center"><Clock className="w-3 h-3 mr-1" /> 实时更新</span>
+                <span className="flex items-center"><Activity className="w-3 h-3 mr-1" /> 东方财富数据源</span>
               </div>
             </div>
-            
-            {loading ? (
-              <div className="h-[500px] flex items-center justify-center">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
-              </div>
-            ) : (
-              <KLineChart 
-                data={klines} 
-                height={500}
-                showMACD={indicators.macd}
-                showKDJ={indicators.kdj}
-                showRSI={indicators.rsi}
-              />
-            )}
-          </div>
 
-          {/* 更多指标 */}
-          <div className="grid grid-cols-4 gap-4">
-            {[
-              { label: '换手率', value: `${stock.turnover.toFixed(2)}%` },
-              { label: '市盈率(动)', value: stock.pe.toFixed(2) },
-              { label: '市净率', value: stock.pb.toFixed(2) },
-              { label: '总市值', value: `${(stock.totalMV / 100000000).toFixed(2)}亿` },
-            ].map((item, i) => (
-              <div key={i} className="bg-white rounded-xl border border-gray-100 p-4">
-                <p className="text-[10px] text-gray-400 uppercase font-bold mb-1">{item.label}</p>
-                <p className="text-lg font-mono font-bold text-gray-800">{item.value}</p>
-              </div>
-            ))}
+            {/* K线图容器 */}
+            <div className="flex-1 relative min-h-[500px] bg-slate-50 rounded-lg border border-slate-100 overflow-hidden">
+              {loading ? (
+                <div className="absolute inset-0 flex items-center justify-center bg-white/80 z-10">
+                  <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
+                </div>
+              ) : (
+                <KLineChart 
+                  data={klineData} 
+                  drawings={showAIDrawings ? analysisResult?.drawings : []}
+                  showMACD={showMACD} 
+                  showKDJ={showKDJ} 
+                  showRSI={showRSI} 
+                />
+              )}
+            </div>
           </div>
         </div>
 
-        {/* 右侧：技术分析师面板 (占1列) */}
-        <div className="col-span-1">
-          <div className="bg-slate-900 rounded-2xl shadow-xl border border-slate-800 p-6 h-full flex flex-col">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="text-white font-bold flex items-center">
-                <span className="mr-2 text-xl">👨‍💻</span> 技术分析师
-              </h3>
-              <span className="px-2 py-0.5 bg-blue-500/20 text-blue-400 rounded text-[10px] font-bold border border-blue-500/30">PRO</span>
+        {/* 右侧技术分析师面板 */}
+        <div className="w-96 bg-slate-900 border-l border-slate-800 flex flex-col">
+          <div className="p-4 border-b border-slate-800 flex items-center justify-between">
+            <div className="flex items-center space-x-2 text-blue-400">
+              <BrainCircuit className="w-5 h-5" />
+              <h3 className="font-bold text-slate-100">技术分析师</h3>
             </div>
-
-            <div className="flex-1 overflow-y-auto custom-scrollbar">
-              {analyzing ? (
-                <div className="flex flex-col items-center justify-center h-full space-y-4">
-                  <div className="w-12 h-12 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin"></div>
-                  <p className="text-slate-400 text-xs animate-pulse">正在深度复盘量价形态...</p>
-                </div>
-              ) : techAnalysis ? (
-                <div className="prose prose-invert prose-sm max-w-none">
-                  <div className="text-slate-300 leading-relaxed whitespace-pre-wrap text-xs">
-                    {techAnalysis}
-                  </div>
-                </div>
-              ) : (
-                <div className="flex flex-col items-center justify-center h-full text-center space-y-4 px-4">
-                  <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center text-3xl">📊</div>
-                  <div>
-                    <p className="text-slate-300 font-bold text-sm">需要深度技术解读吗？</p>
-                    <p className="text-slate-500 text-xs mt-1">我将结合当前 {periodLabels[period]} 的 K 线形态和技术指标为您提供操盘建议。</p>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            <button
-              onClick={handleTechnicalAnalysis}
-              disabled={analyzing || loading}
-              className={`mt-6 w-full py-3 rounded-xl font-bold text-sm transition-all flex items-center justify-center space-x-2 ${
-                analyzing || loading 
-                ? 'bg-slate-800 text-slate-500 cursor-not-allowed' 
-                : 'bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-900/20 active:scale-[0.98]'
-              }`}
+            <button 
+              onClick={handleAnalyze}
+              disabled={analysisLoading || klineData.length === 0}
+              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 text-white text-xs font-bold rounded-lg transition-colors flex items-center space-x-1"
             >
-              {analyzing ? '分析中...' : '开始深度技术分析'}
+              {analysisLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <LineChartIcon className="w-3 h-3" />}
+              <span>{analysisResult ? '重新分析' : '开始深度分析'}</span>
             </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+            {analysisLoading ? (
+              <div className="flex flex-col items-center justify-center h-64 space-y-4 text-slate-500">
+                <div className="relative">
+                  <BrainCircuit className="w-12 h-12 text-blue-500/20 animate-pulse" />
+                  <Loader2 className="absolute inset-0 w-12 h-12 text-blue-500 animate-spin" />
+                </div>
+                <p className="text-sm animate-pulse">正在识别K线形态与趋势线...</p>
+              </div>
+            ) : analysisResult ? (
+              <div className="prose prose-invert prose-sm max-w-none">
+                <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 mb-4">
+                  <p className="text-blue-400 text-xs font-medium flex items-center">
+                    <PencilRuler className="w-3 h-3 mr-1" />
+                    AI 已在图表中自动绘制识别到的趋势线与支撑位
+                  </p>
+                </div>
+                <div className="whitespace-pre-wrap text-slate-300 leading-relaxed">
+                  {analysisResult.analysis}
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center h-64 text-center space-y-4">
+                <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center">
+                  <LineChartIcon className="w-8 h-8 text-slate-600" />
+                </div>
+                <div>
+                  <p className="text-slate-400 font-medium">暂无深度分析</p>
+                  <p className="text-xs text-slate-600 mt-1">点击上方按钮，让 AI 为您识别<br/>复杂形态与趋势线</p>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

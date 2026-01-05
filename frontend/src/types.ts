@@ -70,6 +70,27 @@ export interface AnalysisReport {
 }
 
 /**
+ * AI 识别的绘图数据
+ */
+export interface TechnicalDrawing {
+  type: 'support' | 'resistance' | 'trendline'
+  price?: number
+  start?: string
+  end?: string
+  startPrice?: number
+  endPrice?: number
+  label: string
+}
+
+/**
+ * 深度技术分析结果
+ */
+export interface TechnicalAnalysisResult {
+  analysis: string
+  drawings: TechnicalDrawing[]
+}
+
+/**
  * 系统配置类型定义
  */
 export interface AppConfig {

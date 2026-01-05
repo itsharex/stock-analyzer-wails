@@ -2,7 +2,9 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"regexp"
 	"stock-analyzer-wails/models"
 	"strings"
 	"time"
@@ -112,27 +114,24 @@ func (s *AIService) AnalyzeStock(stock *models.StockData) (*models.AnalysisRepor
 	return report, nil
 }
 
-// AnalyzeTechnical 深度技术面分析（形态识别专家）
-func (s *AIService) AnalyzeTechnical(stock *models.StockData, klines []*models.KLineData) (string, error) {
-	// 1. 准备更长周期的K线简要数据（最近60个交易日），以便识别复杂形态
+// AnalyzeTechnical 深度技术面分析（支持绘图数据输出）
+func (s *AIService) AnalyzeTechnical(stock *models.StockData, klines []*models.KLineData) (*models.TechnicalAnalysisResult, error) {
 	var klineSummary []string
 	startIdx := len(klines) - 60
 	if startIdx < 0 { startIdx = 0 }
 	
-	// 记录最高和最低价，帮助AI定位波峰波谷
 	var maxPrice, minPrice float64
 	for i := startIdx; i < len(klines); i++ {
 		k := klines[i]
 		if i == startIdx || k.High > maxPrice { maxPrice = k.High }
 		if i == startIdx || k.Low < minPrice { minPrice = k.Low }
 		
-		// 抽样记录，避免Token过长，但保留最近15天的详细数据
 		if i > len(klines)-15 || i%3 == 0 {
 			change := 0.0
 			if k.Open != 0 {
 				change = (k.Close - k.Open) / k.Open * 100
 			}
-			klineSummary = append(klineSummary, fmt.Sprintf("T-%d(%s): O:%.2f, C:%.2f, H:%.2f, L:%.2f, Vol:%d, Chg:%.2f%%", len(klines)-1-i, k.Time, k.Open, k.Close, k.High, k.Low, k.Volume, change))
+			klineSummary = append(klineSummary, fmt.Sprintf("T-%d(%s): O:%.2f, C:%.2f, H:%.2f, L:%.2f, Vol:%d, Chg:%.2f%%", len(klines)-1-i, k.Time, k.Close, k.High, k.Low, k.Volume, change))
 		}
 	}
 
@@ -148,39 +147,54 @@ func (s *AIService) AnalyzeTechnical(stock *models.StockData, klines []*models.K
 		indicatorInfo += fmt.Sprintf("RSI:%.1f; ", lastK.RSI)
 	}
 
-	prompt := fmt.Sprintf(`你是一位拥有20年经验的顶级技术分析师，精通查尔斯·道、江恩及艾略特波浪理论。你擅长识别复杂的K线形态并捕捉趋势反转。
+	prompt := fmt.Sprintf(`你是一位顶级技术分析师。请对股票 %s (%s) 进行深度形态识别。
 
-当前股票: %s (%s)
-最新价格: %.2f
-周期内最高: %.2f, 最低: %.2f
-
-最近60个交易日量价序列(T-0为最新):
+最近60个交易日数据(T-0为最新):
 %s
 
-当前技术指标:
-%s
+当前指标: %s
 
-请作为“形态识别专家”给出深度的技术面解读：
-1. 【形态识别】：重点检索是否存在以下形态：头肩顶/底、双底(W底)/双顶(M头)、三重顶/底、上升/下降三角形、旗形、楔形或圆弧底。请说明识别依据。
-2. 【量价验证】：分析当前形态是否得到成交量的配合（如突破颈线时是否放量）。
-3. 【趋势评估】：当前处于趋势的哪个阶段（筑底、上升、派发、下跌）？
-4. 【关键位测算】：给出明确的颈线位、支撑位、压力位及形态完成后的理论目标位。
-5. 【操盘策略】：给出基于形态确认的买入/卖出/止损建议。
+请输出两部分内容：
+1. 【文字分析】：识别经典形态（头肩、双底、三角形等）、量价配合、趋势阶段及操盘建议。
+2. 【绘图数据】：请以 JSON 格式输出识别到的关键线段，放在 <DRAWING_JSON> 标签内。
+JSON 格式示例：
+[
+  {"type": "support", "price": 15.5, "label": "强支撑位"},
+  {"type": "resistance", "price": 18.2, "label": "近期压力位"},
+  {"type": "trendline", "start": "2023-10-01", "startPrice": 14.2, "end": "2023-12-01", "endPrice": 17.5, "label": "上升趋势线"}
+]
 
-请直接输出分析内容，口吻专业、犀利、客观，使用Markdown格式。`, stock.Name, stock.Code, stock.Price, maxPrice, minPrice, strings.Join(klineSummary, "\n"), indicatorInfo)
+注意：时间格式必须与数据中的 YYYY-MM-DD 一致。`, stock.Name, stock.Code, strings.Join(klineSummary, "\n"), indicatorInfo)
 
 	ctx := context.Background()
 	messages := []*schema.Message{
-		schema.SystemMessage("你是一个顶尖的K线形态识别专家，能够从杂乱的量价数据中发现经典的趋势反转和持续形态。"),
+		schema.SystemMessage("你是一个精通K线绘图的技术分析师。"),
 		schema.UserMessage(prompt),
 	}
 
 	resp, err := s.chatModel.Generate(ctx, messages)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	return resp.Content, nil
+	content := resp.Content
+	
+	// 提取 JSON
+	drawings := []models.TechnicalDrawing{}
+	re := regexp.MustCompile(`(?s)<DRAWING_JSON>(.*?)</DRAWING_JSON>`)
+	match := re.FindStringSubmatch(content)
+	if len(match) > 1 {
+		jsonStr := strings.TrimSpace(match[1])
+		json.Unmarshal([]byte(jsonStr), &drawings)
+	}
+
+	// 移除 JSON 标签后的纯文字分析
+	cleanAnalysis := re.ReplaceAllString(content, "")
+
+	return &models.TechnicalAnalysisResult{
+		Analysis: cleanAnalysis,
+		Drawings: drawings,
+	}, nil
 }
 
 func extractSectionImpl(text, startMarker, endMarker string) string {

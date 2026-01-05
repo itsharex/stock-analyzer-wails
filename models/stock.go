@@ -59,6 +59,23 @@ type AnalysisReport struct {
 	GeneratedAt    string `json:"generatedAt"`    // 生成时间
 }
 
+// TechnicalAnalysisResult 深度技术分析结果（包含绘图数据）
+type TechnicalAnalysisResult struct {
+	Analysis string            `json:"analysis"`
+	Drawings []TechnicalDrawing `json:"drawings"`
+}
+
+// TechnicalDrawing AI识别的绘图数据
+type TechnicalDrawing struct {
+	Type       string  `json:"type"`       // "support", "resistance", "trendline"
+	Price      float64 `json:"price"`      // 用于支撑/阻力位
+	Start      string  `json:"start"`      // 用于趋势线起点时间
+	End        string  `json:"end"`        // 用于趋势线终点时间
+	StartPrice float64 `json:"startPrice"` // 趋势线起点价格
+	EndPrice   float64 `json:"endPrice"`   // 趋势线终点价格
+	Label      string  `json:"label"`      // 标签
+}
+
 // EastMoneyResponse 东方财富API响应结构
 type EastMoneyResponse struct {
 	RC   int    `json:"rc"`

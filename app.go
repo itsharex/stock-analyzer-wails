@@ -113,20 +113,20 @@ func (a *App) AnalyzeStock(code string) (*models.AnalysisReport, error) {
 	return a.aiService.AnalyzeStock(stock)
 }
 
-// AnalyzeTechnical 深度技术面分析
-func (a *App) AnalyzeTechnical(code string, period string) (string, error) {
+// AnalyzeTechnical 深度技术面分析（支持绘图数据）
+func (a *App) AnalyzeTechnical(code string, period string) (*models.TechnicalAnalysisResult, error) {
 	if a.aiService == nil {
-		return "", fmt.Errorf("AI服务未就绪")
+		return nil, fmt.Errorf("AI服务未就绪")
 	}
 
 	stock, err := a.stockService.GetStockByCode(code)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	klines, err := a.stockService.GetKLineData(code, 100, period)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	return a.aiService.AnalyzeTechnical(stock, klines)
