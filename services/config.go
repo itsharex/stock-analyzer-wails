@@ -1,7 +1,6 @@
 package services
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -32,7 +31,7 @@ type DashscopeResolvedConfig struct {
 
 func LoadDashscopeConfig() (DashscopeResolvedConfig, error) {
 	const (
-		defaultModel = "qwen-plus-2025-07-28"
+		defaultModel   = "qwen-plus-2025-07-28"
 		defaultBaseURL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 	)
 
