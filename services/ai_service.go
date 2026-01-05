@@ -112,19 +112,28 @@ func (s *AIService) AnalyzeStock(stock *models.StockData) (*models.AnalysisRepor
 	return report, nil
 }
 
-// AnalyzeTechnical 深度技术面分析（技术分析师角色）
+// AnalyzeTechnical 深度技术面分析（形态识别专家）
 func (s *AIService) AnalyzeTechnical(stock *models.StockData, klines []*models.KLineData) (string, error) {
-	// 准备K线简要数据
+	// 1. 准备更长周期的K线简要数据（最近60个交易日），以便识别复杂形态
 	var klineSummary []string
-	startIdx := len(klines) - 10
+	startIdx := len(klines) - 60
 	if startIdx < 0 { startIdx = 0 }
+	
+	// 记录最高和最低价，帮助AI定位波峰波谷
+	var maxPrice, minPrice float64
 	for i := startIdx; i < len(klines); i++ {
 		k := klines[i]
-		change := 0.0
-		if k.Open != 0 {
-			change = (k.Close - k.Open) / k.Open * 100
+		if i == startIdx || k.High > maxPrice { maxPrice = k.High }
+		if i == startIdx || k.Low < minPrice { minPrice = k.Low }
+		
+		// 抽样记录，避免Token过长，但保留最近15天的详细数据
+		if i > len(klines)-15 || i%3 == 0 {
+			change := 0.0
+			if k.Open != 0 {
+				change = (k.Close - k.Open) / k.Open * 100
+			}
+			klineSummary = append(klineSummary, fmt.Sprintf("T-%d(%s): O:%.2f, C:%.2f, H:%.2f, L:%.2f, Vol:%d, Chg:%.2f%%", len(klines)-1-i, k.Time, k.Open, k.Close, k.High, k.Low, k.Volume, change))
 		}
-		klineSummary = append(klineSummary, fmt.Sprintf("日期:%s, 收盘:%.2f, 涨跌:%.2f%%, 成交量:%d", k.Time, k.Close, change, k.Volume))
 	}
 
 	lastK := klines[len(klines)-1]
@@ -139,28 +148,30 @@ func (s *AIService) AnalyzeTechnical(stock *models.StockData, klines []*models.K
 		indicatorInfo += fmt.Sprintf("RSI:%.1f; ", lastK.RSI)
 	}
 
-	prompt := fmt.Sprintf(`你是一位拥有20年经验的资深技术分析师，擅长通过量价关系、K线形态和技术指标捕捉买卖点。
+	prompt := fmt.Sprintf(`你是一位拥有20年经验的顶级技术分析师，精通查尔斯·道、江恩及艾略特波浪理论。你擅长识别复杂的K线形态并捕捉趋势反转。
 
 当前股票: %s (%s)
 最新价格: %.2f
-最近10个交易日走势:
+周期内最高: %.2f, 最低: %.2f
+
+最近60个交易日量价序列(T-0为最新):
 %s
 
 当前技术指标:
 %s
 
-请作为“技术分析师”给出深度的技术面解读，包括：
-1. K线形态分析（如：多头排列、空头陷阱、金叉/死叉等）
-2. 量价配合情况
-3. 指标背离或共振情况
-4. 短期支撑位与压力位
-5. 具体的操盘策略建议
+请作为“形态识别专家”给出深度的技术面解读：
+1. 【形态识别】：重点检索是否存在以下形态：头肩顶/底、双底(W底)/双顶(M头)、三重顶/底、上升/下降三角形、旗形、楔形或圆弧底。请说明识别依据。
+2. 【量价验证】：分析当前形态是否得到成交量的配合（如突破颈线时是否放量）。
+3. 【趋势评估】：当前处于趋势的哪个阶段（筑底、上升、派发、下跌）？
+4. 【关键位测算】：给出明确的颈线位、支撑位、压力位及形态完成后的理论目标位。
+5. 【操盘策略】：给出基于形态确认的买入/卖出/止损建议。
 
-请直接输出分析内容，使用专业、冷静、客观的口吻，使用Markdown格式。`, stock.Name, stock.Code, stock.Price, strings.Join(klineSummary, "\n"), indicatorInfo)
+请直接输出分析内容，口吻专业、犀利、客观，使用Markdown格式。`, stock.Name, stock.Code, stock.Price, maxPrice, minPrice, strings.Join(klineSummary, "\n"), indicatorInfo)
 
 	ctx := context.Background()
 	messages := []*schema.Message{
-		schema.SystemMessage("你是一个冷酷而专业的股票技术分析师，只相信数据和图形。"),
+		schema.SystemMessage("你是一个顶尖的K线形态识别专家，能够从杂乱的量价数据中发现经典的趋势反转和持续形态。"),
 		schema.UserMessage(prompt),
 	}
 
