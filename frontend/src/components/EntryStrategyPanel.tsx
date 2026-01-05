@@ -1,13 +1,19 @@
-import React from 'react'
-import { Target, Shield, TrendingUp, Info, CheckCircle2, AlertTriangle } from 'lucide-react'
-import type { EntryStrategyResult } from '../types'
+import React, { useState } from 'react'
+import { Target, Shield, TrendingUp, Info, CheckCircle2, AlertTriangle, Settings2 } from 'lucide-react'
+import type { EntryStrategyResult, TrailingStopConfig } from '../types'
 
 interface EntryStrategyPanelProps {
   strategy: EntryStrategyResult
-  onConfirm?: () => void
+  onConfirm?: (config: TrailingStopConfig) => void
 }
 
 const EntryStrategyPanel: React.FC<EntryStrategyPanelProps> = ({ strategy, onConfirm }) => {
+  const [trailingConfig, setTrailingConfig] = useState<TrailingStopConfig>({
+    enabled: true,
+    activationThreshold: 0.05,
+    callbackRate: 0.03
+  })
+  const [showAdvanced, setShowAdvanced] = useState(false)
   const getReasonIcon = (type: string) => {
     switch (type) {
       case 'fundamental': return <Info className="w-4 h-4 text-blue-500" />
@@ -78,6 +84,62 @@ const EntryStrategyPanel: React.FC<EntryStrategyPanelProps> = ({ strategy, onCon
           </div>
         </div>
 
+        {/* 移动止损高级配置 */}
+        <div className="mt-2 pt-4 border-t border-gray-100">
+          <button 
+            onClick={() => setShowAdvanced(!showAdvanced)}
+            className="flex items-center justify-between w-full text-xs font-bold text-gray-400 hover:text-gray-600 transition-colors"
+          >
+            <div className="flex items-center">
+              <Settings2 className="w-3 h-3 mr-1" />
+              移动止损策略 (Trailing Stop)
+            </div>
+            <span>{showAdvanced ? '收起' : '展开配置'}</span>
+          </button>
+          
+          {showAdvanced && (
+            <div className="mt-3 p-3 bg-blue-50/50 rounded-lg border border-blue-100 animate-in fade-in slide-in-from-top-1">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs text-gray-600">启用自动移动止损</span>
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input 
+                    type="checkbox" 
+                    className="sr-only peer" 
+                    checked={trailingConfig.enabled}
+                    onChange={(e) => setTrailingConfig({...trailingConfig, enabled: e.target.checked})}
+                  />
+                  <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+                </label>
+              </div>
+              
+              {trailingConfig.enabled && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] text-gray-500 mb-1">启动阈值 (盈利 %)</label>
+                    <input 
+                      type="number" 
+                      step="1"
+                      value={trailingConfig.activationThreshold * 100}
+                      onChange={(e) => setTrailingConfig({...trailingConfig, activationThreshold: Number(e.target.value) / 100})}
+                      className="w-full bg-white border border-blue-200 rounded px-2 py-1 text-xs text-blue-700 focus:outline-none focus:border-blue-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-gray-500 mb-1">跟踪回撤 (%)</label>
+                    <input 
+                      type="number" 
+                      step="0.5"
+                      value={trailingConfig.callbackRate * 100}
+                      onChange={(e) => setTrailingConfig({...trailingConfig, callbackRate: Number(e.target.value) / 100})}
+                      className="w-full bg-white border border-blue-200 rounded px-2 py-1 text-xs text-blue-700 focus:outline-none focus:border-blue-400"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
         {/* 盈亏比与确认按钮 */}
         <div className="pt-2 flex items-center justify-between">
           <div className="text-xs text-gray-500">
@@ -85,7 +147,7 @@ const EntryStrategyPanel: React.FC<EntryStrategyPanelProps> = ({ strategy, onCon
           </div>
           {onConfirm && (
             <button
-              onClick={onConfirm}
+              onClick={() => onConfirm(trailingConfig)}
               className="px-6 py-2 bg-blue-600 text-white rounded-lg font-bold text-sm hover:bg-blue-700 transition-all shadow-md shadow-blue-200"
             >
               确认按此方案建仓

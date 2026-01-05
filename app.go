@@ -147,21 +147,22 @@ func (a *App) checkPositionLogics() {
 
 // updateTrailingStop 动态更新移动止损位 (M4)
 func (a *App) updateTrailingStop(pos *models.Position, currentPrice float64) {
-	// 只有当股价高于买入价时，才启动移动止损逻辑
-	if currentPrice <= pos.EntryPrice {
+	config := pos.TrailingConfig
+	// 如果未启用移动止损，或者股价低于买入价，则跳过
+	if !config.Enabled || currentPrice <= pos.EntryPrice {
 		return
 	}
 
 	// 计算当前盈利比例
 	profitRate := (currentPrice - pos.EntryPrice) / pos.EntryPrice
 	
-	// 动态调整止损位 (阶梯式移动止损)
-	// 规则：盈利超过 5% 后，止损位上移至 (当前价 - 3%)
+	// 动态调整止损位 (参数化移动止损)
 	newStopLoss := pos.Strategy.StopLossPrice
 	
-	if profitRate > 0.05 {
-		// 保护性止损：至少保本 (买入价 + 0.5% 手续费)
-		potentialStop := currentPrice * 0.97 
+	// 只有当盈利超过触发阈值时才启动
+	if profitRate > config.ActivationThreshold {
+		// 使用配置的回撤比例计算新止损位
+		potentialStop := currentPrice * (1 - config.CallbackRate)
 		if potentialStop > pos.Strategy.StopLossPrice {
 			newStopLoss = potentialStop
 		}

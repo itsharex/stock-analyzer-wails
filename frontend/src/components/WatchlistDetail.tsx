@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { StockData, KLineData, TechnicalAnalysisResult, IntradayData, MoneyFlowResponse, HealthCheckResult, EntryStrategyResult } from '../types'
+import { StockData, KLineData, TechnicalAnalysisResult, IntradayData, MoneyFlowResponse, HealthCheckResult, EntryStrategyResult, TrailingStopConfig } from '../types'
 import { useWailsAPI } from '../hooks/useWailsAPI'
 import KLineChart from './KLineChart'
 import IntradayChart from './IntradayChart'
@@ -17,7 +17,6 @@ import {
   ChevronDown,
   BrainCircuit,
   Loader2,
-  LineChart as LineChartIcon,
   PencilRuler,
   ShieldCheck,
   Zap,
@@ -49,8 +48,6 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
   const [period, setPeriod] = useState<string>('daily')
   const [loading, setLoading] = useState(false)
   const [analysisLoading, setAnalysisLoading] = useState(false)
-  // 使用全局或更高层级的缓存（简单起见，这里先用组件外变量模拟，实际生产环境建议用 Context 或全局 Store）
-  // 但为了保持组件独立性，我们先通过优化 useEffect 逻辑来实现
   const [analysisResult, setAnalysisResult] = useState<TechnicalAnalysisResult | null>(null)
   const [entryStrategy, setEntryStrategy] = useState<EntryStrategyResult | null>(null)
   const [entryLoading, setEntryLoading] = useState(false)
@@ -62,7 +59,6 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
     { id: 'aggressive', name: '激进先锋官', icon: Sword, color: 'text-rose-600', bg: 'bg-rose-50' },
   ]
   
-  // 指标显示控制
   const [showMACD, setShowMACD] = useState(false)
   const [showKDJ, setShowKDJ] = useState(false)
   const [showRSI, setShowRSI] = useState(false)
@@ -102,7 +98,6 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
     }
   }, [stock.code, chartType, getIntradayData, getMoneyFlowData, getStockHealthCheck])
 
-  // 初始加载逻辑：只在股票代码变化时重置分析结果
   useEffect(() => {
     setAnalysisResult(null)
     setHealthCheck(null)
@@ -117,14 +112,11 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
     }
   }, [chartType, loadKLineData, loadIntradayData])
 
-  // 自动刷新逻辑 (每30秒)
   useEffect(() => {
     if (chartType !== 'intraday') return
-    
     const timer = setInterval(() => {
       loadIntradayData()
     }, 30000)
-    
     return () => clearInterval(timer)
   }, [chartType, loadIntradayData])
 
@@ -150,6 +142,27 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
       console.error('建仓分析失败:', error)
     } finally {
       setEntryLoading(false)
+    }
+  }
+
+  const handleConfirmEntry = async (config: TrailingStopConfig) => {
+    if (!entryStrategy || !stock) return
+    try {
+      await addPosition({
+        stockCode: stock.code,
+        stockName: stock.name,
+        entryPrice: stock.price,
+        entryTime: new Date().toISOString(),
+        strategy: entryStrategy,
+        trailingConfig: config,
+        currentStatus: 'holding',
+        logicStatus: 'valid'
+      })
+      setEntryStrategy(null)
+      alert('建仓成功，系统已开始实时监控逻辑！')
+    } catch (error) {
+      console.error('确认建仓失败:', error)
+      alert('建仓失败，请重试')
     }
   }
 
@@ -181,7 +194,6 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
 
   return (
     <div className="flex flex-col h-full bg-slate-50 overflow-hidden">
-      {/* 顶部行情概览 */}
       <div className="bg-white p-4 border-b border-slate-200 flex items-center justify-between">
         <div className="flex items-center space-x-4">
           <div>
@@ -219,12 +231,9 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
         </div>
       </div>
 
-      {/* 主体内容区 */}
       <div className="flex-1 flex overflow-hidden">
-        {/* 左侧图表区 */}
         <div className="flex-1 flex flex-col p-2 lg:p-4 overflow-y-auto">
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex-1 flex flex-col">
-            {/* 图表控制栏 */}
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center space-x-2">
                 <div className="flex bg-slate-100 rounded-lg p-1 mr-2">
@@ -256,35 +265,14 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
                       </select>
                       <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
                     </div>
-                    
                     <div className="h-6 w-px bg-slate-200 mx-2" />
-                    
                     <div className="flex bg-slate-100 rounded-lg p-1">
-                      <button 
-                        onClick={() => setShowMACD(!showMACD)}
-                        className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${showMACD ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                      >
-                        MACD
-                      </button>
-                      <button 
-                        onClick={() => setShowKDJ(!showKDJ)}
-                        className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${showKDJ ? 'bg-white text-purple-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                      >
-                        KDJ
-                      </button>
-                      <button 
-                        onClick={() => setShowRSI(!showRSI)}
-                        className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${showRSI ? 'bg-white text-cyan-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                      >
-                        RSI
-                      </button>
+                      <button onClick={() => setShowMACD(!showMACD)} className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${showMACD ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>MACD</button>
+                      <button onClick={() => setShowKDJ(!showKDJ)} className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${showKDJ ? 'bg-white text-purple-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>KDJ</button>
+                      <button onClick={() => setShowRSI(!showRSI)} className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${showRSI ? 'bg-white text-cyan-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>RSI</button>
                     </div>
-
                     {analysisResult && (
-                      <button 
-                        onClick={() => setShowAIDrawings(!showAIDrawings)}
-                        className={`flex items-center space-x-1 px-3 py-1 text-xs font-bold rounded-md transition-all ${showAIDrawings ? 'bg-blue-50 text-blue-600 border border-blue-200' : 'bg-slate-100 text-slate-500'}`}
-                      >
+                      <button onClick={() => setShowAIDrawings(!showAIDrawings)} className={`flex items-center space-x-1 px-3 py-1 text-xs font-bold rounded-md transition-all ${showAIDrawings ? 'bg-blue-50 text-blue-600 border border-blue-200' : 'bg-slate-100 text-slate-500'}`}>
                         <PencilRuler className="w-3 h-3" />
                         <span>AI 绘图</span>
                       </button>
@@ -292,37 +280,28 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
                   </>
                 ) : (
                   <div className="flex bg-slate-100 rounded-lg p-1">
-                    <button 
-                      onClick={() => setShowMoneyFlow(!showMoneyFlow)}
-                      className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${showMoneyFlow ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                    >
-                      资金流向
-                    </button>
+                    <button onClick={() => setShowMoneyFlow(!showMoneyFlow)} className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${showMoneyFlow ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>资金流向</button>
                   </div>
                 )}
               </div>
-
               <div className="flex items-center text-slate-400 text-xs space-x-4">
                 <span className="flex items-center"><Clock className="w-3 h-3 mr-1" /> {chartType === 'intraday' ? '30秒自动刷新' : '实时更新'}</span>
                 <span className="flex items-center"><Activity className="w-3 h-3 mr-1" /> 东方财富数据源</span>
               </div>
             </div>
 
-            {/* 异动快报滚动条 */}
             {chartType === 'intraday' && moneyFlowResponse && (
               <div className="mb-4 rounded-lg overflow-hidden border border-slate-800">
                 <SignalTicker data={moneyFlowResponse.data} />
               </div>
             )}
 
-            {/* AI 深度体检报告 */}
             {healthCheck && (
               <div className="mb-6">
                 <StockHealthPanel data={healthCheck} />
               </div>
             )}
 
-            {/* 智能资金状态标签 */}
             {chartType === 'intraday' && moneyFlowResponse && (
               <div className={`mb-4 p-3 rounded-xl border flex items-start space-x-3 transition-all ${getStatusColor(moneyFlowResponse.status)}`}>
                 <div className="mt-0.5">{getStatusIcon(moneyFlowResponse.status)}</div>
@@ -336,7 +315,6 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
               </div>
             )}
 
-            {/* 图表容器 */}
             <div className="flex-1 flex flex-col space-y-2 min-h-[500px]">
               <div className="flex-[2] relative bg-slate-50 rounded-lg border border-slate-100 overflow-hidden">
                 {loading && (
@@ -344,25 +322,12 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
                     <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
                   </div>
                 )}
-                
                 {chartType === 'kline' ? (
-                  <KLineChart 
-                    data={klineData} 
-                    drawings={showAIDrawings ? analysisResult?.drawings : []}
-                    showMACD={showMACD} 
-                    showKDJ={showKDJ} 
-                    showRSI={showRSI} 
-                  />
+                  <KLineChart data={klineData} drawings={showAIDrawings ? analysisResult?.drawings : []} showMACD={showMACD} showKDJ={showKDJ} showRSI={showRSI} />
                 ) : (
-                  <IntradayChart 
-                    data={intradayData}
-                    moneyFlowData={moneyFlowResponse?.data}
-                    preClose={preClose}
-                    height={400}
-                  />
+                  <IntradayChart data={intradayData} moneyFlowData={moneyFlowResponse?.data} preClose={preClose} height={400} />
                 )}
               </div>
-
               {chartType === 'intraday' && showMoneyFlow && moneyFlowResponse && (
                 <div className="flex-1 relative bg-slate-50 rounded-lg border border-slate-100 overflow-hidden">
                   <MoneyFlowChart data={moneyFlowResponse.data} height={180} />
@@ -372,10 +337,8 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
           </div>
         </div>
 
-        {/* 右侧技术分析师面板 */}
         <div className="w-[480px] bg-slate-50 border-l border-slate-200 flex flex-col shadow-[-10px_0_30px_rgba(0,0,0,0.03)] z-10">
           <div className="p-5 border-b border-slate-200 flex flex-col space-y-4 bg-white/50 backdrop-blur-sm">
-            {/* 资金概览卡片 */}
             {chartType === 'intraday' && moneyFlowResponse && (
               <div className="grid grid-cols-2 gap-3 mb-2">
                 <div className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
@@ -383,50 +346,42 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
                     <Wallet className="w-3 h-3" />
                     <span className="text-[10px] font-bold uppercase tracking-wider">主力净流入</span>
                   </div>
-                  <div className={`text-lg font-mono font-bold ${moneyFlowResponse.todayMain >= 0 ? 'text-red-500' : 'text-green-500'}`}>
+                  <div className={`text-lg font-black ${moneyFlowResponse.todayMain >= 0 ? 'text-red-500' : 'text-green-500'}`}>
                     {moneyFlowResponse.todayMain >= 0 ? '+' : ''}{(moneyFlowResponse.todayMain / 10000).toFixed(2)}万
                   </div>
                 </div>
                 <div className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
                   <div className="flex items-center space-x-2 text-slate-400 mb-1">
-                    <Activity className="w-3 h-3" />
-                    <span className="text-[10px] font-bold uppercase tracking-wider">散户净流入</span>
+                    <Target className="w-3 h-3" />
+                    <span className="text-[10px] font-bold uppercase tracking-wider">主力占比</span>
                   </div>
-                  <div className={`text-lg font-mono font-bold ${moneyFlowResponse.todayRetail >= 0 ? 'text-red-500' : 'text-green-500'}`}>
-                    {moneyFlowResponse.todayRetail >= 0 ? '+' : ''}{(moneyFlowResponse.todayRetail / 10000).toFixed(2)}万
+                  <div className="text-lg font-black text-slate-700">
+                    {((moneyFlowResponse.todayMain / (Math.abs(moneyFlowResponse.todayMain) + Math.abs(moneyFlowResponse.todayRetail) || 1)) * 100).toFixed(1)}%
                   </div>
                 </div>
               </div>
             )}
 
-            <div className="flex items-center justify-between w-full">
-              <div className="flex items-center space-x-2.5 text-blue-600">
-                <div className="p-1.5 bg-blue-50 rounded-lg">
-                  <BrainCircuit className="w-5 h-5" />
-                </div>
-                <h3 className="font-bold text-slate-800 tracking-tight">AI 投资顾问</h3>
-              </div>
+            <div className="flex items-center justify-between">
               <div className="flex items-center space-x-2">
-                <button 
-                  onClick={() => handleEntryAnalyze()}
-                  disabled={entryLoading || analysisLoading}
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white text-xs font-bold rounded-xl transition-all shadow-sm hover:shadow-md flex items-center space-x-1.5"
-                >
-                  {entryLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Target className="w-3.5 h-3.5" />}
-                  <span>{entryStrategy ? '重新评估建仓' : 'AI 建仓分析'}</span>
-                </button>
-                <button 
-                  onClick={() => handleAnalyze()}
-                  disabled={analysisLoading || (chartType === 'kline' ? klineData.length === 0 : intradayData.length === 0)}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white text-xs font-bold rounded-xl transition-all shadow-sm hover:shadow-md flex items-center space-x-1.5"
-                >
-                  {analysisLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <LineChartIcon className="w-3.5 h-3.5" />}
-                  <span>{analysisResult ? '重新分析' : '开始深度分析'}</span>
-                </button>
+                <div className="p-2 bg-blue-600 rounded-xl shadow-lg shadow-blue-200">
+                  <BrainCircuit className="w-5 h-5 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-slate-800">AI 智能分析师</h3>
+                  <p className="text-[10px] text-slate-400 font-medium">DeepSeek-V3 引擎驱动</p>
+                </div>
               </div>
+              <button 
+                onClick={handleEntryAnalyze}
+                disabled={entryLoading}
+                className="flex items-center space-x-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-indigo-100 disabled:opacity-50"
+              >
+                {entryLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Target className="w-3 h-3" />}
+                <span>建仓分析</span>
+              </button>
             </div>
 
-            {/* 角色切换器 */}
             <div className="flex p-1 bg-slate-100 rounded-2xl border border-slate-200">
               {roles.map((r) => (
                 <button
@@ -450,28 +405,11 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
           </div>
 
           <div className="flex-1 overflow-y-auto p-6 custom-scrollbar bg-gradient-to-b from-white/30 to-transparent">
-            {/* 建仓分析面板 */}
             {entryStrategy && (
-              <div className="mb-8">
+              <div className="mt-4 mb-8">
                 <EntryStrategyPanel 
                   strategy={entryStrategy} 
-                  onConfirm={async () => {
-                    try {
-                      await addPosition({
-                        stockCode: stock.code,
-                        stockName: stock.name,
-                        entryPrice: stock.price,
-                        entryTime: new Date().toISOString(),
-                        strategy: entryStrategy,
-                        currentStatus: 'holding',
-                        logicStatus: 'valid'
-                      })
-                      alert('建仓成功！系统已开始实时监控您的建仓逻辑。')
-                    } catch (error) {
-                      console.error('建仓失败:', error)
-                      alert('建仓失败，请重试')
-                    }
-                  }} 
+                  onConfirm={handleConfirmEntry}
                 />
               </div>
             )}
@@ -487,7 +425,6 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
               </div>
             ) : analysisResult ? (
               <div className="space-y-8">
-                {/* 多维度评分雷达图 */}
                 {analysisResult.radarData && analysisResult.radarData.scores && Object.keys(analysisResult.radarData.scores).length > 0 && (
                   <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
                     <div className="flex items-center space-x-2 mb-4">
@@ -500,7 +437,6 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
                   </div>
                 )}
 
-                {/* 风险与建议看板 */}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="bg-white border border-slate-200 rounded-2xl p-4 flex flex-col items-center justify-center shadow-sm hover:shadow-md transition-shadow">
                     <p className="text-[10px] text-slate-400 uppercase tracking-widest font-bold mb-2">操盘建议</p>
@@ -516,12 +452,10 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
                   </div>
                 </div>
 
-                {/* 智能交易计划 */}
                 {analysisResult.tradePlan && (
                   <TradePlanCard plan={analysisResult.tradePlan} currentPrice={stock.price} />
                 )}
 
-                {/* 核心结论 */}
                 <div className="bg-blue-600/5 border border-blue-600/10 rounded-2xl p-5 mb-6 relative overflow-hidden group">
                   <div className="absolute top-0 left-0 w-1 h-full bg-blue-500" />
                   <p className="text-blue-700 text-sm font-bold flex items-center mb-1">
@@ -533,7 +467,6 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
                   </p>
                 </div>
 
-                {/* Markdown 渲染内容 */}
                 <div className="prose prose-slate prose-sm max-w-none prose-headings:text-slate-800 prose-p:text-slate-600 prose-strong:text-blue-600">
                   <ReactMarkdown 
                     remarkPlugins={[remarkGfm]}
@@ -550,8 +483,6 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
                     {analysisResult.analysis}
                   </ReactMarkdown>
                 </div>
-
-                {/* 术语百科面板 */}
                 <GlossaryPanel text={analysisResult.analysis} />
               </div>
             ) : (

@@ -209,12 +209,19 @@ export interface EntryStrategyResult {
   actionPlan: string
 }
 
+export interface TrailingStopConfig {
+  enabled: boolean
+  activationThreshold: number
+  callbackRate: number
+}
+
 export interface Position {
   stockCode: string
   stockName: string
   entryPrice: number
   entryTime: string
   strategy: EntryStrategyResult
+  trailingConfig: TrailingStopConfig
   currentStatus: 'holding' | 'closed'
   logicStatus: 'valid' | 'violated' | 'warning'
 }

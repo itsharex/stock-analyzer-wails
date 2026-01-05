@@ -201,16 +201,24 @@ type CoreReason struct {
 	Threshold   string `json:"threshold"`   // 逻辑失效的触发阈值
 }
 
+// TrailingStopConfig 移动止损个性化配置
+type TrailingStopConfig struct {
+	Enabled             bool    `json:"enabled"`             // 是否启用
+	ActivationThreshold float64 `json:"activationThreshold"` // 触发阈值 (如 0.05 代表盈利 5% 启动)
+	CallbackRate        float64 `json:"callbackRate"`        // 跟踪回撤比例 (如 0.03 代表回撤 3% 止盈)
+}
+
 // Position 持仓记录（用于逻辑跟踪）
 type Position struct {
-	StockCode     string              `json:"stockCode"`
-	StockName     string              `json:"stockName"`
-	EntryPrice    float64             `json:"entryPrice"`
-	EntryTime     time.Time           `json:"entryTime"`
-	Strategy      EntryStrategyResult `json:"strategy"`
-	CurrentStatus string              `json:"currentStatus"` // "holding", "closed"
-	LogicStatus   string              `json:"logicStatus"`   // "valid", "violated", "warning"
-	UpdatedAt     time.Time           `json:"updatedAt"`
+	StockCode      string              `json:"stockCode"`
+	StockName      string              `json:"stockName"`
+	EntryPrice     float64             `json:"entryPrice"`
+	EntryTime      time.Time           `json:"entryTime"`
+	Strategy       EntryStrategyResult `json:"strategy"`
+	TrailingConfig TrailingStopConfig  `json:"trailingConfig"` // 移动止损配置
+	CurrentStatus  string              `json:"currentStatus"`  // "holding", "closed"
+	LogicStatus    string              `json:"logicStatus"`    // "valid", "violated", "warning"
+	UpdatedAt      time.Time           `json:"updatedAt"`
 }
 
 // EastMoneyResponse 东方财富API响应结构
