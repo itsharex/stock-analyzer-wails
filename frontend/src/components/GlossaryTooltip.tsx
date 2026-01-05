@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { STOCK_GLOSSARY } from '../utils/glossary';
-import { HelpCircle, Info } from 'lucide-react';
+import { HelpCircle, Info, BookOpen } from 'lucide-react';
 
 interface GlossaryTooltipProps {
   term: string;
@@ -53,18 +53,19 @@ export function GlossaryPanel({ text }: { text: string }) {
   if (terms.length === 0) return null;
 
   return (
-    <div className="mt-6 pt-6 border-t border-slate-800">
-      <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-4 flex items-center">
-        <Info className="w-3 h-3 mr-2" />
+    <div className="mt-8 pt-8 border-t border-slate-800">
+      <h4 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-5 flex items-center">
+        <BookOpen className="w-4 h-4 mr-2 text-blue-500" />
         报告术语百科
       </h4>
-      <div className="grid gap-3">
+      <div className="grid gap-4">
         {terms.map(term => (
-          <div key={term} className="bg-slate-800/30 rounded-lg p-3 border border-slate-700/30">
-            <div className="flex items-center space-x-2 mb-1">
-              <span className="text-xs font-bold text-blue-400">{term}</span>
+          <div key={term} className="bg-slate-800/40 rounded-xl p-4 border border-slate-700/50 hover:border-blue-500/30 transition-colors">
+            <div className="flex items-center space-x-2 mb-2">
+              <div className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+              <span className="text-sm font-bold text-slate-200">{term}</span>
             </div>
-            <p className="text-xs text-slate-400 leading-relaxed">
+            <p className="text-xs text-slate-400 leading-relaxed pl-3.5 border-l border-slate-700">
               {STOCK_GLOSSARY[term].simpleExplanation}
             </p>
           </div>
