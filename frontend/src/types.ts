@@ -83,6 +83,7 @@ export interface MoneyFlowData {
   medium: number
   small: number
   mainNet: number
+  signal?: string
 }
 
 /**

@@ -1,14 +1,15 @@
 import { useEffect, useRef } from 'react'
 import { createChart, ColorType, IChartApi, LineStyle } from 'lightweight-charts'
-import type { IntradayData } from '../types'
+import type { IntradayData, MoneyFlowData } from '../types'
 
 interface IntradayChartProps {
   data: IntradayData[]
+  moneyFlowData?: MoneyFlowData[]
   preClose: number
   height?: number
 }
 
-function IntradayChart({ data, preClose, height = 400 }: IntradayChartProps) {
+function IntradayChart({ data, moneyFlowData, preClose, height = 400 }: IntradayChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
 
@@ -85,9 +86,6 @@ function IntradayChart({ data, preClose, height = 400 }: IntradayChartProps) {
     })
 
     // 准备数据
-    // 东方财富分时数据时间格式通常是 "YYYY-MM-DD HH:mm"
-    // lightweight-charts 需要 unix timestamp 或 "YYYY-MM-DD"
-    // 对于分时图，我们需要将其转换为 timestamp
     const formattedPriceData = data.map(d => {
       const timestamp = Math.floor(new Date(d.time.replace(/-/g, '/')).getTime() / 1000)
       return {
@@ -106,7 +104,6 @@ function IntradayChart({ data, preClose, height = 400 }: IntradayChartProps) {
 
     const formattedVolumeData = data.map((d, i) => {
       const timestamp = Math.floor(new Date(d.time.replace(/-/g, '/')).getTime() / 1000)
-      // 分时图成交量通常是累计的，或者是每分钟的。东方财富 trends2 接口返回的是每分钟成交量
       const color = i === 0 
         ? (d.price >= preClose ? '#ef444480' : '#22c55e80')
         : (d.price >= data[i-1].price ? '#ef444480' : '#22c55e80')
@@ -121,6 +118,24 @@ function IntradayChart({ data, preClose, height = 400 }: IntradayChartProps) {
     priceSeries.setData(formattedPriceData)
     avgPriceSeries.setData(formattedAvgPriceData)
     volumeSeries.setData(formattedVolumeData)
+
+    // 添加异动标记 (Markers)
+    if (moneyFlowData && moneyFlowData.length > 0) {
+      const markers = moneyFlowData
+        .filter(d => d.signal === '扫货' || d.signal === '砸盘')
+        .map(d => {
+          const timestamp = Math.floor(new Date(d.time.replace(/-/g, '/')).getTime() / 1000)
+          return {
+            time: timestamp as any,
+            position: d.signal === '扫货' ? 'belowBar' : 'aboveBar' as any,
+            color: d.signal === '扫货' ? '#ef4444' : '#22c55e',
+            shape: d.signal === '扫货' ? 'arrowUp' : 'arrowDown' as any,
+            text: d.signal,
+            size: 1,
+          }
+        })
+      priceSeries.setMarkers(markers)
+    }
 
     chart.timeScale().fitContent()
     chartRef.current = chart
@@ -137,7 +152,7 @@ function IntradayChart({ data, preClose, height = 400 }: IntradayChartProps) {
       window.removeEventListener('resize', handleResize)
       chart.remove()
     }
-  }, [data, preClose, height])
+  }, [data, moneyFlowData, preClose, height])
 
   return (
     <div className="relative">

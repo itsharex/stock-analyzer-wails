@@ -334,6 +334,34 @@ func (s *StockService) GetMoneyFlowData(code string) (*models.MoneyFlowResponse,
 		totalRetail += small
 	}
 
+	// 盘中突发大单识别算法 (滑动窗口)
+	if len(moneyFlows) > 10 {
+		for i := 10; i < len(moneyFlows); i++ {
+			// 计算过去10分钟的平均主力净流入绝对值
+			var sumAbsMain float64
+			for j := i - 10; j < i; j++ {
+				val := moneyFlows[j].MainNet
+				if val < 0 {
+					val = -val
+				}
+				sumAbsMain += val
+			}
+			avgAbsMain := sumAbsMain / 10
+			if avgAbsMain < 10000 { // 避免除以极小值，设定最小基准为1万
+				avgAbsMain = 10000
+			}
+
+			currentMain := moneyFlows[i].MainNet
+			
+			// 识别标准：单分钟流入/流出超过均值的 5 倍
+			if currentMain > avgAbsMain*5 {
+				moneyFlows[i].Signal = "扫货"
+			} else if currentMain < -avgAbsMain*5 {
+				moneyFlows[i].Signal = "砸盘"
+			}
+		}
+	}
+
 	// 智能识别逻辑
 	status := "平稳运行"
 	description := "当前资金进出相对平衡，建议关注趋势确认。"

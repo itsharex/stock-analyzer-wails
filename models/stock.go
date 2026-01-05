@@ -59,6 +59,7 @@ type MoneyFlowData struct {
 	Medium     float64 `json:"medium"`     // 中单净流入
 	Small      float64 `json:"small"`      // 小单净流入
 	MainNet    float64 `json:"mainNet"`    // 主力净流入 (特大单+大单)
+	Signal     string  `json:"signal"`     // 异动信号: "扫货", "砸盘", "对倒", ""
 }
 
 // MoneyFlowResponse 资金流向响应结构

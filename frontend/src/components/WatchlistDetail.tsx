@@ -6,6 +6,7 @@ import { useWailsAPI } from '../hooks/useWailsAPI'
 import KLineChart from './KLineChart'
 import IntradayChart from './IntradayChart'
 import MoneyFlowChart from './MoneyFlowChart'
+import SignalTicker from './SignalTicker'
 import RadarChart from './RadarChart'
 import TradePlanCard from './TradePlanCard'
 import { 
@@ -278,6 +279,13 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
               </div>
             </div>
 
+            {/* 异动快报滚动条 */}
+            {chartType === 'intraday' && moneyFlowResponse && (
+              <div className="mb-4 rounded-lg overflow-hidden border border-slate-800">
+                <SignalTicker data={moneyFlowResponse.data} />
+              </div>
+            )}
+
             {/* 智能资金状态标签 */}
             {chartType === 'intraday' && moneyFlowResponse && (
               <div className={`mb-4 p-3 rounded-xl border flex items-start space-x-3 transition-all ${getStatusColor(moneyFlowResponse.status)}`}>
@@ -312,6 +320,7 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
                 ) : (
                   <IntradayChart 
                     data={intradayData}
+                    moneyFlowData={moneyFlowResponse?.data}
                     preClose={preClose}
                     height={400}
                   />
