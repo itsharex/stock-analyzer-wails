@@ -60,12 +60,12 @@ export function GlossaryPanel({ text }: { text: string }) {
       </h4>
       <div className="grid gap-4">
         {terms.map(term => (
-          <div key={term} className="bg-slate-800/40 rounded-xl p-4 border border-slate-700/50 hover:border-blue-500/30 transition-colors">
+          <div key={term} className="bg-white rounded-xl p-4 border border-slate-200 shadow-sm hover:border-blue-500/30 transition-all hover:shadow-md">
             <div className="flex items-center space-x-2 mb-2">
               <div className="w-1.5 h-1.5 rounded-full bg-blue-500" />
-              <span className="text-sm font-bold text-slate-200">{term}</span>
+              <span className="text-sm font-bold text-slate-800">{term}</span>
             </div>
-            <p className="text-xs text-slate-400 leading-relaxed pl-3.5 border-l border-slate-700">
+            <p className="text-xs text-slate-600 leading-relaxed pl-3.5 border-l border-slate-200">
               {STOCK_GLOSSARY[term].simpleExplanation}
             </p>
           </div>
