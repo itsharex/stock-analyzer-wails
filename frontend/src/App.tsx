@@ -153,9 +153,9 @@ function App() {
         </header>
 
         {/* 内容滚动区 */}
-        <div className="flex-1 overflow-y-auto p-8">
+        <div className="flex-1 overflow-y-auto p-4 lg:p-6">
           {activeTab === 'analysis' ? (
-            <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-4 gap-8">
+            <div className="w-full grid grid-cols-1 lg:grid-cols-4 gap-6">
               <div className="lg:col-span-1 space-y-8">
                 <StockSearch
                   onStockDataLoaded={handleStockDataLoaded}
@@ -202,7 +202,7 @@ function App() {
               </div>
             </div>
           ) : activeTab === 'watchlist' ? (
-            <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-4 gap-8">
+            <div className="w-full grid grid-cols-1 lg:grid-cols-4 gap-6">
               <div className="lg:col-span-1">
                 <Watchlist 
                   onSelectStock={handleSelectFromWatchlist} 

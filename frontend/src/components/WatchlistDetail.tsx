@@ -122,7 +122,7 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
       {/* 主体内容区 */}
       <div className="flex-1 flex overflow-hidden">
         {/* 左侧图表区 */}
-        <div className="flex-1 flex flex-col p-4 overflow-y-auto">
+        <div className="flex-1 flex flex-col p-2 lg:p-4 overflow-y-auto">
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex-1 flex flex-col">
             {/* 图表控制栏 */}
             <div className="flex items-center justify-between mb-4">
@@ -200,7 +200,7 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
         </div>
 
         {/* 右侧技术分析师面板 */}
-        <div className="w-[450px] bg-slate-900 border-l border-slate-800 flex flex-col">
+        <div className="w-[480px] bg-slate-900 border-l border-slate-800 flex flex-col">
           <div className="p-4 border-b border-slate-800 flex items-center justify-between">
             <div className="flex items-center space-x-2 text-blue-400">
               <BrainCircuit className="w-5 h-5" />
