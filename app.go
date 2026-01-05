@@ -113,6 +113,25 @@ func (a *App) AnalyzeStock(code string) (*models.AnalysisReport, error) {
 	return a.aiService.AnalyzeStock(stock)
 }
 
+// AnalyzeTechnical 深度技术面分析
+func (a *App) AnalyzeTechnical(code string, period string) (string, error) {
+	if a.aiService == nil {
+		return "", fmt.Errorf("AI服务未就绪")
+	}
+
+	stock, err := a.stockService.GetStockByCode(code)
+	if err != nil {
+		return "", err
+	}
+
+	klines, err := a.stockService.GetKLineData(code, 100, period)
+	if err != nil {
+		return "", err
+	}
+
+	return a.aiService.AnalyzeTechnical(stock, klines)
+}
+
 // SearchStock 搜索股票
 func (a *App) SearchStock(keyword string) ([]*models.StockData, error) {
 	return a.stockService.SearchStock(keyword)

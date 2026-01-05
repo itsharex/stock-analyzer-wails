@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"stock-analyzer-wails/models"
+	"strings"
 	"time"
 
 	"github.com/cloudwego/eino-ext/components/model/openai"
@@ -19,7 +20,6 @@ type AIService struct {
 func NewAIService(cfg AIResolvedConfig) (*AIService, error) {
 	ctx := context.Background()
 	
-	// 大多数供应商（DeepSeek, DashScope, OpenAI, Claude via Proxy）都支持 OpenAI 兼容协议
 	opts := &openai.ChatModelConfig{
 		APIKey:  cfg.APIKey,
 		BaseURL: cfg.BaseURL,
@@ -110,6 +110,66 @@ func (s *AIService) AnalyzeStock(stock *models.StockData) (*models.AnalysisRepor
 	}
 
 	return report, nil
+}
+
+// AnalyzeTechnical 深度技术面分析（技术分析师角色）
+func (s *AIService) AnalyzeTechnical(stock *models.StockData, klines []*models.KLineData) (string, error) {
+	// 准备K线简要数据
+	var klineSummary []string
+	startIdx := len(klines) - 10
+	if startIdx < 0 { startIdx = 0 }
+	for i := startIdx; i < len(klines); i++ {
+		k := klines[i]
+		change := 0.0
+		if k.Open != 0 {
+			change = (k.Close - k.Open) / k.Open * 100
+		}
+		klineSummary = append(klineSummary, fmt.Sprintf("日期:%s, 收盘:%.2f, 涨跌:%.2f%%, 成交量:%d", k.Time, k.Close, change, k.Volume))
+	}
+
+	lastK := klines[len(klines)-1]
+	indicatorInfo := ""
+	if lastK.MACD != nil {
+		indicatorInfo += fmt.Sprintf("MACD(DIF:%.3f, DEA:%.3f, BAR:%.3f); ", lastK.MACD.DIF, lastK.MACD.DEA, lastK.MACD.Bar)
+	}
+	if lastK.KDJ != nil {
+		indicatorInfo += fmt.Sprintf("KDJ(K:%.1f, D:%.1f, J:%.1f); ", lastK.KDJ.K, lastK.KDJ.D, lastK.KDJ.J)
+	}
+	if lastK.RSI > 0 {
+		indicatorInfo += fmt.Sprintf("RSI:%.1f; ", lastK.RSI)
+	}
+
+	prompt := fmt.Sprintf(`你是一位拥有20年经验的资深技术分析师，擅长通过量价关系、K线形态和技术指标捕捉买卖点。
+
+当前股票: %s (%s)
+最新价格: %.2f
+最近10个交易日走势:
+%s
+
+当前技术指标:
+%s
+
+请作为“技术分析师”给出深度的技术面解读，包括：
+1. K线形态分析（如：多头排列、空头陷阱、金叉/死叉等）
+2. 量价配合情况
+3. 指标背离或共振情况
+4. 短期支撑位与压力位
+5. 具体的操盘策略建议
+
+请直接输出分析内容，使用专业、冷静、客观的口吻，使用Markdown格式。`, stock.Name, stock.Code, stock.Price, strings.Join(klineSummary, "\n"), indicatorInfo)
+
+	ctx := context.Background()
+	messages := []*schema.Message{
+		schema.SystemMessage("你是一个冷酷而专业的股票技术分析师，只相信数据和图形。"),
+		schema.UserMessage(prompt),
+	}
+
+	resp, err := s.chatModel.Generate(ctx, messages)
+	if err != nil {
+		return "", err
+	}
+
+	return resp.Content, nil
 }
 
 func extractSectionImpl(text, startMarker, endMarker string) string {
