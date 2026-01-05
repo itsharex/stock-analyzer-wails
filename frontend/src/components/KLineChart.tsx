@@ -41,22 +41,32 @@ function KLineChart({ data, height = 600, showMACD = false, showKDJ = false, sho
       borderVisible: false,
       wickUpColor: '#ef4444',
       wickDownColor: '#22c55e',
-      pane: 0,
     })
 
-    // 2. 成交量 (Pane 1)
+    // 2. 成交量 (通过 priceScaleId 模拟副图)
     const volumeSeries = chart.addHistogramSeries({
       color: '#94a3b8',
       priceFormat: { type: 'volume' },
-      pane: 1,
+      priceScaleId: 'volume', // 使用独立的 price scale
     })
 
-    // 3. MACD (Pane 2)
+    chart.priceScale('volume').applyOptions({
+      scaleMargins: {
+        top: 0.8, // 放在底部 20% 区域
+        bottom: 0,
+      },
+    })
+
+    // 3. MACD (通过 priceScaleId 模拟副图)
     if (showMACD) {
-      const difSeries = chart.addLineSeries({ color: '#2196F3', lineWidth: 1, pane: 2, title: 'DIF' })
-      const deaSeries = chart.addLineSeries({ color: '#FF9800', lineWidth: 1, pane: 2, title: 'DEA' })
-      const barSeries = chart.addHistogramSeries({ pane: 2, title: 'MACD' })
+      const difSeries = chart.addLineSeries({ color: '#2196F3', lineWidth: 1, priceScaleId: 'macd', title: 'DIF' })
+      const deaSeries = chart.addLineSeries({ color: '#FF9800', lineWidth: 1, priceScaleId: 'macd', title: 'DEA' })
+      const barSeries = chart.addHistogramSeries({ priceScaleId: 'macd', title: 'MACD' })
       
+      chart.priceScale('macd').applyOptions({
+        scaleMargins: { top: 0.6, bottom: 0.2 },
+      })
+
       difSeries.setData(data.map(d => ({ time: d.time, value: d.macd?.dif || 0 })))
       deaSeries.setData(data.map(d => ({ time: d.time, value: d.macd?.dea || 0 })))
       barSeries.setData(data.map(d => ({ 
@@ -66,20 +76,29 @@ function KLineChart({ data, height = 600, showMACD = false, showKDJ = false, sho
       })))
     }
 
-    // 4. KDJ (Pane 3)
+    // 4. KDJ (通过 priceScaleId 模拟副图)
     if (showKDJ) {
-      const kSeries = chart.addLineSeries({ color: '#9C27B0', lineWidth: 1, pane: 3, title: 'K' })
-      const dSeries = chart.addLineSeries({ color: '#FFEB3B', lineWidth: 1, pane: 3, title: 'D' })
-      const jSeries = chart.addLineSeries({ color: '#E91E63', lineWidth: 1, pane: 3, title: 'J' })
+      const kSeries = chart.addLineSeries({ color: '#9C27B0', lineWidth: 1, priceScaleId: 'kdj', title: 'K' })
+      const dSeries = chart.addLineSeries({ color: '#FFEB3B', lineWidth: 1, priceScaleId: 'kdj', title: 'D' })
+      const jSeries = chart.addLineSeries({ color: '#E91E63', lineWidth: 1, priceScaleId: 'kdj', title: 'J' })
       
+      chart.priceScale('kdj').applyOptions({
+        scaleMargins: { top: 0.7, bottom: 0.1 },
+      })
+
       kSeries.setData(data.map(d => ({ time: d.time, value: d.kdj?.k || 0 })))
       dSeries.setData(data.map(d => ({ time: d.time, value: d.kdj?.d || 0 })))
       jSeries.setData(data.map(d => ({ time: d.time, value: d.kdj?.j || 0 })))
     }
 
-    // 5. RSI (Pane 4)
+    // 5. RSI (通过 priceScaleId 模拟副图)
     if (showRSI) {
-      const rsiSeries = chart.addLineSeries({ color: '#00BCD4', lineWidth: 1, pane: 4, title: 'RSI' })
+      const rsiSeries = chart.addLineSeries({ color: '#00BCD4', lineWidth: 1, priceScaleId: 'rsi', title: 'RSI' })
+      
+      chart.priceScale('rsi').applyOptions({
+        scaleMargins: { top: 0.8, bottom: 0.05 },
+      })
+
       rsiSeries.setData(data.map(d => ({ time: d.time, value: d.rsi || 0 })))
     }
 
