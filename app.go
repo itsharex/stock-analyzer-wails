@@ -131,24 +131,29 @@ func (a *App) checkAlerts() {
 			go func(al *models.PriceAlert, st *models.StockData, baseMsg string) {
 				advice, _ := a.aiService.GenerateAlertAdvice(st.Name, al.Type, al.Label, al.Role, st.Price, al.Price)
 				
-				// 发送系统通知
-				runtime.EventsEmit(a.ctx, "price_alert", map[string]interface{}{
-					"stockCode": al.StockCode,
-					"stockName": al.StockName,
-					"message":   baseMsg,
-					"advice":    advice,
-					"type":      al.Type,
-					"price":     st.Price,
-					"role":      al.Role,
-				})
-				
-				logger.Info("触发价格预警",
-					zap.String("stock", al.StockName),
-					zap.Float64("price", st.Price),
-					zap.String("msg", baseMsg),
-					zap.String("advice", advice),
-				)
-			}(alert, stock, msg)
+					// 发送系统通知
+					runtime.EventsEmit(a.ctx, "price_alert", map[string]interface{}{
+						"stockCode": al.StockCode,
+						"stockName": al.StockName,
+						"message":   baseMsg,
+						"advice":    advice,
+						"type":      al.Type,
+						"price":     st.Price,
+						"role":      al.Role,
+					})
+
+					// 持久化到告警历史
+					if a.alertStorage != nil {
+						a.alertStorage.SaveAlert(al, advice)
+					}
+					
+					logger.Info("触发价格预警",
+						zap.String("stock", al.StockName),
+						zap.Float64("price", st.Price),
+						zap.String("msg", baseMsg),
+						zap.String("advice", advice),
+					)
+				}(alert, stock, msg)
 		}
 	}
 }

@@ -170,6 +170,18 @@ type AlertConfig struct {
 	Enabled     bool    `json:"enabled"`     // 是否开启全局预警
 }
 
+// AlertHistory 告警历史记录
+type AlertHistory struct {
+	ID        string    `json:"id"`
+	StockCode string    `json:"stockCode"`
+	StockName string    `json:"stockName"`
+	Type      string    `json:"type"`      // support, resistance
+	Price     float64   `json:"price"`     // 触发时的价格
+	AlertPrice float64  `json:"alertPrice"` // 预警设定的价格
+	Message   string    `json:"message"`
+	Time      time.Time `json:"time"`
+}
+
 // EastMoneyResponse 东方财富API响应结构
 type EastMoneyResponse struct {
 	RC   int    `json:"rc"`
