@@ -20,18 +20,27 @@ type App struct {
 	stockService     *services.StockService
 	aiService        *services.AIService
 	watchlistService *services.WatchlistService
+	alertStorage     *services.AlertStorage
 	aiInitErr        error
 	alerts           []*models.PriceAlert
 	alertMutex       sync.Mutex
+	alertConfig      models.AlertConfig
 }
 
 // NewApp 创建新的App应用程序
 func NewApp() *App {
 	watchlistSvc, _ := services.NewWatchlistService()
+	storage, _ := services.NewAlertStorage()
 	return &App{
 		stockService:     services.NewStockService(),
 		aiService:        nil,
 		watchlistService: watchlistSvc,
+		alertStorage:     storage,
+		alertConfig: models.AlertConfig{
+			Sensitivity: 0.005, // 默认 0.5%
+			Cooldown:    1,     // 默认 1 小时
+			Enabled:     true,
+		},
 	}
 }
 
@@ -268,6 +277,24 @@ func (a *App) AnalyzeTechnical(code string, period string, role string) (*models
 // SearchStock 搜索股票
 func (a *App) SearchStock(keyword string) ([]*models.StockData, error) {
 	return a.stockService.SearchStock(keyword)
+}
+
+// GetAlertHistory 获取告警历史
+func (a *App) GetAlertHistory(stockCode string, limit int) ([]map[string]interface{}, error) {
+	if a.alertStorage == nil {
+		return []map[string]interface{}{}, nil
+	}
+	return a.alertStorage.GetAlertHistory(stockCode, limit)
+}
+
+// GetAlertConfig 获取预警配置
+func (a *App) GetAlertConfig() models.AlertConfig {
+	return a.alertConfig
+}
+
+// UpdateAlertConfig 更新预警配置
+func (a *App) UpdateAlertConfig(config models.AlertConfig) {
+	a.alertConfig = config
 }
 
 // Watchlist 相关接口

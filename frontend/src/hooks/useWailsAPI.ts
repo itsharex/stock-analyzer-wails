@@ -53,6 +53,21 @@ export const useWailsAPI = () => {
     return window.go.main.App.GetWatchlist()
   }, [])
 
+  const getAlertHistory = useCallback(async (stockCode: string, limit: number): Promise<any[]> => {
+    // @ts-ignore
+    return window.go.main.App.GetAlertHistory(stockCode, limit)
+  }, [])
+
+  const getAlertConfig = useCallback(async (): Promise<any> => {
+    // @ts-ignore
+    return window.go.main.App.GetAlertConfig()
+  }, [])
+
+  const updateAlertConfig = useCallback(async (config: any): Promise<void> => {
+    // @ts-ignore
+    return window.go.main.App.UpdateAlertConfig(config)
+  }, [])
+
   return {
     getStockData,
     getKLineData,
@@ -64,6 +79,9 @@ export const useWailsAPI = () => {
     addToWatchlist,
     removeFromWatchlist,
     getWatchlist,
+    getAlertHistory,
+    getAlertConfig,
+    updateAlertConfig,
   }
 }
 

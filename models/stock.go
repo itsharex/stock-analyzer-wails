@@ -109,6 +109,13 @@ type PriceAlert struct {
 	LastTriggered time.Time `json:"-"`         // 上次触发时间，避免频繁骚扰
 }
 
+// AlertConfig 预警系统配置
+type AlertConfig struct {
+	Sensitivity float64 `json:"sensitivity"` // 灵敏度 (0.001 - 0.02)
+	Cooldown    int     `json:"cooldown"`    // 冷却时间 (小时)
+	Enabled     bool    `json:"enabled"`     // 是否开启全局预警
+}
+
 // EastMoneyResponse 东方财富API响应结构
 type EastMoneyResponse struct {
 	RC   int    `json:"rc"`

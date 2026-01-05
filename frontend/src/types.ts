@@ -127,4 +127,4 @@ export interface AppConfig {
 /**
  * 导航菜单项
  */
-export type NavItem = 'analysis' | 'watchlist' | 'settings'
+export type NavItem = 'analysis' | 'watchlist' | 'alerts' | 'settings'
