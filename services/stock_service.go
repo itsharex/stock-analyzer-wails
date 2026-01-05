@@ -233,6 +233,52 @@ func (s *StockService) calculateIndicators(klines []*models.KLineData) {
 	}
 }
 
+func (s *StockService) GetIntradayData(code string) (*models.IntradayResponse, error) {
+	secid := s.getSecID(code)
+	if secid == "" {
+		return nil, fmt.Errorf("无效的股票代码")
+	}
+
+	url := fmt.Sprintf("https://push2.eastmoney.com/api/qt/stock/trends2/get?secid=%s&fields1=f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13&fields2=f51,f52,f53,f54,f55,f56,f57,f58&ndays=1&iscr=0&ut=fa5fd1943c7b386f172d6893dbfba10b", secid)
+
+	resp, err := s.client.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	var result struct {
+		Data struct {
+			PreClose float64  `json:"preClose"`
+			Trends   []string `json:"trends"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, err
+	}
+
+	intradayData := make([]models.IntradayData, 0)
+	for _, line := range result.Data.Trends {
+		parts := strings.Split(line, ",")
+		if len(parts) < 5 {
+			continue
+		}
+		intradayData = append(intradayData, models.IntradayData{
+			Time:     parts[0],
+			Price:    s.parsePrice(parts[2]),
+			AvgPrice: s.parsePrice(parts[7]),
+			Volume:   int64(s.parsePrice(parts[5])),
+			PreClose: result.Data.PreClose,
+		})
+	}
+
+	return &models.IntradayResponse{
+		Data:     intradayData,
+		PreClose: result.Data.PreClose,
+	}, nil
+}
+
 func (s *StockService) getSecID(code string) string {
 	if len(code) != 6 {
 		return ""

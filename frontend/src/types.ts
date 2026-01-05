@@ -40,7 +40,7 @@ export interface KDJ {
 }
 
 /**
- * K线数据点
+ * KLineData K线数据点
  */
 export interface KLineData {
   time: string              // 时间 (YYYY-MM-DD)
@@ -52,6 +52,25 @@ export interface KLineData {
   macd?: MACD               // MACD 指标
   kdj?: KDJ                 // KDJ 指标
   rsi?: number              // RSI 指标
+}
+
+/**
+ * 分时数据点
+ */
+export interface IntradayData {
+  time: string              // 时间 (HH:MM)
+  price: number             // 价格
+  avgPrice: number          // 均价
+  volume: number            // 成交量
+  preClose: number          // 昨收价
+}
+
+/**
+ * 分时数据响应结构
+ */
+export interface IntradayResponse {
+  data: IntradayData[]
+  preClose: number
 }
 
 /**

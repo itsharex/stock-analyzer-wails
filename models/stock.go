@@ -24,17 +24,32 @@ type StockData struct {
 }
 
 // KLineData K线数据点
-type KLineData struct {
-	Time   string  `json:"time"`   // 时间 (YYYY-MM-DD)
-	Open   float64 `json:"open"`   // 开盘价
-	High   float64 `json:"high"`   // 最高价
-	Low    float64 `json:"low"`    // 最低价
-	Close  float64 `json:"close"`  // 收盘价
-	Volume int64   `json:"volume"` // 成交量
-	MACD   *MACD   `json:"macd,omitempty"`
-	KDJ    *KDJ    `json:"kdj,omitempty"`
-	RSI    float64 `json:"rsi,omitempty"`
-}
+	type KLineData struct {
+		Time   string  `json:"time"`   // 时间 (YYYY-MM-DD)
+		Open   float64 `json:"open"`   // 开盘价
+		High   float64 `json:"high"`   // 最高价
+		Low    float64 `json:"low"`    // 最低价
+		Close  float64 `json:"close"`  // 收盘价
+		Volume int64   `json:"volume"` // 成交量
+		MACD   *MACD   `json:"macd,omitempty"`
+		KDJ    *KDJ    `json:"kdj,omitempty"`
+		RSI    float64 `json:"rsi,omitempty"`
+	}
+
+	// IntradayData 分时数据点
+	type IntradayData struct {
+		Time      string  `json:"time"`      // 时间 (HH:MM)
+		Price     float64 `json:"price"`     // 价格
+		AvgPrice  float64 `json:"avgPrice"`  // 均价
+		Volume    int64   `json:"volume"`    // 成交量
+		PreClose  float64 `json:"preClose"`  // 昨收价
+	}
+
+	// IntradayResponse 分时数据响应结构
+	type IntradayResponse struct {
+		Data      []IntradayData `json:"data"`
+		PreClose  float64        `json:"preClose"`
+	}
 
 type MACD struct {
 	DIF float64 `json:"dif"`

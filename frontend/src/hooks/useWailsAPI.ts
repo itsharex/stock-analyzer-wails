@@ -1,5 +1,5 @@
 import { useCallback } from 'react'
-import type { StockData, AnalysisReport, AppConfig, KLineData, TechnicalAnalysisResult } from '../types'
+import type { StockData, AnalysisReport, AppConfig, KLineData, TechnicalAnalysisResult, IntradayResponse } from '../types'
 
 export const useWailsAPI = () => {
   const getStockData = useCallback(async (code: string): Promise<StockData> => {
@@ -7,10 +7,15 @@ export const useWailsAPI = () => {
     return window.go.main.App.GetStockData(code)
   }, [])
 
-  const getKLineData = useCallback(async (code: string, limit: number, period: string = 'daily'): Promise<KLineData[]> => {
-    // @ts-ignore
-    return window.go.main.App.GetKLineData(code, limit, period)
-  }, [])
+	  const getKLineData = useCallback(async (code: string, limit: number, period: string = 'daily'): Promise<KLineData[]> => {
+	    // @ts-ignore
+	    return window.go.main.App.GetKLineData(code, limit, period)
+	  }, [])
+	
+	  const getIntradayData = useCallback(async (code: string): Promise<IntradayResponse> => {
+	    // @ts-ignore
+	    return window.go.main.App.GetIntradayData(code)
+	  }, [])
 
   const analyzeStock = useCallback(async (code: string): Promise<AnalysisReport> => {
     // @ts-ignore
@@ -78,23 +83,24 @@ export const useWailsAPI = () => {
     return window.go.main.App.RemoveAlert(stockCode, alertType, price)
   }, [])
 
-  return {
-    getStockData,
-    getKLineData,
-    analyzeStock,
-    analyzeTechnical,
-    searchStock,
-    getConfig,
-    saveConfig,
-    addToWatchlist,
-    removeFromWatchlist,
-    getWatchlist,
-    getAlertHistory,
-    getAlertConfig,
-    updateAlertConfig,
-    getActiveAlerts,
-    removeAlert,
-  }
+	  return {
+	    getStockData,
+	    getIntradayData,
+	    getKLineData,
+	    analyzeStock,
+	    analyzeTechnical,
+	    searchStock,
+	    getConfig,
+	    saveConfig,
+	    addToWatchlist,
+	    removeFromWatchlist,
+	    getWatchlist,
+	    getAlertHistory,
+	    getAlertConfig,
+	    updateAlertConfig,
+	    getActiveAlerts,
+	    removeAlert,
+	  }
 }
 
 export default useWailsAPI
