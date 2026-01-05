@@ -27,6 +27,11 @@ const getIntradayData = useCallback(async (code: string): Promise<IntradayRespon
     return window.go.main.App.GetStockHealthCheck(code)
   }, [])
 
+  const batchAnalyzeStocks = useCallback(async (codes: string[], role: string): Promise<void> => {
+    // @ts-ignore
+    return window.go.main.App.BatchAnalyzeStocks(codes, role)
+  }, [])
+
   const analyzeStock = useCallback(async (code: string): Promise<AnalysisReport> => {
     // @ts-ignore
     return window.go.main.App.AnalyzeStock(code)
@@ -98,6 +103,7 @@ return {
     getIntradayData,
     getMoneyFlowData,
     getStockHealthCheck,
+    batchAnalyzeStocks,
     getKLineData,
 	    analyzeStock,
 	    analyzeTechnical,

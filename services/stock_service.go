@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -8,10 +9,13 @@ import (
 	"net/http"
 	"stock-analyzer-wails/models"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"stock-analyzer-wails/internal/logger"
 
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"go.uber.org/zap"
 )
 
@@ -109,8 +113,6 @@ func (s *StockService) GetKLineData(code string, limit int, period string) ([]*m
 		return nil, fmt.Errorf("无效的股票代码")
 	}
 
-	// 映射周期到东方财富的 klt 参数
-	// 101: 日线, 102: 周线, 103: 月线
 	klt := "101"
 	switch period {
 	case "week":
@@ -279,14 +281,12 @@ func (s *StockService) GetIntradayData(code string) (*models.IntradayResponse, e
 	}, nil
 }
 
-// GetMoneyFlowData 获取资金流向数据并进行智能识别
 func (s *StockService) GetMoneyFlowData(code string) (*models.MoneyFlowResponse, error) {
 	secid := s.getSecID(code)
 	if secid == "" {
 		return nil, fmt.Errorf("无效的股票代码")
 	}
 
-	// 东方财富资金流向 API
 	url := fmt.Sprintf("https://push2.eastmoney.com/api/qt/stock/fflow/kline/get?secid=%s&fields1=f1,f2,f3,f7&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61,f62,f63,f64,f65&klt=1&lmt=240", secid)
 
 	resp, err := s.client.Get(url)
@@ -314,7 +314,6 @@ func (s *StockService) GetMoneyFlowData(code string) (*models.MoneyFlowResponse,
 			continue
 		}
 		
-		// f51:时间, f52:主力净流入, f53:小单, f54:中单, f55:大单, f56:特大单
 		mainNet := s.parsePrice(parts[1])
 		small := s.parsePrice(parts[2])
 		medium := s.parsePrice(parts[3])
@@ -334,10 +333,8 @@ func (s *StockService) GetMoneyFlowData(code string) (*models.MoneyFlowResponse,
 		totalRetail += small
 	}
 
-	// 盘中突发大单识别算法 (滑动窗口)
 	if len(moneyFlows) > 10 {
 		for i := 10; i < len(moneyFlows); i++ {
-			// 计算过去10分钟的平均主力净流入绝对值
 			var sumAbsMain float64
 			for j := i - 10; j < i; j++ {
 				val := moneyFlows[j].MainNet
@@ -347,13 +344,11 @@ func (s *StockService) GetMoneyFlowData(code string) (*models.MoneyFlowResponse,
 				sumAbsMain += val
 			}
 			avgAbsMain := sumAbsMain / 10
-			if avgAbsMain < 10000 { // 避免除以极小值，设定最小基准为1万
+			if avgAbsMain < 10000 {
 				avgAbsMain = 10000
 			}
 
 			currentMain := moneyFlows[i].MainNet
-			
-			// 识别标准：单分钟流入/流出超过均值的 5 倍
 			if currentMain > avgAbsMain*5 {
 				moneyFlows[i].Signal = "扫货"
 			} else if currentMain < -avgAbsMain*5 {
@@ -362,26 +357,19 @@ func (s *StockService) GetMoneyFlowData(code string) (*models.MoneyFlowResponse,
 		}
 	}
 
-	// 智能识别逻辑
 	status := "平稳运行"
 	description := "当前资金进出相对平衡，建议关注趋势确认。"
 
 	if len(moneyFlows) > 0 {
 		lastFlow := moneyFlows[len(moneyFlows)-1]
-		
-		// 1. 主力建仓识别: 主力资金持续流入且占比高
 		if totalMain > 0 && lastFlow.MainNet > 0 {
 			status = "主力建仓"
 			description = "主力资金正在持续流入，且单笔成交金额较大，说明机构看好后市，正在积极吸筹。"
 		}
-		
-		// 2. 散户追高识别: 股价上涨但主力流出，散户大幅流入
 		if totalMain < 0 && totalRetail > 0 {
 			status = "散户追高"
 			description = "当前股价上涨主要由散户情绪推动，主力资金正在趁高点派发筹码，请警惕冲高回落风险。"
 		}
-		
-		// 3. 机构洗盘识别: 股价下跌但主力流入
 		if totalMain > 0 && totalRetail < 0 {
 			status = "机构洗盘"
 			description = "主力资金在股价回调时默默接盘，散户因恐慌抛售，这通常是拉升前的洗盘行为。"
@@ -451,7 +439,6 @@ func (s *StockService) SearchStockLegacy(keyword string) ([]*models.StockData, e
 	return results, nil
 }
 
-// GetStockHealthCheck 执行股票深度体检算法
 func (s *StockService) GetStockHealthCheck(code string) (*models.HealthCheckResult, error) {
 	stock, err := s.GetStockByCode(code)
 	if err != nil {
@@ -461,7 +448,6 @@ func (s *StockService) GetStockHealthCheck(code string) (*models.HealthCheckResu
 	items := make([]models.HealthItem, 0)
 	score := 100
 
-	// 1. 财务排雷 (基于估值和市值)
 	peStatus := "正常"
 	peDesc := fmt.Sprintf("当前市盈率 %.2f，处于行业合理区间。", stock.PE)
 	if stock.PE < 0 {
@@ -481,7 +467,6 @@ func (s *StockService) GetStockHealthCheck(code string) (*models.HealthCheckResu
 		Description: peDesc,
 	})
 
-	// 2. 资金面检测 (基于换手率)
 	turnoverStatus := "正常"
 	turnoverDesc := "换手率适中，交投活跃度正常。"
 	if stock.Turnover > 15 {
@@ -501,12 +486,11 @@ func (s *StockService) GetStockHealthCheck(code string) (*models.HealthCheckResu
 		Description: turnoverDesc,
 	})
 
-	// 3. 技术面检测 (基于涨跌幅和振幅)
 	ampStatus := "正常"
-	ampDesc := "股价波动在正常范围内。"
+	ampDesc := "日内波动在正常范围内。"
 	if stock.Amplitude > 10 {
 		ampStatus = "警告"
-		ampDesc = "日内振幅巨大，说明多空分歧极严重，容易出现极端走势。"
+		ampDesc = "日内振幅巨大，多空分歧严重，短期波动风险极高。"
 		score -= 10
 	}
 	items = append(items, models.HealthItem{
@@ -517,37 +501,73 @@ func (s *StockService) GetStockHealthCheck(code string) (*models.HealthCheckResu
 		Description: ampDesc,
 	})
 
-	// 综合状态判定
-	status := "健康"
-	riskLevel := "低"
+	status, riskLevel := "健康", "低"
 	if score < 60 {
-		status = "风险"
-		riskLevel = "高"
+		status, riskLevel = "风险", "高"
 	} else if score < 85 {
-		status = "亚健康"
-		riskLevel = "中"
+		status, riskLevel = "亚健康", "中"
 	}
 
 	return &models.HealthCheckResult{
 		Score:     score,
 		Status:    status,
-		Items:     items,
 		RiskLevel: riskLevel,
-		UpdatedAt: time.Now().Format("2006-01-02 15:04:05"),
-		Summary:   fmt.Sprintf("%s目前综合评分为 %d 分。%s", stock.Name, score, getHealthSummary(status, score)),
+		Summary:   fmt.Sprintf("%s目前综合评分为 %d 分，%s", stock.Name, score, getHealthSummary(score)),
+		Items:     items,
+		UpdatedAt: time.Now().Format("15:04:05"),
 	}, nil
 }
 
-func getHealthSummary(status string, score int) string {
-	if status == "健康" {
-		return "各项指标表现良好，基本面稳健，适合中长期关注。"
-	} else if status == "亚健康" {
-		return "部分指标出现预警，建议控制仓位，观察关键支撑位的表现。"
+func getHealthSummary(score int) string {
+	if score >= 85 {
+		return "基本面和技术面表现稳健，适合中长期关注。"
+	} else if score >= 60 {
+		return "存在部分指标异常，建议控制仓位，关注关键支撑位。"
 	}
-	return "存在明显财务或交易风险，建议新手暂时回避，等待风险释放。"
+	return "多项指标触发预警，建议新手坚决回避，等待风险释放。"
 }
 
-// 辅助解析函数
+func (s *StockService) BatchAnalyzeStocks(ctx context.Context, codes []string, role string, aiSvc *AIService) error {
+	total := len(codes)
+	var completed int32 = 0
+	concurrency := 2
+	jobs := make(chan string, total)
+	var wg sync.WaitGroup
+
+	for w := 1; w <= concurrency; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for code := range jobs {
+				stock, err := s.GetStockByCode(code)
+				if err != nil {
+					continue
+				}
+				klines, err := s.GetKLineData(code, 100, "daily")
+				if err != nil {
+					continue
+				}
+				_, _ = aiSvc.AnalyzeTechnical(stock, klines, role)
+				newCompleted := atomic.AddInt32(&completed, 1)
+				runtime.EventsEmit(ctx, "batch_analyze_progress", map[string]interface{}{
+					"code":      code,
+					"name":      stock.Name,
+					"completed": newCompleted,
+					"total":     total,
+					"percent":   float64(newCompleted) / float64(total) * 100,
+				})
+			}
+		}()
+	}
+
+	for _, code := range codes {
+		jobs <- code
+	}
+	close(jobs)
+	wg.Wait()
+	return nil
+}
+
 func getString(v interface{}) string {
 	if s, ok := v.(string); ok {
 		return s

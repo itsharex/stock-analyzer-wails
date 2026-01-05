@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useWailsAPI } from '../hooks/useWailsAPI'
 import type { StockData } from '../types'
+import BatchAnalyzeModal from './BatchAnalyzeModal'
+import { Brain } from 'lucide-react'
 
 interface WatchlistProps {
   onSelectStock: (code: string) => void
@@ -10,7 +12,8 @@ interface WatchlistProps {
 function Watchlist({ onSelectStock, refreshTrigger }: WatchlistProps) {
   const [stocks, setStocks] = useState<StockData[]>([])
   const [loading, setLoading] = useState(true)
-  const { getWatchlist, removeFromWatchlist } = useWailsAPI()
+  const [isBatchModalOpen, setIsBatchModalOpen] = useState(false)
+  const { getWatchlist, removeFromWatchlist, batchAnalyzeStocks } = useWailsAPI()
 
   useEffect(() => {
     loadWatchlist()
@@ -50,12 +53,22 @@ function Watchlist({ onSelectStock, refreshTrigger }: WatchlistProps) {
   return (
     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
       <div className="p-4 border-b border-gray-50 bg-gray-50/50 flex justify-between items-center">
-        <h3 className="font-bold text-gray-800 flex items-center">
-          <span className="mr-2">⭐</span> 我的自选
-        </h3>
-        <span className="text-[10px] bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full font-bold">
-          {stocks.length}
-        </span>
+        <div className="flex items-center space-x-2">
+          <h3 className="font-bold text-gray-800 flex items-center">
+            <span className="mr-2">⭐</span> 我的自选
+          </h3>
+          <span className="text-[10px] bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full font-bold">
+            {stocks.length}
+          </span>
+        </div>
+        <button
+          onClick={() => setIsBatchModalOpen(true)}
+          className="flex items-center space-x-1 px-2 py-1 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors text-xs font-bold"
+          title="批量 AI 分析"
+        >
+          <Brain className="w-3 h-3" />
+          <span>批量分析</span>
+        </button>
       </div>
       <div className="divide-y divide-gray-50 max-h-[400px] overflow-y-auto">
         {stocks.map((stock) => (
@@ -88,6 +101,13 @@ function Watchlist({ onSelectStock, refreshTrigger }: WatchlistProps) {
           </div>
         ))}
       </div>
+
+      <BatchAnalyzeModal
+        isOpen={isBatchModalOpen}
+        onClose={() => setIsBatchModalOpen(false)}
+        stocks={stocks.map(s => ({ code: s.code, name: s.name }))}
+        onStart={(codes) => batchAnalyzeStocks(codes, 'technical_master')}
+      />
     </div>
   )
 }

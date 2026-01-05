@@ -281,6 +281,14 @@ func (a *App) GetStockHealthCheck(code string) (*models.HealthCheckResult, error
 	return a.stockService.GetStockHealthCheck(code)
 }
 
+// BatchAnalyzeStocks 批量分析股票
+func (a *App) BatchAnalyzeStocks(codes []string, role string) error {
+	if a.aiService == nil {
+		return fmt.Errorf("AI服务未就绪")
+	}
+	return a.stockService.BatchAnalyzeStocks(a.ctx, codes, role, a.aiService)
+}
+
 // GetKLineData 获取K线数据，支持周期参数
 func (a *App) GetKLineData(code string, limit int, period string) ([]*models.KLineData, error) {
 	if code == "" {
