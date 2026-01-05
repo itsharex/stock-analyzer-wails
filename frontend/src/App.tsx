@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import StockSearch from './components/StockSearch'
 import StockInfo from './components/StockInfo'
 import AnalysisReport from './components/AnalysisReport'
 import Settings from './components/Settings'
-import type { StockData, AnalysisReport as AnalysisReportType, NavItem } from './types'
+import { useWailsAPI } from './hooks/useWailsAPI'
+import type { StockData, AnalysisReport as AnalysisReportType, NavItem, AppConfig } from './types'
 
 function App() {
   const [activeTab, setActiveTab] = useState<NavItem>('analysis')
@@ -11,6 +12,23 @@ function App() {
   const [analysisReport, setAnalysisReport] = useState<AnalysisReportType | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string>('')
+  const [currentConfig, setCurrentConfig] = useState<AppConfig | null>(null)
+
+  const { getConfig } = useWailsAPI()
+
+  // 初始化加载配置
+  useEffect(() => {
+    fetchConfig()
+  }, [])
+
+  const fetchConfig = async () => {
+    try {
+      const config = await getConfig()
+      setCurrentConfig(config)
+    } catch (err) {
+      console.error('Failed to fetch config:', err)
+    }
+  }
 
   const handleStockDataLoaded = (data: StockData) => {
     setStockData(data)
@@ -21,6 +39,11 @@ function App() {
   const handleAnalysisComplete = (report: AnalysisReportType) => {
     setAnalysisReport(report)
     setError('')
+  }
+
+  // 当设置页面保存成功后，通知父组件刷新配置
+  const handleConfigSaved = () => {
+    fetchConfig()
   }
 
   return (
@@ -78,8 +101,15 @@ function App() {
           <h2 className="text-lg font-semibold text-gray-800">
             {activeTab === 'analysis' ? '股票分析工作台' : '系统参数配置'}
           </h2>
-          <div className="flex items-center space-x-4 text-sm text-gray-500">
-            <span className="flex items-center">
+          <div className="flex items-center space-x-6 text-sm">
+            {currentConfig && (
+              <div className="flex items-center bg-blue-50 text-blue-700 px-3 py-1.5 rounded-lg border border-blue-100">
+                <span className="mr-2">🤖</span>
+                <span className="font-medium mr-1">当前模型:</span>
+                <span className="font-mono text-xs">{currentConfig.model}</span>
+              </div>
+            )}
+            <span className="flex items-center text-gray-500">
               <span className="w-2 h-2 bg-green-500 rounded-full mr-2"></span>
               API 状态: 正常
             </span>
@@ -117,7 +147,7 @@ function App() {
                       <div className="absolute inset-0 border-4 border-blue-600 rounded-full border-t-transparent animate-spin"></div>
                     </div>
                     <h3 className="text-lg font-semibold text-gray-800 mb-2">AI 正在深度分析中</h3>
-                    <p className="text-gray-500 text-sm">正在调用阿里百炼 Qwen 模型进行多维度评估...</p>
+                    <p className="text-gray-500 text-sm">正在调用 {currentConfig?.model || 'Qwen'} 模型进行多维度评估...</p>
                   </div>
                 ) : analysisReport ? (
                   <AnalysisReport report={analysisReport} />
@@ -135,7 +165,7 @@ function App() {
               </div>
             </div>
           ) : (
-            <Settings />
+            <Settings onConfigSaved={handleConfigSaved} />
           )}
         </div>
 

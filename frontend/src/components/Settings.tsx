@@ -2,7 +2,11 @@ import { useState, useEffect } from 'react'
 import { useWailsAPI } from '../hooks/useWailsAPI'
 import type { AppConfig } from '../types'
 
-function Settings() {
+interface SettingsProps {
+  onConfigSaved?: () => void
+}
+
+function Settings({ onConfigSaved }: SettingsProps) {
   const [config, setConfig] = useState<AppConfig>({
     apiKey: '',
     baseUrl: '',
@@ -36,6 +40,9 @@ function Settings() {
     try {
       await saveConfig(config)
       setMessage({ type: 'success', text: '配置已保存并生效' })
+      if (onConfigSaved) {
+        onConfigSaved()
+      }
     } catch (err: any) {
       setMessage({ text: `保存失败: ${err.message || err}`, type: 'error' })
     } finally {
