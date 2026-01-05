@@ -29,6 +29,21 @@ type KLineData struct {
 	Low    float64 `json:"low"`    // 最低价
 	Close  float64 `json:"close"`  // 收盘价
 	Volume int64   `json:"volume"` // 成交量
+	MACD   *MACD   `json:"macd,omitempty"`
+	KDJ    *KDJ    `json:"kdj,omitempty"`
+	RSI    float64 `json:"rsi,omitempty"`
+}
+
+type MACD struct {
+	DIF float64 `json:"dif"`
+	DEA float64 `json:"dea"`
+	Bar float64 `json:"bar"`
+}
+
+type KDJ struct {
+	K float64 `json:"k"`
+	D float64 `json:"d"`
+	J float64 `json:"j"`
 }
 
 // AnalysisReport AI分析报告结构

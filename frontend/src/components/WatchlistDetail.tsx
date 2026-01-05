@@ -10,6 +10,11 @@ interface WatchlistDetailProps {
 function WatchlistDetail({ stock }: WatchlistDetailProps) {
   const [klines, setKlines] = useState<KLineData[]>([])
   const [loading, setLoading] = useState(true)
+  const [indicators, setIndicators] = useState({
+    macd: false,
+    kdj: false,
+    rsi: false
+  })
   const { getKLineData } = useWailsAPI()
 
   useEffect(() => {
@@ -19,13 +24,17 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
   const loadKLines = async () => {
     setLoading(true)
     try {
-      const data = await getKLineData(stock.code, 100)
+      const data = await getKLineData(stock.code, 150) // 获取更多数据以支持指标计算
       setKlines(data)
     } catch (err) {
       console.error('Failed to load K-lines:', err)
     } finally {
       setLoading(false)
     }
+  }
+
+  const toggleIndicator = (key: keyof typeof indicators) => {
+    setIndicators(prev => ({ ...prev, [key]: !prev[key] }))
   }
 
   return (
@@ -65,9 +74,31 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
       {/* K线图区域 */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
         <div className="flex items-center justify-between mb-6">
-          <h3 className="font-bold text-gray-800 flex items-center">
-            <span className="mr-2">📈</span> 日K线图
-          </h3>
+          <div className="flex items-center space-x-4">
+            <h3 className="font-bold text-gray-800 flex items-center">
+              <span className="mr-2">📈</span> 行情图表
+            </h3>
+            <div className="flex bg-gray-100 p-1 rounded-lg">
+              <button 
+                onClick={() => toggleIndicator('macd')}
+                className={`px-3 py-1 rounded-md text-xs font-bold transition-all ${indicators.macd ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+              >
+                MACD
+              </button>
+              <button 
+                onClick={() => toggleIndicator('kdj')}
+                className={`px-3 py-1 rounded-md text-xs font-bold transition-all ${indicators.kdj ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+              >
+                KDJ
+              </button>
+              <button 
+                onClick={() => toggleIndicator('rsi')}
+                className={`px-3 py-1 rounded-md text-xs font-bold transition-all ${indicators.rsi ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+              >
+                RSI
+              </button>
+            </div>
+          </div>
           <div className="flex space-x-2">
             <span className="px-2 py-1 bg-blue-50 text-blue-600 rounded text-[10px] font-bold">前复权</span>
             <span className="px-2 py-1 bg-gray-50 text-gray-400 rounded text-[10px] font-bold">日线</span>
@@ -75,11 +106,17 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
         </div>
         
         {loading ? (
-          <div className="h-[400px] flex items-center justify-center">
+          <div className="h-[600px] flex items-center justify-center">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500"></div>
           </div>
         ) : (
-          <KLineChart data={klines} />
+          <KLineChart 
+            data={klines} 
+            height={600}
+            showMACD={indicators.macd}
+            showKDJ={indicators.kdj}
+            showRSI={indicators.rsi}
+          />
         )}
       </div>
 

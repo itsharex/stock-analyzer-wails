@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"stock-analyzer-wails/models"
 	"strings"
@@ -101,15 +102,16 @@ func (s *StockService) GetStockByCode(code string) (*models.StockData, error) {
 	return stock, nil
 }
 
-// GetKLineData 获取历史K线数据
+// GetKLineData 获取历史K线数据并计算技术指标
 func (s *StockService) GetKLineData(code string, limit int) ([]*models.KLineData, error) {
 	secid := s.getSecID(code)
 	if secid == "" {
 		return nil, fmt.Errorf("无效的股票代码")
 	}
 
-	// f51:时间, f52:开盘, f53:收盘, f54:最高, f55:最低, f56:成交量
-	url := fmt.Sprintf("%s?secid=%s&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56&klt=101&fqt=1&end=20500101&lmt=%d", s.klineURL, secid, limit)
+	// 为了计算指标，我们需要比请求的 limit 更多的数据
+	fetchLimit := limit + 50
+	url := fmt.Sprintf("%s?secid=%s&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56&klt=101&fqt=1&end=20500101&lmt=%d", s.klineURL, secid, fetchLimit)
 
 	resp, err := s.client.Get(url)
 	if err != nil {
@@ -143,7 +145,88 @@ func (s *StockService) GetKLineData(code string, limit int) ([]*models.KLineData
 		})
 	}
 
+	// 计算技术指标
+	s.calculateIndicators(klines)
+
+	// 只返回用户请求的数量
+	if len(klines) > limit {
+		return klines[len(klines)-limit:], nil
+	}
 	return klines, nil
+}
+
+func (s *StockService) calculateIndicators(klines []*models.KLineData) {
+	if len(klines) == 0 {
+		return
+	}
+
+	// 1. 计算 MACD (12, 26, 9)
+	ema12 := klines[0].Close
+	ema26 := klines[0].Close
+	dea := 0.0
+	for i, k := range klines {
+		ema12 = ema12*11/13 + k.Close*2/13
+		ema26 = ema26*25/27 + k.Close*2/27
+		dif := ema12 - ema26
+		if i == 0 {
+			dea = dif
+		} else {
+			dea = dea*8/10 + dif*2/10
+		}
+		k.MACD = &models.MACD{
+			DIF: dif,
+			DEA: dea,
+			Bar: (dif - dea) * 2,
+		}
+	}
+
+	// 2. 计算 KDJ (9, 3, 3)
+	for i := 0; i < len(klines); i++ {
+		if i < 8 {
+			klines[i].KDJ = &models.KDJ{K: 50, D: 50, J: 50}
+			continue
+		}
+		low := klines[i].Low
+		high := klines[i].High
+		for j := i - 8; j < i; j++ {
+			low = math.Min(low, klines[j].Low)
+			high = math.Max(high, klines[j].High)
+		}
+		rsv := 0.0
+		if high != low {
+			rsv = (klines[i].Close - low) / (high - low) * 100
+		}
+		prevK := klines[i-1].KDJ.K
+		prevD := klines[i-1].KDJ.D
+		k := prevK*2/3 + rsv/3
+		d := prevD*2/3 + k/3
+		klines[i].KDJ = &models.KDJ{
+			K: k,
+			D: d,
+			J: 3*k - 2*d,
+		}
+	}
+
+	// 3. 计算 RSI (14)
+	if len(klines) > 14 {
+		for i := 14; i < len(klines); i++ {
+			upSum := 0.0
+			downSum := 0.0
+			for j := i - 13; j <= i; j++ {
+				diff := klines[j].Close - klines[j-1].Close
+				if diff > 0 {
+					upSum += diff
+				} else {
+					downSum -= diff
+				}
+			}
+			if upSum+downSum == 0 {
+				klines[i].RSI = 50
+			} else {
+				klines[i].RSI = upSum / (upSum + downSum) * 100
+			}
+		}
+	}
 }
 
 func (s *StockService) getSecID(code string) string {
