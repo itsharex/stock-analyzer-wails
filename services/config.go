@@ -1,7 +1,6 @@
 package services
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,6 +13,15 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// 支持的模型列表
+var SupportedModels = []string{
+	"qwen-plus",
+	"qwen-max",
+	"qwen-turbo",
+	"qwen-long",
+	"qwen-plus-2025-07-28",
+}
+
 type dashscopeYAML struct {
 	APIKey  string `yaml:"api_key"`
 	Model   string `yaml:"model"`
@@ -25,14 +33,15 @@ type appYAML struct {
 }
 
 type DashscopeResolvedConfig struct {
-	APIKey  string `json:"apiKey"`
-	Model   string `json:"model"`
-	BaseURL string `json:"baseUrl"`
+	APIKey  string   `json:"apiKey"`
+	Model   string   `json:"model"`
+	BaseURL string   `json:"baseUrl"`
+	Models  []string `json:"models"` // 返回给前端的可选模型列表
 }
 
 func LoadDashscopeConfig() (DashscopeResolvedConfig, error) {
 	const (
-		defaultModel = "qwen-plus-2025-07-28"
+		defaultModel = "qwen-plus"
 		defaultBaseURL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 	)
 
@@ -47,17 +56,9 @@ func LoadDashscopeConfig() (DashscopeResolvedConfig, error) {
 		)
 		return DashscopeResolvedConfig{}, err
 	} else if ok {
-		logger.Info("发现 config.yaml",
-			zap.String("module", "services.config"),
-			zap.String("op", "LoadDashscopeConfig"),
-			zap.String("config_path", path),
-		)
 		raw, err := os.ReadFile(path)
-		if err != nil {
-			return DashscopeResolvedConfig{}, fmt.Errorf("读取配置文件失败: %s: %w", path, err)
-		}
-		if err := yaml.Unmarshal(raw, &cfg); err != nil {
-			return DashscopeResolvedConfig{}, fmt.Errorf("解析配置文件失败: %s: %w", path, err)
+		if err == nil {
+			yaml.Unmarshal(raw, &cfg)
 		}
 	}
 
@@ -83,17 +84,16 @@ func LoadDashscopeConfig() (DashscopeResolvedConfig, error) {
 		APIKey:  apiKey,
 		Model:   model,
 		BaseURL: baseURL,
+		Models:  SupportedModels,
 	}, nil
 }
 
-// SaveDashscopeConfig 保存配置到 config.yaml
 func SaveDashscopeConfig(config DashscopeResolvedConfig) error {
 	path, ok, err := findConfigYAMLPath()
 	if err != nil {
 		return err
 	}
 	if !ok {
-		// 如果不存在，默认在当前工作目录创建
 		cwd, _ := os.Getwd()
 		path = filepath.Join(cwd, "config.yaml")
 	}
@@ -111,12 +111,7 @@ func SaveDashscopeConfig(config DashscopeResolvedConfig) error {
 		return fmt.Errorf("序列化配置失败: %w", err)
 	}
 
-	err = os.WriteFile(path, data, 0644)
-	if err != nil {
-		return fmt.Errorf("写入配置文件失败: %w", err)
-	}
-
-	return nil
+	return os.WriteFile(path, data, 0644)
 }
 
 func firstNonEmpty(values ...string) string {
@@ -134,15 +129,12 @@ func normalizeDashscopeBaseURL(in string) (out string, changed bool) {
 		return s, false
 	}
 	s = strings.TrimRight(s, "/")
-
 	normalized := s
 	normalized = strings.ReplaceAll(normalized, "compatible-moe", "compatible-mode")
 	normalized = strings.ReplaceAll(normalized, "/dv1", "/v1")
-
 	if strings.HasSuffix(normalized, "/compatible-mode") {
 		normalized += "/v1"
 	}
-
 	return normalized, normalized != s
 }
 
@@ -156,7 +148,6 @@ func findConfigYAMLPath() (path string, ok bool, err error) {
 	if err == nil {
 		paths = append(paths, filepath.Join(cwd, "config.yaml"))
 	}
-
 	for _, p := range paths {
 		_, statErr := os.Stat(p)
 		if statErr == nil {

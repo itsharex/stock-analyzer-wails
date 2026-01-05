@@ -6,7 +6,8 @@ function Settings() {
   const [config, setConfig] = useState<AppConfig>({
     apiKey: '',
     baseUrl: '',
-    model: ''
+    model: '',
+    models: []
   })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -36,7 +37,7 @@ function Settings() {
       await saveConfig(config)
       setMessage({ type: 'success', text: '配置已保存并生效' })
     } catch (err: any) {
-      setMessage({ type: 'error', text: `保存失败: ${err.message || err}` })
+      setMessage({ text: `保存失败: ${err.message || err}`, type: 'error' })
     } finally {
       setSaving(false)
     }
@@ -84,6 +85,29 @@ function Settings() {
 
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
+            模型选择 (Model)
+          </label>
+          <select
+            value={config.model}
+            onChange={(e) => setConfig({ ...config, model: e.target.value })}
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition bg-white"
+          >
+            {config.models?.map((m) => (
+              <option key={m} value={m}>
+                {m}
+              </option>
+            ))}
+            {!config.models?.includes(config.model) && config.model && (
+              <option value={config.model}>{config.model} (自定义)</option>
+            )}
+          </select>
+          <p className="mt-1 text-xs text-gray-500">
+            选择要使用的通义千问模型版本
+          </p>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
             Base URL
           </label>
           <input
@@ -91,19 +115,6 @@ function Settings() {
             value={config.baseUrl}
             onChange={(e) => setConfig({ ...config, baseUrl: e.target.value })}
             placeholder="https://dashscope.aliyuncs.com/compatible-mode/v1"
-            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition"
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-2">
-            模型名称 (Model)
-          </label>
-          <input
-            type="text"
-            value={config.model}
-            onChange={(e) => setConfig({ ...config, model: e.target.value })}
-            placeholder="qwen-plus"
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition"
           />
         </div>
@@ -124,7 +135,7 @@ function Settings() {
         <ul className="text-xs text-blue-700 space-y-1 list-disc pl-4">
           <li>配置将保存在本地 `config.yaml` 文件中。</li>
           <li>保存后 AI 服务将立即使用新配置重新初始化。</li>
-          <li>如果 API Key 无效，AI 分析功能将无法使用。</li>
+          <li>推荐使用 `qwen-plus` 以获得最佳的分析性价比。</li>
         </ul>
       </div>
     </div>

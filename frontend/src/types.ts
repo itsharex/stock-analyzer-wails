@@ -43,6 +43,7 @@ export interface AppConfig {
   apiKey: string
   baseUrl: string
   model: string
+  models?: string[] // 可选模型列表
 }
 
 /**
