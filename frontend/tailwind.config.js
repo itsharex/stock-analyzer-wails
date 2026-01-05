@@ -24,6 +24,36 @@ export default {
               color: '#94a3b8',
               borderLeftColor: '#3b82f6',
             },
+            table: {
+              fontSize: '0.75rem',
+              lineHeight: '1rem',
+              borderCollapse: 'collapse',
+              width: '100%',
+              marginTop: '1.5rem',
+              marginBottom: '1.5rem',
+            },
+            thead: {
+              backgroundColor: '#1e293b',
+              borderBottomWidth: '1px',
+              borderBottomColor: '#334155',
+            },
+            'thead th': {
+              color: '#f1f5f9',
+              fontWeight: '600',
+              padding: '0.5rem 0.75rem',
+              textAlign: 'left',
+            },
+            'tbody tr': {
+              borderBottomWidth: '1px',
+              borderBottomColor: '#1e293b',
+            },
+            'tbody tr:nth-child(even)': {
+              backgroundColor: '#0f172a',
+            },
+            'tbody td': {
+              padding: '0.5rem 0.75rem',
+              color: '#cbd5e1',
+            },
           },
         },
       },
