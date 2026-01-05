@@ -63,6 +63,83 @@ func (a *App) startup(ctx context.Context) {
 	}
 	
 	go a.startAlertMonitor()
+	go a.startPositionMonitor()
+}
+
+// startPositionMonitor 启动持仓逻辑监控引擎
+func (a *App) startPositionMonitor() {
+	ticker := time.NewTicker(30 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-a.ctx.Done():
+			return
+		case <-ticker.C:
+			a.checkPositionLogics()
+		}
+	}
+}
+
+// checkPositionLogics 校验所有活跃持仓的建仓逻辑
+func (a *App) checkPositionLogics() {
+	positions, err := a.positionStorage.GetPositions()
+	if err != nil || len(positions) == 0 {
+		return
+	}
+
+	for _, pos := range positions {
+		if pos.CurrentStatus != "holding" {
+			continue
+		}
+
+		// 1. 获取最新实时数据
+		stock, err := a.stockService.GetStockByCode(pos.StockCode)
+		if err != nil {
+			continue
+		}
+
+		moneyFlow, err := a.stockService.GetMoneyFlowData(pos.StockCode)
+		if err != nil {
+			continue
+		}
+
+		violatedReasons := make([]string, 0)
+		
+		// 2. 校验止损位 (硬性逻辑)
+		if stock.Price < pos.Strategy.StopLossPrice {
+			violatedReasons = append(violatedReasons, fmt.Sprintf("股价(%.2f)已跌破止损位(%.2f)", stock.Price, pos.Strategy.StopLossPrice))
+		}
+
+		// 3. 校验资金流逻辑 (基于 AI 设定的核心理由)
+		for _, reason := range pos.Strategy.CoreReasons {
+			if reason.Type == "money_flow" {
+				// 简单启发式：如果今日主力净流出超过 5000 万，且理由中包含主力流入
+				if moneyFlow.TodayMain < -50000000 {
+					violatedReasons = append(violatedReasons, "主力资金出现大幅流出，背离建仓逻辑")
+				}
+			}
+		}
+
+		// 4. 如果逻辑失效，触发预警并更新状态
+		if len(violatedReasons) > 0 && pos.LogicStatus != "violated" {
+			pos.LogicStatus = "violated"
+			pos.UpdatedAt = time.Now()
+			a.positionStorage.SavePosition(pos)
+
+			// 发送 Wails 事件通知前端
+			runtime.EventsEmit(a.ctx, "logic_violation", map[string]interface{}{
+				"code":    pos.StockCode,
+				"name":    pos.StockName,
+				"reasons": violatedReasons,
+				"price":   stock.Price,
+			})
+			
+			logger.Warn("持仓逻辑失效预警", 
+				zap.String("code", pos.StockCode), 
+				zap.Strings("reasons", violatedReasons))
+		}
+	}
 }
 
 // startAlertMonitor 启动价格预警监控引擎

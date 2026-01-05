@@ -3,6 +3,7 @@ import { useWailsAPI } from '../hooks/useWailsAPI'
 import type { StockData } from '../types'
 import BatchAnalyzeModal from './BatchAnalyzeModal'
 import { Brain } from 'lucide-react'
+import PositionMonitor from './PositionMonitor'
 
 interface WatchlistProps {
   onSelectStock: (code: string) => void
@@ -13,7 +14,8 @@ function Watchlist({ onSelectStock, refreshTrigger }: WatchlistProps) {
   const [stocks, setStocks] = useState<StockData[]>([])
   const [loading, setLoading] = useState(true)
   const [isBatchModalOpen, setIsBatchModalOpen] = useState(false)
-  const { getWatchlist, removeFromWatchlist, batchAnalyzeStocks } = useWailsAPI()
+  const [positions, setPositions] = useState<Record<string, any>>({})
+  const { getWatchlist, removeFromWatchlist, batchAnalyzeStocks, getPositions } = useWailsAPI()
 
   useEffect(() => {
     loadWatchlist()
@@ -23,6 +25,10 @@ function Watchlist({ onSelectStock, refreshTrigger }: WatchlistProps) {
     try {
       const data = await getWatchlist()
       setStocks(data)
+      
+      // 加载持仓数据
+      const posMap = await getPositions()
+      setPositions(posMap || {})
     } catch (err) {
       console.error('Failed to load watchlist:', err)
     } finally {
@@ -51,7 +57,11 @@ function Watchlist({ onSelectStock, refreshTrigger }: WatchlistProps) {
   }
 
   return (
-    <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+    <div className="space-y-6">
+      {/* 持仓逻辑监控看板 */}
+      <PositionMonitor positions={positions} onRefresh={loadWatchlist} />
+
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
       <div className="p-4 border-b border-gray-50 bg-gray-50/50 flex justify-between items-center">
         <div className="flex items-center space-x-2">
           <h3 className="font-bold text-gray-800 flex items-center">
@@ -108,6 +118,7 @@ function Watchlist({ onSelectStock, refreshTrigger }: WatchlistProps) {
         stocks={stocks.map(s => ({ code: s.code, name: s.name }))}
         onStart={(codes) => batchAnalyzeStocks(codes, 'technical_master')}
       />
+    </div>
     </div>
   )
 }
