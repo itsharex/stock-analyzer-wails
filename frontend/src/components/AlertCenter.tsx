@@ -20,10 +20,11 @@ export const AlertCenter: React.FC = () => {
         getAlertHistory('', 50),
         getAlertConfig()
       ]);
-      setHistory(hist);
-      setConfig(cfg);
+      setHistory(Array.isArray(hist) ? hist : []);
+      if (cfg) setConfig(cfg);
     } catch (err) {
       console.error('Failed to fetch alert data:', err);
+      setHistory([]);
     } finally {
       setLoading(false);
     }
@@ -149,7 +150,7 @@ export const AlertCenter: React.FC = () => {
           ) : (
             <div className="divide-y divide-slate-50">
               {history
-                .filter(item => !filterCode || item.stockCode.includes(filterCode))
+                .filter(item => item && (!filterCode || (item.stockCode && item.stockCode.includes(filterCode))))
                 .map((item, idx) => (
                 <div key={idx} className="p-4 hover:bg-slate-50 transition-colors group">
                   <div className="flex items-start justify-between">
@@ -159,17 +160,17 @@ export const AlertCenter: React.FC = () => {
                       </div>
                       <div>
                         <div className="flex items-center space-x-2 mb-1">
-                          <span className="font-bold text-slate-800">{item.stockName}</span>
-                          <span className="text-xs font-mono text-slate-400">{item.stockCode}</span>
+                          <span className="font-bold text-slate-800">{item.stockName || '未知股票'}</span>
+                          <span className="text-xs font-mono text-slate-400">{item.stockCode || '000000'}</span>
                           <span className={`text-[10px] px-1.5 py-0.5 rounded ${item.type === 'resistance' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
                             {item.type === 'resistance' ? '压力位' : '支撑位'}
                           </span>
                         </div>
-                        <p className="text-sm text-slate-600 mb-2">{item.message}</p>
+                        <p className="text-sm text-slate-600 mb-2">{item.message || '无预警消息'}</p>
                         <div className="flex items-center space-x-3">
                           <div className="flex items-center space-x-1 bg-white border border-slate-100 rounded-lg px-2 py-1 shadow-sm">
-                            {getRoleIcon(item.role)}
-                            <span className="text-[10px] font-medium text-slate-500 italic">"{item.advice}"</span>
+                            {getRoleIcon(item.role || 'technical')}
+                            <span className="text-[10px] font-medium text-slate-500 italic">"{item.advice || '暂无建议'}"</span>
                           </div>
                         </div>
                       </div>
@@ -177,11 +178,11 @@ export const AlertCenter: React.FC = () => {
                     <div className="text-right">
                       <div className="flex items-center text-[10px] text-slate-400 mb-1">
                         <Calendar className="w-3 h-3 mr-1" />
-                        {new Date(item.timestamp).toLocaleDateString()}
+                        {item.timestamp ? new Date(item.timestamp).toLocaleDateString() : '-'}
                       </div>
                       <div className="flex items-center text-[10px] text-slate-400">
                         <Clock className="w-3 h-3 mr-1" />
-                        {new Date(item.timestamp).toLocaleTimeString()}
+                        {item.timestamp ? new Date(item.timestamp).toLocaleTimeString() : '-'}
                       </div>
                     </div>
                   </div>
