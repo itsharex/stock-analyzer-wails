@@ -200,69 +200,75 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
         </div>
 
         {/* 右侧技术分析师面板 */}
-        <div className="w-[480px] bg-slate-900 border-l border-slate-800 flex flex-col">
-          <div className="p-4 border-b border-slate-800 flex items-center justify-between">
-            <div className="flex items-center space-x-2 text-blue-400">
-              <BrainCircuit className="w-5 h-5" />
-              <h3 className="font-bold text-slate-100">技术分析师</h3>
+        <div className="w-[480px] bg-slate-50 border-l border-slate-200 flex flex-col shadow-[-10px_0_30px_rgba(0,0,0,0.03)] z-10">
+          <div className="p-5 border-b border-slate-200 flex items-center justify-between bg-white/50 backdrop-blur-sm">
+            <div className="flex items-center space-x-2.5 text-blue-600">
+              <div className="p-1.5 bg-blue-50 rounded-lg">
+                <BrainCircuit className="w-5 h-5" />
+              </div>
+              <h3 className="font-bold text-slate-800 tracking-tight">技术分析师</h3>
             </div>
             <button 
               onClick={handleAnalyze}
               disabled={analysisLoading || klineData.length === 0}
-              className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 text-white text-xs font-bold rounded-lg transition-colors flex items-center space-x-1"
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white text-xs font-bold rounded-xl transition-all shadow-sm hover:shadow-md flex items-center space-x-1.5"
             >
-              {analysisLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <LineChartIcon className="w-3 h-3" />}
+              {analysisLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <LineChartIcon className="w-3.5 h-3.5" />}
               <span>{analysisResult ? '重新分析' : '开始深度分析'}</span>
             </button>
           </div>
 
-          <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+          <div className="flex-1 overflow-y-auto p-6 custom-scrollbar bg-gradient-to-b from-white/30 to-transparent">
             {analysisLoading ? (
-              <div className="flex flex-col items-center justify-center h-64 space-y-4 text-slate-500">
+              <div className="flex flex-col items-center justify-center h-64 space-y-5 text-slate-400">
                 <div className="relative">
-                  <BrainCircuit className="w-12 h-12 text-blue-500/20 animate-pulse" />
-                  <Loader2 className="absolute inset-0 w-12 h-12 text-blue-500 animate-spin" />
+                  <div className="absolute inset-0 bg-blue-500/10 rounded-full blur-xl animate-pulse" />
+                  <BrainCircuit className="w-14 h-14 text-blue-500/30 relative z-10" />
+                  <Loader2 className="absolute inset-0 w-14 h-14 text-blue-500 animate-spin relative z-20" />
                 </div>
-                <p className="text-sm animate-pulse">正在识别形态并评估风险...</p>
+                <p className="text-sm font-medium animate-pulse">正在识别形态并评估风险...</p>
               </div>
             ) : analysisResult ? (
-              <div className="space-y-6">
+              <div className="space-y-8">
                 {/* 风险与建议看板 */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-3 flex flex-col items-center justify-center">
-                    <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">操盘建议</p>
-                    <div className={`px-4 py-1 rounded-full text-sm font-black shadow-lg ${getActionColor(analysisResult.actionAdvice)}`}>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="bg-white border border-slate-200 rounded-2xl p-4 flex flex-col items-center justify-center shadow-sm hover:shadow-md transition-shadow">
+                    <p className="text-[10px] text-slate-400 uppercase tracking-widest font-bold mb-2">操盘建议</p>
+                    <div className={`px-5 py-1.5 rounded-full text-sm font-black shadow-sm ${getActionColor(analysisResult.actionAdvice)}`}>
                       {analysisResult.actionAdvice}
                     </div>
                   </div>
-                  <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-3 flex flex-col items-center justify-center">
-                    <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">风险得分</p>
-                    <div className={`text-2xl font-black font-mono ${getRiskColor(analysisResult.riskScore)}`}>
+                  <div className="bg-white border border-slate-200 rounded-2xl p-4 flex flex-col items-center justify-center shadow-sm hover:shadow-md transition-shadow">
+                    <p className="text-[10px] text-slate-400 uppercase tracking-widest font-bold mb-2">风险得分</p>
+                    <div className={`text-3xl font-black font-mono ${getRiskColor(analysisResult.riskScore)}`}>
                       {analysisResult.riskScore}
                     </div>
                   </div>
                 </div>
 
                 {/* 核心结论 */}
-                <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 mb-4">
-                  <p className="text-blue-400 text-xs font-medium flex items-center">
-                    <Zap className="w-3 h-3 mr-1" />
-                    核心结论：{analysisResult.analysis.split('\n')[0].replace(/^[#\s*]+/, '')}
+                <div className="bg-blue-600/5 border border-blue-600/10 rounded-2xl p-5 mb-6 relative overflow-hidden group">
+                  <div className="absolute top-0 left-0 w-1 h-full bg-blue-500" />
+                  <p className="text-blue-700 text-sm font-bold flex items-center mb-1">
+                    <Zap className="w-4 h-4 mr-2 fill-blue-500" />
+                    核心结论
+                  </p>
+                  <p className="text-slate-600 text-sm leading-relaxed">
+                    {analysisResult.analysis.split('\n')[0].replace(/^[#\s*]+/, '')}
                   </p>
                 </div>
 
                 {/* Markdown 渲染内容 */}
-                <div className="prose prose-invert prose-sm max-w-none">
+                <div className="prose prose-slate prose-sm max-w-none prose-headings:text-slate-800 prose-p:text-slate-600 prose-strong:text-blue-600">
                   <ReactMarkdown 
                     remarkPlugins={[remarkGfm]}
                     components={{
-                      // 我们可以通过自定义渲染器来处理特定词汇
                       strong: ({ children }) => {
                         const content = String(children);
                         if (STOCK_GLOSSARY[content]) {
                           return <GlossaryTooltip term={content}>{children}</GlossaryTooltip>;
                         }
-                        return <strong>{children}</strong>;
+                        return <strong className="font-bold text-blue-600">{children}</strong>;
                       }
                     }}
                   >
@@ -274,13 +280,16 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
                 <GlossaryPanel text={analysisResult.analysis} />
               </div>
             ) : (
-              <div className="flex flex-col items-center justify-center h-64 text-center space-y-4">
-                <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center">
-                  <ShieldCheck className="w-8 h-8 text-slate-600" />
+              <div className="flex flex-col items-center justify-center h-80 text-center space-y-5">
+                <div className="w-20 h-20 bg-white rounded-3xl shadow-sm border border-slate-100 flex items-center justify-center group hover:scale-105 transition-transform">
+                  <ShieldCheck className="w-10 h-10 text-slate-300 group-hover:text-blue-400 transition-colors" />
                 </div>
                 <div>
-                  <p className="text-slate-400 font-medium">暂无风险评估</p>
-                  <p className="text-xs text-slate-600 mt-1">点击上方按钮，获取 AI 深度<br/>风险评估与操盘建议</p>
+                  <p className="text-slate-500 font-bold text-lg">暂无风险评估</p>
+                  <p className="text-sm text-slate-400 mt-2 leading-relaxed">
+                    点击上方按钮，获取 AI 深度<br/>
+                    <span className="text-blue-500 font-medium">风险评估与操盘建议</span>
+                  </p>
                 </div>
               </div>
             )}
