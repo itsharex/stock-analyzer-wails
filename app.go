@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"stock-analyzer-wails/models"
 	"stock-analyzer-wails/services"
+	"sync"
 	"time"
 
 	"stock-analyzer-wails/internal/logger"
 
 	"go.uber.org/zap"
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
 // App 应用程序结构
@@ -19,6 +21,8 @@ type App struct {
 	aiService        *services.AIService
 	watchlistService *services.WatchlistService
 	aiInitErr        error
+	alerts           []*models.PriceAlert
+	alertMutex       sync.Mutex
 }
 
 // NewApp 创建新的App应用程序
@@ -35,6 +39,127 @@ func NewApp() *App {
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	a.initAIService()
+	go a.startAlertMonitor()
+}
+
+// startAlertMonitor 启动价格预警监控引擎
+func (a *App) startAlertMonitor() {
+	ticker := time.NewTicker(10 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-a.ctx.Done():
+			return
+		case <-ticker.C:
+			a.checkAlerts()
+		}
+	}
+}
+
+// checkAlerts 检查所有激活的预警
+func (a *App) checkAlerts() {
+	a.alertMutex.Lock()
+	activeAlerts := make([]*models.PriceAlert, 0)
+	for _, alert := range a.alerts {
+		if alert.IsActive {
+			activeAlerts = append(activeAlerts, alert)
+		}
+	}
+	a.alertMutex.Unlock()
+
+	if len(activeAlerts) == 0 {
+		return
+	}
+
+	// 批量获取最新价进行比对
+	for _, alert := range activeAlerts {
+		stock, err := a.stockService.GetStockByCode(alert.StockCode)
+		if err != nil {
+			continue
+		}
+
+		// 碰撞检测逻辑
+		triggered := false
+		msg := ""
+		
+		// 阈值：距离关键位 0.5% 以内触发
+		threshold := alert.Price * 0.005
+		diff := stock.Price - alert.Price
+
+		// 避免频繁触发：1小时冷却时间
+		if time.Since(alert.LastTriggered) < 1*time.Hour {
+			continue
+		}
+
+		if alert.Type == "resistance" && stock.Price >= alert.Price {
+			triggered = true
+			msg = fmt.Sprintf("突破压力位！%s 当前价 %.2f 已站上 AI 识别的压力位 %.2f", stock.Name, stock.Price, alert.Price)
+		} else if alert.Type == "support" && stock.Price <= alert.Price {
+			triggered = true
+			msg = fmt.Sprintf("跌破支撑位！%s 当前价 %.2f 已跌穿 AI 识别的支撑位 %.2f", stock.Name, stock.Price, alert.Price)
+		} else if diff > -threshold && diff < threshold {
+			triggered = true
+			msg = fmt.Sprintf("接近关键位！%s 当前价 %.2f 正在挑战 AI 识别的 %s %.2f", stock.Name, stock.Price, alert.Label, alert.Price)
+		}
+
+		if triggered {
+			alert.LastTriggered = time.Now()
+			
+			// 异步生成 AI 建议，避免阻塞监控主循环
+			go func(al *models.PriceAlert, st *models.StockData, baseMsg string) {
+				advice, _ := a.aiService.GenerateAlertAdvice(st.Name, al.Type, al.Label, al.Role, st.Price, al.Price)
+				
+				// 发送系统通知
+				runtime.EventsEmit(a.ctx, "price_alert", map[string]interface{}{
+					"stockCode": al.StockCode,
+					"stockName": al.StockName,
+					"message":   baseMsg,
+					"advice":    advice,
+					"type":      al.Type,
+					"price":     st.Price,
+					"role":      al.Role,
+				})
+				
+				logger.Info("触发价格预警",
+					zap.String("stock", al.StockName),
+					zap.Float64("price", st.Price),
+					zap.String("msg", baseMsg),
+					zap.String("advice", advice),
+				)
+			}(alert, stock, msg)
+		}
+	}
+}
+
+// UpdateAlertsFromAnalysis 从 AI 分析结果中更新预警位
+func (a *App) UpdateAlertsFromAnalysis(code string, name string, result *models.TechnicalAnalysisResult, role string) {
+	a.alertMutex.Lock()
+	defer a.alertMutex.Unlock()
+
+	// 清除该股票旧的 AI 预警
+	newAlerts := make([]*models.PriceAlert, 0)
+	for _, alert := range a.alerts {
+		if alert.StockCode != code {
+			newAlerts = append(newAlerts, alert)
+		}
+	}
+
+	// 添加新的预警位
+	for _, drawing := range result.Drawings {
+		if drawing.Type == "support" || drawing.Type == "resistance" {
+			newAlerts = append(newAlerts, &models.PriceAlert{
+				StockCode: code,
+				StockName: name,
+				Type:      drawing.Type,
+				Price:     drawing.Price,
+				Label:     drawing.Label,
+				Role:      role,
+				IsActive:  true,
+			})
+		}
+	}
+	a.alerts = newAlerts
 }
 
 // initAIService 初始化或重新初始化 AI 服务
@@ -129,7 +254,15 @@ func (a *App) AnalyzeTechnical(code string, period string, role string) (*models
 		return nil, err
 	}
 
-	return a.aiService.AnalyzeTechnical(stock, klines, role)
+	result, err := a.aiService.AnalyzeTechnical(stock, klines, role)
+	if err != nil {
+		return nil, err
+	}
+
+	// 自动更新该股票的预警位
+	a.UpdateAlertsFromAnalysis(stock.Code, stock.Name, result, role)
+
+	return result, nil
 }
 
 // SearchStock 搜索股票

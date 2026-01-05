@@ -1,5 +1,7 @@
 package models
 
+import "time"
+
 // StockData 股票数据结构
 type StockData struct {
 	Code      string  `json:"code"`      // 股票代码
@@ -93,6 +95,18 @@ type TechnicalDrawing struct {
 	StartPrice float64 `json:"startPrice"` // 趋势线起点价格
 	EndPrice   float64 `json:"endPrice"`   // 趋势线终点价格
 	Label      string  `json:"label"`      // 标签
+}
+
+// PriceAlert 价格预警配置
+type PriceAlert struct {
+	StockCode     string    `json:"stockCode"`
+	StockName     string    `json:"stockName"`
+	Type          string    `json:"type"`      // support (支撑), resistance (压力)
+	Price         float64   `json:"price"`     // 触发价格
+	Label         string    `json:"label"`     // 标签描述
+	Role          string    `json:"role"`      // 触发时的AI角色
+	IsActive      bool      `json:"isActive"`  // 是否激活
+	LastTriggered time.Time `json:"-"`         // 上次触发时间，避免频繁骚扰
 }
 
 // EastMoneyResponse 东方财富API响应结构

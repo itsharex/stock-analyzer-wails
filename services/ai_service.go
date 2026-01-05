@@ -115,6 +115,36 @@ func (s *AIService) AnalyzeStock(stock *models.StockData) (*models.AnalysisRepor
 }
 
 // AnalyzeTechnical 深度技术面分析（支持多角色切换、绘图数据和风险评估）
+// GenerateAlertAdvice 根据警报触发情况生成角色化的建议
+func (s *AIService) GenerateAlertAdvice(stockName, alertType, label, role string, currentPrice, alertPrice float64) (string, error) {
+	rolePrompts := map[string]string{
+		"conservative": "你是一位名为'稳健老船长'的资深投资顾问。你极度厌恶风险，推崇价值投资和安全边际。你的语言风格沉稳、老练，经常使用航海比喻。",
+		"aggressive":   "你是一位名为'激进先锋官'的短线交易高手。你追求资金效率，擅长捕捉热点和动能爆发。你的语言风格果断、充满激情，经常使用军事比喻。",
+		"technical":    "你是一位名为'技术派大师'的量化分析专家。你只相信数据和图形，不带任何感情色彩。你的语言风格冷静、客观、专业。",
+	}
+
+	systemPrompt := rolePrompts[role]
+	if systemPrompt == "" {
+		systemPrompt = rolePrompts["technical"]
+	}
+
+	prompt := fmt.Sprintf("股票 %s 触发了价格预警。\n预警类型：%s\n关键位描述：%s\n当前价：%.2f\n关键位价格：%.2f\n\n请作为你的角色，给出一句极其简短（20字以内）的'大白话'操作建议。",
+		stockName, alertType, label, currentPrice, alertPrice)
+
+	ctx := context.Background()
+	messages := []*schema.Message{
+		schema.SystemMessage(systemPrompt),
+		schema.UserMessage(prompt),
+	}
+
+	resp, err := s.chatModel.Generate(ctx, messages)
+	if err != nil {
+		return "注意风险，按计划操作。", nil
+	}
+
+	return strings.TrimSpace(resp.Content), nil
+}
+
 func (s *AIService) AnalyzeTechnical(stock *models.StockData, klines []*models.KLineData, role string) (*models.TechnicalAnalysisResult, error) {
 	// 角色 Prompt 定义
 	rolePrompts := map[string]struct {

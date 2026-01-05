@@ -5,6 +5,7 @@ import AnalysisReport from './components/AnalysisReport'
 import Settings from './components/Settings'
 import Watchlist from './components/Watchlist'
 import WatchlistDetail from './components/WatchlistDetail'
+import { AlertToast } from './components/AlertToast'
 import { useWailsAPI } from './hooks/useWailsAPI'
 import type { StockData, AnalysisReport as AnalysisReportType, NavItem, AppConfig } from './types'
 
@@ -234,6 +235,7 @@ function App() {
           ⚠️ Disclaimer: AI-generated content is for reference only and does not constitute investment advice.
         </footer>
       </main>
+      <AlertToast />
     </div>
   )
 }
