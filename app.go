@@ -91,12 +91,12 @@ func (a *App) GetStockData(code string) (*models.StockData, error) {
 	return a.stockService.GetStockByCode(code)
 }
 
-// GetKLineData 获取K线数据
-func (a *App) GetKLineData(code string, limit int) ([]*models.KLineData, error) {
+// GetKLineData 获取K线数据，支持周期参数
+func (a *App) GetKLineData(code string, limit int, period string) ([]*models.KLineData, error) {
 	if code == "" {
 		return nil, fmt.Errorf("股票代码不能为空")
 	}
-	return a.stockService.GetKLineData(code, limit)
+	return a.stockService.GetKLineData(code, limit, period)
 }
 
 // AnalyzeStock 分析股票

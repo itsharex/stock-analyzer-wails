@@ -102,15 +102,25 @@ func (s *StockService) GetStockByCode(code string) (*models.StockData, error) {
 	return stock, nil
 }
 
-// GetKLineData 获取历史K线数据并计算技术指标
-func (s *StockService) GetKLineData(code string, limit int) ([]*models.KLineData, error) {
+// GetKLineData 获取历史K线数据并计算技术指标，支持周期选择
+func (s *StockService) GetKLineData(code string, limit int, period string) ([]*models.KLineData, error) {
 	secid := s.getSecID(code)
 	if secid == "" {
 		return nil, fmt.Errorf("无效的股票代码")
 	}
 
+	// 映射周期到东方财富的 klt 参数
+	// 101: 日线, 102: 周线, 103: 月线
+	klt := "101"
+	switch period {
+	case "week":
+		klt = "102"
+	case "month":
+		klt = "103"
+	}
+
 	fetchLimit := limit + 50
-	url := fmt.Sprintf("%s?secid=%s&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56&klt=101&fqt=1&end=20500101&lmt=%d", s.klineURL, secid, fetchLimit)
+	url := fmt.Sprintf("%s?secid=%s&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56&klt=%s&fqt=1&end=20500101&lmt=%d", s.klineURL, secid, klt, fetchLimit)
 
 	resp, err := s.client.Get(url)
 	if err != nil {

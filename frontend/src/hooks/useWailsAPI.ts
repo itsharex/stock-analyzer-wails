@@ -7,9 +7,9 @@ export const useWailsAPI = () => {
     return window.go.main.App.GetStockData(code)
   }, [])
 
-  const getKLineData = useCallback(async (code: string, limit: number): Promise<KLineData[]> => {
+  const getKLineData = useCallback(async (code: string, limit: number, period: string = 'daily'): Promise<KLineData[]> => {
     // @ts-ignore
-    return window.go.main.App.GetKLineData(code, limit)
+    return window.go.main.App.GetKLineData(code, limit, period)
   }, [])
 
   const analyzeStock = useCallback(async (code: string): Promise<AnalysisReport> => {

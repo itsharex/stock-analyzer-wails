@@ -7,9 +7,12 @@ interface WatchlistDetailProps {
   stock: StockData
 }
 
+type Period = 'daily' | 'week' | 'month'
+
 function WatchlistDetail({ stock }: WatchlistDetailProps) {
   const [klines, setKlines] = useState<KLineData[]>([])
   const [loading, setLoading] = useState(true)
+  const [period, setPeriod] = useState<Period>('daily')
   const [indicators, setIndicators] = useState({
     macd: false,
     kdj: false,
@@ -19,12 +22,12 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
 
   useEffect(() => {
     loadKLines()
-  }, [stock.code])
+  }, [stock.code, period])
 
   const loadKLines = async () => {
     setLoading(true)
     try {
-      const data = await getKLineData(stock.code, 150) // 获取更多数据以支持指标计算
+      const data = await getKLineData(stock.code, 150, period)
       setKlines(data)
     } catch (err) {
       console.error('Failed to load K-lines:', err)
@@ -35,6 +38,12 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
 
   const toggleIndicator = (key: keyof typeof indicators) => {
     setIndicators(prev => ({ ...prev, [key]: !prev[key] }))
+  }
+
+  const periodLabels: Record<Period, string> = {
+    daily: '日线',
+    week: '周线',
+    month: '月线'
   }
 
   return (
@@ -78,6 +87,20 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
             <h3 className="font-bold text-gray-800 flex items-center">
               <span className="mr-2">📈</span> 行情图表
             </h3>
+            
+            {/* 周期切换下拉菜单 */}
+            <div className="relative inline-block text-left">
+              <select 
+                value={period}
+                onChange={(e) => setPeriod(e.target.value as Period)}
+                className="block w-full pl-3 pr-10 py-1 text-xs font-bold border-gray-200 focus:outline-none focus:ring-blue-500 focus:border-blue-500 rounded-md bg-gray-50 text-gray-700 cursor-pointer"
+              >
+                <option value="daily">日线</option>
+                <option value="week">周线</option>
+                <option value="month">月线</option>
+              </select>
+            </div>
+
             <div className="flex bg-gray-100 p-1 rounded-lg">
               <button 
                 onClick={() => toggleIndicator('macd')}
@@ -101,7 +124,7 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
           </div>
           <div className="flex space-x-2">
             <span className="px-2 py-1 bg-blue-50 text-blue-600 rounded text-[10px] font-bold">前复权</span>
-            <span className="px-2 py-1 bg-gray-50 text-gray-400 rounded text-[10px] font-bold">日线</span>
+            <span className="px-2 py-1 bg-gray-50 text-gray-400 rounded text-[10px] font-bold">{periodLabels[period]}</span>
           </div>
         </div>
         
