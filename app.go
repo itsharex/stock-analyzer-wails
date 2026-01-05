@@ -48,6 +48,18 @@ func NewApp() *App {
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	a.initAIService()
+	
+	// 加载持久化的预警订阅
+	if a.alertStorage != nil {
+		alerts, err := a.alertStorage.LoadActiveAlerts()
+		if err == nil {
+			a.alertMutex.Lock()
+			a.alerts = alerts
+			a.alertMutex.Unlock()
+			logger.Info("成功加载持久化预警订阅", zap.Int("count", len(alerts)))
+		}
+	}
+	
 	go a.startAlertMonitor()
 }
 
@@ -182,6 +194,12 @@ func (a *App) UpdateAlertsFromAnalysis(code string, name string, result *models.
 		}
 	}
 	a.alerts = newAlerts
+	
+	// 持久化保存活跃预警
+	if a.alertStorage != nil {
+		a.alertStorage.SaveActiveAlerts(a.alerts)
+	}
+	
 	logger.Info("预警位更新完成", zap.Int("added_count", addedCount), zap.Int("total_active", len(a.alerts)))
 }
 
@@ -331,6 +349,11 @@ func (a *App) RemoveAlert(stockCode string, alertType string, price float64) {
 		newAlerts = append(newAlerts, alert)
 	}
 	a.alerts = newAlerts
+	
+	// 持久化保存更新后的预警列表
+	if a.alertStorage != nil {
+		a.alertStorage.SaveActiveAlerts(a.alerts)
+	}
 }
 
 // Watchlist 相关接口

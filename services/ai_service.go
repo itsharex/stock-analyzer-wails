@@ -210,7 +210,7 @@ func (s *AIService) AnalyzeTechnical(stock *models.StockData, klines []*models.K
 				"1. 【文字分析】：识别经典形态、量价配合、趋势阶段及操盘建议。\n"+
 				"2. 【风险评估】：请以纯 JSON 格式输出风险得分和操盘建议，放在 <RISK_JSON> 标签内。\n"+
 				"示例：<RISK_JSON>{\"riskScore\": 65, \"actionAdvice\": \"观望\"}</RISK_JSON>\n"+
-				"3. 【绘图数据】：请以纯 JSON 格式输出识别到的关键线段，放在 <DRAWING_JSON> 标签内。\n"+
+					"3. 【绘图数据】：请以纯 JSON 格式输出识别到的关键线段，放在 <DRAWING_JSON> 标签内。**注意：必须至少包含一个支撑位(support)和一个压力位(resistance)，如果趋势不明显，请选择最近的局部高低点。**\n"+
 				"4. 【多维度评分】：请以纯 JSON 格式输出五个维度的评分（0-100）及理由，放在 <RADAR_JSON> 标签内。\n"+
 				"5. 【智能交易计划】：请以纯 JSON 格式输出具体的交易建议，放在 <TRADE_JSON> 标签内。\n"+
 				"包括：建议仓位(suggestedPosition, 如\"30%%\")、止损价(stopLoss)、止盈价(takeProfit)、盈亏比(riskRewardRatio)、操作策略(strategy)。\n\n"+
@@ -245,7 +245,12 @@ func (s *AIService) AnalyzeTechnical(stock *models.StockData, klines []*models.K
 	matchDrawing := reDrawing.FindStringSubmatch(content)
 	if len(matchDrawing) > 1 {
 		jsonStr := cleanJSON(matchDrawing[1])
-		json.Unmarshal([]byte(jsonStr), &drawings)
+		err := json.Unmarshal([]byte(jsonStr), &drawings)
+		if err != nil {
+			fmt.Printf("Drawing JSON Unmarshal Error: %v, Raw: %s\n", err, jsonStr)
+		}
+	} else {
+		fmt.Printf("No DRAWING_JSON found in AI response. Raw content length: %d\n", len(content))
 	}
 
 	// 提取风险 JSON
