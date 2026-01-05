@@ -297,6 +297,28 @@ func (a *App) UpdateAlertConfig(config models.AlertConfig) {
 	a.alertConfig = config
 }
 
+// GetActiveAlerts 获取当前所有活跃的预警订阅
+func (a *App) GetActiveAlerts() []*models.PriceAlert {
+	a.alertMutex.Lock()
+	defer a.alertMutex.Unlock()
+	return a.alerts
+}
+
+// RemoveAlert 移除指定的预警订阅
+func (a *App) RemoveAlert(stockCode string, alertType string, price float64) {
+	a.alertMutex.Lock()
+	defer a.alertMutex.Unlock()
+	
+	newAlerts := []*models.PriceAlert{}
+	for _, alert := range a.alerts {
+		if alert.StockCode == stockCode && alert.Type == alertType && alert.Price == price {
+			continue
+		}
+		newAlerts = append(newAlerts, alert)
+	}
+	a.alerts = newAlerts
+}
+
 // Watchlist 相关接口
 
 func (a *App) AddToWatchlist(stock *models.StockData) error {

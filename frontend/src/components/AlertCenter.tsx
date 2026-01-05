@@ -1,32 +1,46 @@
 import React, { useState, useEffect } from 'react';
-import { Bell, History, Settings, Shield, Search, Calendar, Clock, Anchor, Sword, Cpu } from 'lucide-react';
+import { Bell, History, Settings, Shield, Search, Calendar, Clock, Anchor, Sword, Cpu, X } from 'lucide-react';
 import { useWailsAPI } from '../hooks/useWailsAPI';
 
 export const AlertCenter: React.FC = () => {
-  const { getAlertHistory, getAlertConfig, updateAlertConfig } = useWailsAPI();
+  const { getAlertHistory, getAlertConfig, updateAlertConfig, getActiveAlerts, removeAlert } = useWailsAPI();
   const [history, setHistory] = useState<any[]>([]);
+  const [activeAlerts, setActiveAlerts] = useState<any[]>([]);
   const [config, setConfig] = useState<any>({ sensitivity: 0.005, cooldown: 1, enabled: true });
   const [loading, setLoading] = useState(true);
   const [filterCode, setFilterCode] = useState('');
+  const [activeTab, setActiveTab] = useState<'history' | 'active'>('active');
 
   useEffect(() => {
     fetchData();
-  }, []);
+  }, [activeTab]);
 
   const fetchData = async () => {
     setLoading(true);
     try {
-      const [hist, cfg] = await Promise.all([
+      const [hist, cfg, active] = await Promise.all([
         getAlertHistory('', 50),
-        getAlertConfig()
+        getAlertConfig(),
+        getActiveAlerts()
       ]);
       setHistory(Array.isArray(hist) ? hist : []);
+      setActiveAlerts(Array.isArray(active) ? active : []);
       if (cfg) setConfig(cfg);
     } catch (err) {
       console.error('Failed to fetch alert data:', err);
       setHistory([]);
+      setActiveAlerts([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRemoveAlert = async (stockCode: string, type: string, price: number) => {
+    try {
+      await removeAlert(stockCode, type, price);
+      fetchData();
+    } catch (err) {
+      console.error('Failed to remove alert:', err);
     }
   };
 
@@ -115,14 +129,24 @@ export const AlertCenter: React.FC = () => {
         </div>
       </div>
 
-      {/* 告警历史列表 */}
+      {/* 列表区域 */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col min-h-[500px]">
         <div className="p-6 border-b border-slate-100 flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <div className="p-2 bg-slate-800 rounded-xl shadow-lg">
-              <History className="w-5 h-5 text-white" />
-            </div>
-            <h3 className="text-lg font-bold text-slate-800">告警历史记录</h3>
+          <div className="flex items-center space-x-6">
+            <button 
+              onClick={() => setActiveTab('active')}
+              className={`flex items-center space-x-2 pb-2 border-b-2 transition-colors ${activeTab === 'active' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+            >
+              <Shield className="w-4 h-4" />
+              <span className="font-bold">实时监控中 ({activeAlerts.length})</span>
+            </button>
+            <button 
+              onClick={() => setActiveTab('history')}
+              className={`flex items-center space-x-2 pb-2 border-b-2 transition-colors ${activeTab === 'history' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-400 hover:text-slate-600'}`}
+            >
+              <History className="w-4 h-4" />
+              <span className="font-bold">告警历史记录</span>
+            </button>
           </div>
           <div className="relative">
             <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -140,8 +164,58 @@ export const AlertCenter: React.FC = () => {
           {loading ? (
             <div className="flex flex-col items-center justify-center h-64">
               <div className="w-8 h-8 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin mb-4" />
-              <p className="text-sm text-slate-500">正在加载历史数据...</p>
+              <p className="text-sm text-slate-500">正在加载数据...</p>
             </div>
+          ) : activeTab === 'active' ? (
+            activeAlerts.length === 0 ? (
+              <div className="flex flex-col items-center justify-center h-64 text-slate-400">
+                <Shield className="w-12 h-12 mb-4 opacity-20" />
+                <p>当前没有活跃的预警订阅</p>
+                <p className="text-xs mt-2">对股票进行“深度分析”即可自动开启预警</p>
+              </div>
+            ) : (
+              <div className="divide-y divide-slate-50">
+                {activeAlerts
+                  .filter(item => !filterCode || item.stockCode.includes(filterCode))
+                  .map((item, idx) => (
+                  <div key={idx} className="p-4 hover:bg-slate-50 transition-colors group">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-4">
+                        <div className={`p-2 rounded-xl ${item.type === 'resistance' ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-600'}`}>
+                          <Bell className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <div className="flex items-center space-x-2 mb-1">
+                            <span className="font-bold text-slate-800">{item.stockName}</span>
+                            <span className="text-xs font-mono text-slate-400">{item.stockCode}</span>
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <span className={`text-[10px] px-1.5 py-0.5 rounded ${item.type === 'resistance' ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>
+                              {item.type === 'resistance' ? '压力位' : '支撑位'}
+                            </span>
+                            <span className="text-xs text-slate-500">目标价: <span className="font-mono font-bold text-slate-700">{item.price.toFixed(2)}</span></span>
+                            <span className="text-[10px] text-slate-400">({item.label})</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center space-x-4">
+                        <div className="flex items-center space-x-1 bg-slate-100 rounded-lg px-2 py-1">
+                          {getRoleIcon(item.role)}
+                          <span className="text-[10px] text-slate-500">{item.role === 'conservative' ? '老船长' : item.role === 'aggressive' ? '先锋官' : '大师'}</span>
+                        </div>
+                        <button 
+                          onClick={() => handleRemoveAlert(item.stockCode, item.type, item.price)}
+                          className="p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                          title="取消订阅"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
           ) : history.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-64 text-slate-400">
               <Bell className="w-12 h-12 mb-4 opacity-20" />

@@ -68,6 +68,16 @@ export const useWailsAPI = () => {
     return window.go.main.App.UpdateAlertConfig(config)
   }, [])
 
+  const getActiveAlerts = useCallback(async (): Promise<any[]> => {
+    // @ts-ignore
+    return window.go.main.App.GetActiveAlerts()
+  }, [])
+
+  const removeAlert = useCallback(async (stockCode: string, alertType: string, price: number): Promise<void> => {
+    // @ts-ignore
+    return window.go.main.App.RemoveAlert(stockCode, alertType, price)
+  }, [])
+
   return {
     getStockData,
     getKLineData,
@@ -82,6 +92,8 @@ export const useWailsAPI = () => {
     getAlertHistory,
     getAlertConfig,
     updateAlertConfig,
+    getActiveAlerts,
+    removeAlert,
   }
 }
 
