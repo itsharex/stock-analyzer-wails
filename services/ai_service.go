@@ -172,30 +172,24 @@ func (s *AIService) AnalyzeTechnical(stock *models.StockData, klines []*models.K
 	}
 
 		prompt := fmt.Sprintf(`%s 请对股票 %s (%s) 进行深度多维度评估。
+			%s
+			你的受众包含大量股票新手，请在提到专业术语时，使用括号附带通俗易懂的解释。
+		
+		最近60个交易日数据(T-0为最新):
 		%s
-		你的受众包含大量股票新手，请在提到专业术语时，使用括号附带通俗易懂的解释。
-	
-	最近60个交易日数据(T-0为最新):
-	%s
-	
-	当前指标: %s
-	
-	请输出五部分内容：
-	1. 【文字分析】：识别经典形态、量价配合、趋势阶段及操盘建议。
-	2. 【风险评估】：请以 JSON 格式输出风险得分和操盘建议，放在 <RISK_JSON> 标签内。
-	JSON 格式示例：{"riskScore": 65, "actionAdvice": "观望"}
-	3. 【绘图数据】：请以 JSON 格式输出识别到的关键线段，放在 <DRAWING_JSON> 标签内。
-	4. 【多维度评分】：请以 JSON 格式输出五个维度的评分（0-100）及理由，放在 <RADAR_JSON> 标签内。
-	5. 【智能交易计划】：请以 JSON 格式输出具体的交易建议，放在 <TRADE_JSON> 标签内。
-	包括：建议仓位(suggestedPosition, 如"30%%")、止损价(stopLoss)、止盈价(takeProfit)、盈亏比(riskRewardRatio)、操作策略(strategy)。
-	JSON 格式示例：
-	{
-	  "suggestedPosition": "30%%",
-	  "stopLoss": 15.5,
-	  "takeProfit": 18.5,
-	  "riskRewardRatio": 2.5,
-	  "strategy": "分批建仓，突破压力位后可加仓"
-		}`, selectedRole.System, stock.Name, stock.Code, selectedRole.Style, strings.Join(klineSummary, "\n"), indicatorInfo)
+		
+		当前指标: %s
+		
+		请输出五部分内容，**必须严格遵守以下标签格式，不要在标签内包含任何 Markdown 代码块标记（如 \`\`\`json）**：
+		1. 【文字分析】：识别经典形态、量价配合、趋势阶段及操盘建议。
+		2. 【风险评估】：请以纯 JSON 格式输出风险得分和操盘建议，放在 <RISK_JSON> 标签内。
+		示例：<RISK_JSON>{"riskScore": 65, "actionAdvice": "观望"}</RISK_JSON>
+		3. 【绘图数据】：请以纯 JSON 格式输出识别到的关键线段，放在 <DRAWING_JSON> 标签内。
+		4. 【多维度评分】：请以纯 JSON 格式输出五个维度的评分（0-100）及理由，放在 <RADAR_JSON> 标签内。
+		5. 【智能交易计划】：请以纯 JSON 格式输出具体的交易建议，放在 <TRADE_JSON> 标签内。
+		包括：建议仓位(suggestedPosition, 如"30%%")、止损价(stopLoss)、止盈价(takeProfit)、盈亏比(riskRewardRatio)、操作策略(strategy)。
+		
+		**重要：即使你正在扮演特定角色，也请确保 JSON 标签内的内容是纯净的 JSON 字符串，以便程序解析。**`, selectedRole.System, stock.Name, stock.Code, selectedRole.Style, strings.Join(klineSummary, "\n"), indicatorInfo)
 	
 		ctx := context.Background()
 		messages := []*schema.Message{
@@ -210,12 +204,21 @@ func (s *AIService) AnalyzeTechnical(stock *models.StockData, klines []*models.K
 
 	content := resp.Content
 	
+	// 辅助函数：清理 JSON 字符串中的 Markdown 标记
+	cleanJSON := func(s string) string {
+		s = strings.TrimSpace(s)
+		s = strings.TrimPrefix(s, "```json")
+		s = strings.TrimPrefix(s, "```")
+		s = strings.TrimSuffix(s, "```")
+		return strings.TrimSpace(s)
+	}
+
 	// 提取绘图 JSON
 	drawings := []models.TechnicalDrawing{}
 	reDrawing := regexp.MustCompile(`(?s)<DRAWING_JSON>(.*?)</DRAWING_JSON>`)
 	matchDrawing := reDrawing.FindStringSubmatch(content)
 	if len(matchDrawing) > 1 {
-		jsonStr := strings.TrimSpace(matchDrawing[1])
+		jsonStr := cleanJSON(matchDrawing[1])
 		json.Unmarshal([]byte(jsonStr), &drawings)
 	}
 
@@ -227,7 +230,7 @@ func (s *AIService) AnalyzeTechnical(stock *models.StockData, klines []*models.K
 	reRisk := regexp.MustCompile(`(?s)<RISK_JSON>(.*?)</RISK_JSON>`)
 	matchRisk := reRisk.FindStringSubmatch(content)
 	if len(matchRisk) > 1 {
-		jsonStr := strings.TrimSpace(matchRisk[1])
+		jsonStr := cleanJSON(matchRisk[1])
 		json.Unmarshal([]byte(jsonStr), &riskData)
 	}
 
@@ -236,7 +239,7 @@ func (s *AIService) AnalyzeTechnical(stock *models.StockData, klines []*models.K
 	reRadar := regexp.MustCompile(`(?s)<RADAR_JSON>(.*?)</RADAR_JSON>`)
 	matchRadar := reRadar.FindStringSubmatch(content)
 	if len(matchRadar) > 1 {
-		jsonStr := strings.TrimSpace(matchRadar[1])
+		jsonStr := cleanJSON(matchRadar[1])
 		json.Unmarshal([]byte(jsonStr), radarData)
 	}
 
@@ -245,7 +248,7 @@ func (s *AIService) AnalyzeTechnical(stock *models.StockData, klines []*models.K
 	reTrade := regexp.MustCompile(`(?s)<TRADE_JSON>(.*?)</TRADE_JSON>`)
 	matchTrade := reTrade.FindStringSubmatch(content)
 	if len(matchTrade) > 1 {
-		jsonStr := strings.TrimSpace(matchTrade[1])
+		jsonStr := cleanJSON(matchTrade[1])
 		json.Unmarshal([]byte(jsonStr), tradePlan)
 	}
 

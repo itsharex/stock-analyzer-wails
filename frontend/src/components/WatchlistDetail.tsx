@@ -264,7 +264,7 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
             ) : analysisResult ? (
               <div className="space-y-8">
                 {/* 多维度评分雷达图 */}
-                {analysisResult.radarData && (
+                {analysisResult.radarData && analysisResult.radarData.scores && Object.keys(analysisResult.radarData.scores).length > 0 && (
                   <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
                     <div className="flex items-center space-x-2 mb-4">
                       <div className="p-1 bg-blue-50 rounded-lg">
