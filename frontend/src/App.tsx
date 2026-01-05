@@ -2,10 +2,11 @@ import { useState } from 'react'
 import StockSearch from './components/StockSearch'
 import StockInfo from './components/StockInfo'
 import AnalysisReport from './components/AnalysisReport'
+import type { StockData, AnalysisReport as AnalysisReportType } from './types'
 
 function App() {
   const [stockData, setStockData] = useState<StockData | null>(null)
-  const [analysisReport, setAnalysisReport] = useState<AnalysisReport | null>(null)
+  const [analysisReport, setAnalysisReport] = useState<AnalysisReportType | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string>('')
 
@@ -15,7 +16,7 @@ function App() {
     setError('')
   }
 
-  const handleAnalysisComplete = (report: AnalysisReport) => {
+  const handleAnalysisComplete = (report: AnalysisReportType) => {
     setAnalysisReport(report)
     setError('')
   }
@@ -43,7 +44,7 @@ function App() {
             </div>
           </div>
           <div className="text-sm text-gray-500">
-            数据来源: 东方财富 | AI: OpenAI GPT
+            数据来源: 东方财富 | AI: 阿里百炼 (Qwen)
           </div>
         </div>
       </header>

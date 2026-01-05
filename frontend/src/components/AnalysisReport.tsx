@@ -1,3 +1,5 @@
+import type { AnalysisReport } from '../types'
+
 interface AnalysisReportProps {
   report: AnalysisReport
 }
@@ -45,7 +47,7 @@ function AnalysisReport({ report }: AnalysisReportProps) {
               <span className="mr-2">📊</span>
               分析摘要
             </h3>
-            <p className="text-gray-700 leading-relaxed">{report.summary}</p>
+            <p className="text-gray-700 leading-relaxed">{report.summary.trim()}</p>
           </div>
         )}
 
@@ -56,7 +58,7 @@ function AnalysisReport({ report }: AnalysisReportProps) {
               <span className="mr-2">📈</span>
               基本面分析
             </h3>
-            <p className="text-gray-700 leading-relaxed whitespace-pre-wrap">{report.fundamentals}</p>
+            <p className="text-gray-700 leading-relaxed whitespace-pre-wrap">{report.fundamentals.trim()}</p>
           </div>
         )}
 
@@ -67,7 +69,7 @@ function AnalysisReport({ report }: AnalysisReportProps) {
               <span className="mr-2">📉</span>
               技术面分析
             </h3>
-            <p className="text-gray-700 leading-relaxed whitespace-pre-wrap">{report.technical}</p>
+            <p className="text-gray-700 leading-relaxed whitespace-pre-wrap">{report.technical.trim()}</p>
           </div>
         )}
 
@@ -78,7 +80,7 @@ function AnalysisReport({ report }: AnalysisReportProps) {
               <span className="mr-2">{getRecommendationIcon(report.recommendation)}</span>
               投资建议
             </h3>
-            <p className="text-gray-700 leading-relaxed whitespace-pre-wrap">{report.recommendation}</p>
+            <p className="text-gray-700 leading-relaxed whitespace-pre-wrap">{report.recommendation.trim()}</p>
           </div>
         )}
 
@@ -89,7 +91,7 @@ function AnalysisReport({ report }: AnalysisReportProps) {
               <span className="mr-2">🎯</span>
               目标价位
             </h3>
-            <p className="text-gray-700 leading-relaxed">{report.targetPrice}</p>
+            <p className="text-gray-700 leading-relaxed">{report.targetPrice.trim()}</p>
           </div>
         )}
       </div>

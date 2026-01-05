@@ -1,3 +1,5 @@
+import type { StockData } from '../types'
+
 interface StockInfoProps {
   stockData: StockData
 }
@@ -32,13 +34,13 @@ function StockInfo({ stockData }: StockInfoProps) {
         </div>
         
         <div className="flex items-baseline space-x-3">
-          <span className={`text-3xl font-bold ${isRise ? 'text-rise' : 'text-fall'}`}>
+          <span className={`text-3xl font-bold ${isRise ? 'text-red-500' : 'text-green-500'}`}>
             ¥{formatNumber(stockData.price)}
           </span>
-          <span className={`text-lg font-medium ${isRise ? 'text-rise' : 'text-fall'}`}>
+          <span className={`text-lg font-medium ${isRise ? 'text-red-500' : 'text-green-500'}`}>
             {changeText}
           </span>
-          <span className={`text-lg font-medium px-2 py-1 rounded ${isRise ? 'bg-rise' : 'bg-fall'}`}>
+          <span className={`text-lg font-medium px-2 py-1 rounded ${isRise ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'}`}>
             {changeRateText}
           </span>
         </div>
@@ -62,14 +64,14 @@ function StockInfo({ stockData }: StockInfoProps) {
           
           <div className="bg-gray-50 rounded-lg p-3">
             <div className="text-xs text-gray-500 mb-1">最高</div>
-            <div className="text-base font-semibold text-rise">
+            <div className="text-base font-semibold text-red-500">
               ¥{formatNumber(stockData.high)}
             </div>
           </div>
           
           <div className="bg-gray-50 rounded-lg p-3">
             <div className="text-xs text-gray-500 mb-1">最低</div>
-            <div className="text-base font-semibold text-fall">
+            <div className="text-base font-semibold text-green-500">
               ¥{formatNumber(stockData.low)}
             </div>
           </div>
