@@ -1,11 +1,8 @@
 import { useState, useEffect } from 'react'
 import { StockData, KLineData, TechnicalAnalysisResult } from '../types'
-import useWailsAPI from '../hooks/useWailsAPI'
+import { useWailsAPI } from '../hooks/useWailsAPI'
 import KLineChart from './KLineChart'
 import { 
-  TrendingUp, 
-  TrendingDown, 
-  BarChart2, 
   Activity, 
   Clock, 
   ChevronDown,
@@ -13,7 +10,6 @@ import {
   Loader2,
   LineChart as LineChartIcon,
   PencilRuler,
-  AlertTriangle,
   ShieldCheck,
   Zap
 } from 'lucide-react'
@@ -74,9 +70,9 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
   }
 
   const getRiskColor = (score: number) => {
-    if (score < 30) return 'text-green-500'
-    if (score < 70) return 'text-yellow-500'
-    return 'text-red-500'
+    if (score < 30) return 'text-green-400'
+    if (score < 70) return 'text-yellow-400'
+    return 'text-red-400'
   }
 
   return (

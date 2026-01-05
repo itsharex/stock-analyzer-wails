@@ -1,5 +1,5 @@
 import { useCallback } from 'react'
-import type { StockData, AnalysisReport, AppConfig, KLineData } from '../types'
+import type { StockData, AnalysisReport, AppConfig, KLineData, TechnicalAnalysisResult } from '../types'
 
 export const useWailsAPI = () => {
   const getStockData = useCallback(async (code: string): Promise<StockData> => {
@@ -17,7 +17,7 @@ export const useWailsAPI = () => {
     return window.go.main.App.AnalyzeStock(code)
   }, [])
 
-  const analyzeTechnical = useCallback(async (code: string, period: string): Promise<string> => {
+  const analyzeTechnical = useCallback(async (code: string, period: string): Promise<TechnicalAnalysisResult> => {
     // @ts-ignore
     return window.go.main.App.AnalyzeTechnical(code, period)
   }, [])
@@ -66,3 +66,5 @@ export const useWailsAPI = () => {
     getWatchlist,
   }
 }
+
+export default useWailsAPI
