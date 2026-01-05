@@ -192,8 +192,8 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
                         className="appearance-none bg-slate-100 border-none rounded-lg px-4 py-2 pr-10 text-sm font-medium text-slate-700 focus:ring-2 focus:ring-blue-500 cursor-pointer"
                       >
                         <option value="daily">日线</option>
-                        <option value="weekly">周线</option>
-                        <option value="monthly">月线</option>
+                        <option value="week">周线</option>
+                        <option value="month">月线</option>
                       </select>
                       <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
                     </div>
