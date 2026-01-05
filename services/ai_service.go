@@ -19,16 +19,17 @@ type AIService struct {
 
 func NewAIService() *AIService {
 	ctx := context.Background()
-	
+
 	// 从环境变量获取配置
 	apiKey := os.Getenv("DASHSCOPE_API_KEY")
 	modelName := os.Getenv("DASHSCOPE_MODEL")
 	if modelName == "" {
-		modelName = "qwen-plus" // 默认使用 qwen-plus
+		modelName = "qwen-plus-2025-07-28" // 默认使用 qwen-plus
 	}
+	apiKey = "sk-05352b6fd06c4e8b9a88daa1df825fdd"
 	baseURL := os.Getenv("DASHSCOPE_BASE_URL")
 	if baseURL == "" {
-		baseURL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+		baseURL = "https://dashscope.aliyuncs.com/compatible-moe/dv1"
 	}
 
 	// 初始化 Eino Qwen 适配器
@@ -135,7 +136,7 @@ func (s *AIService) AnalyzeStock(stock *models.StockData) (*models.AnalysisRepor
 func (s *AIService) extractSection(text, startMarker, endMarker string) string {
 	startIdx := -1
 	endIdx := len(text)
-	
+
 	if startMarker != "" {
 		for i := 0; i < len(text); i++ {
 			if i+len(startMarker) <= len(text) && text[i:i+len(startMarker)] == startMarker {
@@ -146,7 +147,7 @@ func (s *AIService) extractSection(text, startMarker, endMarker string) string {
 	} else {
 		startIdx = 0
 	}
-	
+
 	if endMarker != "" && startIdx != -1 {
 		for i := startIdx; i < len(text); i++ {
 			if i+len(endMarker) <= len(text) && text[i:i+len(endMarker)] == endMarker {
@@ -155,11 +156,11 @@ func (s *AIService) extractSection(text, startMarker, endMarker string) string {
 			}
 		}
 	}
-	
+
 	if startIdx != -1 && startIdx < endIdx {
 		return text[startIdx:endIdx]
 	}
-	
+
 	return ""
 }
 
@@ -171,7 +172,7 @@ func (s *AIService) QuickAnalyze(stock *models.StockData) (string, error) {
 	prompt := fmt.Sprintf(`请用一段话（100字以内）快速分析股票 %s（%s）的投资价值。
 当前价格：%.2f元，涨跌幅：%.2f%%，市盈率：%.2f，市净率：%.2f。`,
 		stock.Name, stock.Code, stock.Price, stock.ChangeRate, stock.PE, stock.PB)
-	
+
 	resp, err := s.chatModel.Generate(ctx, []*schema.Message{
 		schema.UserMessage(prompt),
 	})
