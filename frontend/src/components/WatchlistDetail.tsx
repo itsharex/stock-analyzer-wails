@@ -12,7 +12,10 @@ import {
   BrainCircuit,
   Loader2,
   LineChart as LineChartIcon,
-  PencilRuler
+  PencilRuler,
+  AlertTriangle,
+  ShieldCheck,
+  Zap
 } from 'lucide-react'
 
 interface WatchlistDetailProps {
@@ -60,6 +63,20 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
     } finally {
       setAnalysisLoading(false)
     }
+  }
+
+  const getActionColor = (advice: string) => {
+    switch (advice) {
+      case '买入': case '增持': return 'bg-red-500 text-white'
+      case '卖出': case '减持': return 'bg-green-500 text-white'
+      default: return 'bg-slate-500 text-white'
+    }
+  }
+
+  const getRiskColor = (score: number) => {
+    if (score < 30) return 'text-green-500'
+    if (score < 70) return 'text-yellow-500'
+    return 'text-red-500'
   }
 
   return (
@@ -206,28 +223,47 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
                   <BrainCircuit className="w-12 h-12 text-blue-500/20 animate-pulse" />
                   <Loader2 className="absolute inset-0 w-12 h-12 text-blue-500 animate-spin" />
                 </div>
-                <p className="text-sm animate-pulse">正在识别K线形态与趋势线...</p>
+                <p className="text-sm animate-pulse">正在识别形态并评估风险...</p>
               </div>
             ) : analysisResult ? (
-              <div className="prose prose-invert prose-sm max-w-none">
-                <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 mb-4">
-                  <p className="text-blue-400 text-xs font-medium flex items-center">
-                    <PencilRuler className="w-3 h-3 mr-1" />
-                    AI 已在图表中自动绘制识别到的趋势线与支撑位
-                  </p>
+              <div className="space-y-6">
+                {/* 风险与建议看板 */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-3 flex flex-col items-center justify-center">
+                    <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">操盘建议</p>
+                    <div className={`px-4 py-1 rounded-full text-sm font-black shadow-lg ${getActionColor(analysisResult.actionAdvice)}`}>
+                      {analysisResult.actionAdvice}
+                    </div>
+                  </div>
+                  <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-3 flex flex-col items-center justify-center">
+                    <p className="text-[10px] text-slate-500 uppercase tracking-wider mb-1">风险得分</p>
+                    <div className={`text-2xl font-black font-mono ${getRiskColor(analysisResult.riskScore)}`}>
+                      {analysisResult.riskScore}
+                    </div>
+                  </div>
                 </div>
-                <div className="whitespace-pre-wrap text-slate-300 leading-relaxed">
-                  {analysisResult.analysis}
+
+                {/* 核心结论 */}
+                <div className="prose prose-invert prose-sm max-w-none">
+                  <div className="bg-blue-500/10 border border-blue-500/20 rounded-lg p-3 mb-4">
+                    <p className="text-blue-400 text-xs font-medium flex items-center">
+                      <Zap className="w-3 h-3 mr-1" />
+                      核心结论：{analysisResult.analysis.split('\n')[0].replace(/^[#\s*]+/, '')}
+                    </p>
+                  </div>
+                  <div className="whitespace-pre-wrap text-slate-300 leading-relaxed text-xs">
+                    {analysisResult.analysis}
+                  </div>
                 </div>
               </div>
             ) : (
               <div className="flex flex-col items-center justify-center h-64 text-center space-y-4">
                 <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center">
-                  <LineChartIcon className="w-8 h-8 text-slate-600" />
+                  <ShieldCheck className="w-8 h-8 text-slate-600" />
                 </div>
                 <div>
-                  <p className="text-slate-400 font-medium">暂无深度分析</p>
-                  <p className="text-xs text-slate-600 mt-1">点击上方按钮，让 AI 为您识别<br/>复杂形态与趋势线</p>
+                  <p className="text-slate-400 font-medium">暂无风险评估</p>
+                  <p className="text-xs text-slate-600 mt-1">点击上方按钮，获取 AI 深度<br/>风险评估与操盘建议</p>
                 </div>
               </div>
             )}

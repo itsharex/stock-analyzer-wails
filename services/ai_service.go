@@ -114,7 +114,7 @@ func (s *AIService) AnalyzeStock(stock *models.StockData) (*models.AnalysisRepor
 	return report, nil
 }
 
-// AnalyzeTechnical 深度技术面分析（支持绘图数据输出）
+// AnalyzeTechnical 深度技术面分析（支持绘图数据和风险评估）
 func (s *AIService) AnalyzeTechnical(stock *models.StockData, klines []*models.KLineData) (*models.TechnicalAnalysisResult, error) {
 	var klineSummary []string
 	startIdx := len(klines) - 60
@@ -147,28 +147,28 @@ func (s *AIService) AnalyzeTechnical(stock *models.StockData, klines []*models.K
 		indicatorInfo += fmt.Sprintf("RSI:%.1f; ", lastK.RSI)
 	}
 
-	prompt := fmt.Sprintf(`你是一位顶级技术分析师。请对股票 %s (%s) 进行深度形态识别。
+	prompt := fmt.Sprintf(`你是一位顶级技术分析师。请对股票 %s (%s) 进行深度形态识别和风险评估。
 
 最近60个交易日数据(T-0为最新):
 %s
 
 当前指标: %s
 
-请输出两部分内容：
-1. 【文字分析】：识别经典形态（头肩、双底、三角形等）、量价配合、趋势阶段及操盘建议。
-2. 【绘图数据】：请以 JSON 格式输出识别到的关键线段，放在 <DRAWING_JSON> 标签内。
+请输出三部分内容：
+1. 【文字分析】：识别经典形态、量价配合、趋势阶段及操盘建议。
+2. 【风险评估】：请以 JSON 格式输出风险得分和操盘建议，放在 <RISK_JSON> 标签内。
+JSON 格式示例：{"riskScore": 65, "actionAdvice": "观望"}
+注意：riskScore 为 0-100 的整数，actionAdvice 必须是 "买入", "卖出", "观望", "减持", "增持" 之一。
+3. 【绘图数据】：请以 JSON 格式输出识别到的关键线段，放在 <DRAWING_JSON> 标签内。
 JSON 格式示例：
 [
   {"type": "support", "price": 15.5, "label": "强支撑位"},
-  {"type": "resistance", "price": 18.2, "label": "近期压力位"},
   {"type": "trendline", "start": "2023-10-01", "startPrice": 14.2, "end": "2023-12-01", "endPrice": 17.5, "label": "上升趋势线"}
-]
-
-注意：时间格式必须与数据中的 YYYY-MM-DD 一致。`, stock.Name, stock.Code, strings.Join(klineSummary, "\n"), indicatorInfo)
+]`, stock.Name, stock.Code, strings.Join(klineSummary, "\n"), indicatorInfo)
 
 	ctx := context.Background()
 	messages := []*schema.Message{
-		schema.SystemMessage("你是一个精通K线绘图的技术分析师。"),
+		schema.SystemMessage("你是一个精通K线绘图和风险管理的顶级技术分析师。"),
 		schema.UserMessage(prompt),
 	}
 
@@ -179,21 +179,36 @@ JSON 格式示例：
 
 	content := resp.Content
 	
-	// 提取 JSON
+	// 提取绘图 JSON
 	drawings := []models.TechnicalDrawing{}
-	re := regexp.MustCompile(`(?s)<DRAWING_JSON>(.*?)</DRAWING_JSON>`)
-	match := re.FindStringSubmatch(content)
-	if len(match) > 1 {
-		jsonStr := strings.TrimSpace(match[1])
+	reDrawing := regexp.MustCompile(`(?s)<DRAWING_JSON>(.*?)</DRAWING_JSON>`)
+	matchDrawing := reDrawing.FindStringSubmatch(content)
+	if len(matchDrawing) > 1 {
+		jsonStr := strings.TrimSpace(matchDrawing[1])
 		json.Unmarshal([]byte(jsonStr), &drawings)
 	}
 
+	// 提取风险 JSON
+	riskData := struct {
+		RiskScore    int    `json:"riskScore"`
+		ActionAdvice string `json:"actionAdvice"`
+	}{RiskScore: 50, ActionAdvice: "观望"}
+	reRisk := regexp.MustCompile(`(?s)<RISK_JSON>(.*?)</RISK_JSON>`)
+	matchRisk := reRisk.FindStringSubmatch(content)
+	if len(matchRisk) > 1 {
+		jsonStr := strings.TrimSpace(matchRisk[1])
+		json.Unmarshal([]byte(jsonStr), &riskData)
+	}
+
 	// 移除 JSON 标签后的纯文字分析
-	cleanAnalysis := re.ReplaceAllString(content, "")
+	cleanAnalysis := reDrawing.ReplaceAllString(content, "")
+	cleanAnalysis = reRisk.ReplaceAllString(cleanAnalysis, "")
 
 	return &models.TechnicalAnalysisResult{
-		Analysis: cleanAnalysis,
-		Drawings: drawings,
+		Analysis:     cleanAnalysis,
+		Drawings:     drawings,
+		RiskScore:    riskData.RiskScore,
+		ActionAdvice: riskData.ActionAdvice,
 	}, nil
 }
 

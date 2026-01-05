@@ -59,10 +59,12 @@ type AnalysisReport struct {
 	GeneratedAt    string `json:"generatedAt"`    // 生成时间
 }
 
-// TechnicalAnalysisResult 深度技术分析结果（包含绘图数据）
+// TechnicalAnalysisResult 深度技术分析结果（包含绘图数据和风险评估）
 type TechnicalAnalysisResult struct {
-	Analysis string            `json:"analysis"`
-	Drawings []TechnicalDrawing `json:"drawings"`
+	Analysis     string            `json:"analysis"`
+	Drawings     []TechnicalDrawing `json:"drawings"`
+	RiskScore    int               `json:"riskScore"`    // 0-100
+	ActionAdvice string            `json:"actionAdvice"` // "买入", "卖出", "观望", "减持", "增持"
 }
 
 // TechnicalDrawing AI识别的绘图数据

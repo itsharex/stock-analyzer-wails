@@ -88,6 +88,8 @@ export interface TechnicalDrawing {
 export interface TechnicalAnalysisResult {
   analysis: string
   drawings: TechnicalDrawing[]
+  riskScore: number
+  actionAdvice: string
 }
 
 /**
