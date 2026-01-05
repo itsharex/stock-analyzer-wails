@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"stock-analyzer-wails/internal/logger"
@@ -13,82 +12,82 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// 支持的模型列表
-var SupportedModels = []string{
-	"qwen-plus",
-	"qwen-max",
-	"qwen-turbo",
-	"qwen-long",
-	"qwen-plus-2025-07-28",
+// Provider 类型定义
+type Provider string
+
+const (
+	ProviderDashScope Provider = "DashScope"
+	ProviderDeepSeek  Provider = "DeepSeek"
+	ProviderOpenAI    Provider = "OpenAI"
+	ProviderClaude    Provider = "Claude"
+	ProviderGemini    Provider = "Gemini"
+	ProviderARK       Provider = "ARK"
+	ProviderQianfan   Provider = "Qianfan"
+)
+
+// 供应商及其默认模型
+var ProviderModels = map[Provider][]string{
+	ProviderDashScope: {"qwen-plus", "qwen-max", "qwen-turbo", "qwen-long"},
+	ProviderDeepSeek:  {"deepseek-chat", "deepseek-reasoner"},
+	ProviderOpenAI:    {"gpt-4o", "gpt-4o-mini", "gpt-4-turbo"},
+	ProviderClaude:    {"claude-3-5-sonnet-20240620", "claude-3-opus-20240229"},
+	ProviderGemini:    {"gemini-1.5-pro", "gemini-1.5-flash"},
+	ProviderARK:       {"doubao-pro-4k", "doubao-lite-4k"},
+	ProviderQianfan:   {"ernie-4.0-8k", "ernie-3.5-8k"},
 }
 
-type dashscopeYAML struct {
-	APIKey  string `yaml:"api_key"`
-	Model   string `yaml:"model"`
-	BaseURL string `yaml:"base_url"`
+type AIConfigYAML struct {
+	Provider Provider `yaml:"provider"`
+	APIKey   string   `yaml:"api_key"`
+	BaseURL  string   `yaml:"base_url"`
+	Model    string   `yaml:"model"`
 }
 
 type appYAML struct {
-	Dashscope dashscopeYAML `yaml:"dashscope"`
+	AI AIConfigYAML `yaml:"ai"`
 }
 
-type DashscopeResolvedConfig struct {
-	APIKey  string   `json:"apiKey"`
-	Model   string   `json:"model"`
-	BaseURL string   `json:"baseUrl"`
-	Models  []string `json:"models"` // 返回给前端的可选模型列表
+type AIResolvedConfig struct {
+	Provider       Provider            `json:"provider"`
+	APIKey         string              `json:"apiKey"`
+	BaseURL        string              `json:"baseUrl"`
+	Model          string              `json:"model"`
+	ProviderModels map[Provider][]string `json:"providerModels"`
 }
 
-func LoadDashscopeConfig() (DashscopeResolvedConfig, error) {
-	const (
-		defaultModel = "qwen-plus"
-		defaultBaseURL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-	)
-
+func LoadAIConfig() (AIResolvedConfig, error) {
 	start := time.Now()
 	var cfg appYAML
-	if path, ok, err := findConfigYAMLPath(); err != nil {
-		logger.Error("查找 config.yaml 失败",
-			zap.String("module", "services.config"),
-			zap.String("op", "LoadDashscopeConfig.findConfigYAMLPath"),
-			zap.Int64("duration_ms", time.Since(start).Milliseconds()),
-			zap.Error(err),
-		)
-		return DashscopeResolvedConfig{}, err
-	} else if ok {
+	
+	// 默认值
+	cfg.AI.Provider = ProviderDashScope
+	cfg.AI.Model = "qwen-plus"
+	cfg.AI.BaseURL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+
+	if path, ok, err := findConfigYAMLPath(); err == nil && ok {
 		raw, err := os.ReadFile(path)
 		if err == nil {
 			yaml.Unmarshal(raw, &cfg)
 		}
 	}
 
-	apiKey := firstNonEmpty(
-		strings.TrimSpace(cfg.Dashscope.APIKey),
-		strings.TrimSpace(os.Getenv("DASHSCOPE_API_KEY")),
+	logger.Info("AI 配置加载完成",
+		zap.String("module", "services.config"),
+		zap.String("provider", string(cfg.AI.Provider)),
+		zap.String("model", cfg.AI.Model),
+		zap.Int64("duration_ms", time.Since(start).Milliseconds()),
 	)
-	model := firstNonEmpty(
-		strings.TrimSpace(cfg.Dashscope.Model),
-		strings.TrimSpace(os.Getenv("DASHSCOPE_MODEL")),
-		defaultModel,
-	)
-	baseURL := firstNonEmpty(
-		strings.TrimSpace(cfg.Dashscope.BaseURL),
-		strings.TrimSpace(os.Getenv("DASHSCOPE_BASE_URL")),
-		defaultBaseURL,
-	)
-	if normalized, changed := normalizeDashscopeBaseURL(baseURL); changed {
-		baseURL = normalized
-	}
 
-	return DashscopeResolvedConfig{
-		APIKey:  apiKey,
-		Model:   model,
-		BaseURL: baseURL,
-		Models:  SupportedModels,
+	return AIResolvedConfig{
+		Provider:       cfg.AI.Provider,
+		APIKey:         cfg.AI.APIKey,
+		BaseURL:        cfg.AI.BaseURL,
+		Model:          cfg.AI.Model,
+		ProviderModels: ProviderModels,
 	}, nil
 }
 
-func SaveDashscopeConfig(config DashscopeResolvedConfig) error {
+func SaveAIConfig(config AIResolvedConfig) error {
 	path, ok, err := findConfigYAMLPath()
 	if err != nil {
 		return err
@@ -99,58 +98,32 @@ func SaveDashscopeConfig(config DashscopeResolvedConfig) error {
 	}
 
 	cfg := appYAML{
-		Dashscope: dashscopeYAML{
-			APIKey:  config.APIKey,
-			Model:   config.Model,
-			BaseURL: config.BaseURL,
+		AI: AIConfigYAML{
+			Provider: config.Provider,
+			APIKey:   config.APIKey,
+			BaseURL:  config.BaseURL,
+			Model:    config.Model,
 		},
 	}
 
 	data, err := yaml.Marshal(&cfg)
 	if err != nil {
-		return fmt.Errorf("序列化配置失败: %w", err)
+		return err
 	}
 
 	return os.WriteFile(path, data, 0644)
 }
 
-func firstNonEmpty(values ...string) string {
-	for _, v := range values {
-		if strings.TrimSpace(v) != "" {
-			return v
-		}
-	}
-	return ""
-}
-
-func normalizeDashscopeBaseURL(in string) (out string, changed bool) {
-	s := strings.TrimSpace(in)
-	if s == "" {
-		return s, false
-	}
-	s = strings.TrimRight(s, "/")
-	normalized := s
-	normalized = strings.ReplaceAll(normalized, "compatible-moe", "compatible-mode")
-	normalized = strings.ReplaceAll(normalized, "/dv1", "/v1")
-	if strings.HasSuffix(normalized, "/compatible-mode") {
-		normalized += "/v1"
-	}
-	return normalized, normalized != s
-}
-
 func findConfigYAMLPath() (path string, ok bool, err error) {
-	paths := make([]string, 0, 2)
-	exe, err := os.Executable()
-	if err == nil {
+	paths := []string{}
+	if exe, err := os.Executable(); err == nil {
 		paths = append(paths, filepath.Join(filepath.Dir(exe), "config.yaml"))
 	}
-	cwd, err := os.Getwd()
-	if err == nil {
+	if cwd, err := os.Getwd(); err == nil {
 		paths = append(paths, filepath.Join(cwd, "config.yaml"))
 	}
 	for _, p := range paths {
-		_, statErr := os.Stat(p)
-		if statErr == nil {
+		if _, err := os.Stat(p); err == nil {
 			return p, true, nil
 		}
 	}

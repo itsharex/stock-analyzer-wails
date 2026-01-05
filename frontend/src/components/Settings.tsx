@@ -8,10 +8,11 @@ interface SettingsProps {
 
 function Settings({ onConfigSaved }: SettingsProps) {
   const [config, setConfig] = useState<AppConfig>({
+    provider: 'DashScope',
     apiKey: '',
     baseUrl: '',
     model: '',
-    models: []
+    providerModels: {}
   })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -31,6 +32,28 @@ function Settings({ onConfigSaved }: SettingsProps) {
       setMessage({ type: 'error', text: '加载配置失败' })
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleProviderChange = (newProvider: string) => {
+    const models = config.providerModels[newProvider] || []
+    setConfig({
+      ...config,
+      provider: newProvider,
+      model: models[0] || '',
+      // 自动填充一些常见的 BaseURL
+      baseUrl: getBaseURLForProvider(newProvider)
+    })
+  }
+
+  const getBaseURLForProvider = (provider: string) => {
+    switch (provider) {
+      case 'DashScope': return 'https://dashscope.aliyuncs.com/compatible-mode/v1'
+      case 'DeepSeek': return 'https://api.deepseek.com'
+      case 'OpenAI': return 'https://api.openai.com/v1'
+      case 'Claude': return 'https://api.anthropic.com/v1'
+      case 'ARK': return 'https://ark.cn-beijing.volces.com/api/v3'
+      default: return config.baseUrl
     }
   }
 
@@ -76,18 +99,30 @@ function Settings({ onConfigSaved }: SettingsProps) {
       <div className="space-y-6">
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-2">
-            阿里百炼 API Key
+            AI 供应商 (Provider)
+          </label>
+          <select
+            value={config.provider}
+            onChange={(e) => handleProviderChange(e.target.value)}
+            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition bg-white"
+          >
+            {Object.keys(config.providerModels).map((p) => (
+              <option key={p} value={p}>{p}</option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-2">
+            API Key
           </label>
           <input
             type="password"
             value={config.apiKey}
             onChange={(e) => setConfig({ ...config, apiKey: e.target.value })}
-            placeholder="sk-..."
+            placeholder="请输入 API Key"
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition"
           />
-          <p className="mt-1 text-xs text-gray-500">
-            从阿里云百炼控制台获取的 API 密钥
-          </p>
         </div>
 
         <div>
@@ -99,18 +134,13 @@ function Settings({ onConfigSaved }: SettingsProps) {
             onChange={(e) => setConfig({ ...config, model: e.target.value })}
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition bg-white"
           >
-            {config.models?.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
+            {(config.providerModels[config.provider] || []).map((m) => (
+              <option key={m} value={m}>{m}</option>
             ))}
-            {!config.models?.includes(config.model) && config.model && (
+            {!config.providerModels[config.provider]?.includes(config.model) && config.model && (
               <option value={config.model}>{config.model} (自定义)</option>
             )}
           </select>
-          <p className="mt-1 text-xs text-gray-500">
-            选择要使用的通义千问模型版本
-          </p>
         </div>
 
         <div>
@@ -121,7 +151,7 @@ function Settings({ onConfigSaved }: SettingsProps) {
             type="text"
             value={config.baseUrl}
             onChange={(e) => setConfig({ ...config, baseUrl: e.target.value })}
-            placeholder="https://dashscope.aliyuncs.com/compatible-mode/v1"
+            placeholder="https://api.example.com/v1"
             className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none transition"
           />
         </div>
@@ -140,9 +170,9 @@ function Settings({ onConfigSaved }: SettingsProps) {
       <div className="mt-8 p-4 bg-blue-50 rounded-lg border border-blue-100">
         <h3 className="text-sm font-semibold text-blue-800 mb-2">💡 提示</h3>
         <ul className="text-xs text-blue-700 space-y-1 list-disc pl-4">
+          <li>支持 OpenAI 兼容协议的所有供应商。</li>
+          <li>切换供应商后，Base URL 会尝试自动填充默认值。</li>
           <li>配置将保存在本地 `config.yaml` 文件中。</li>
-          <li>保存后 AI 服务将立即使用新配置重新初始化。</li>
-          <li>推荐使用 `qwen-plus` 以获得最佳的分析性价比。</li>
         </ul>
       </div>
     </div>

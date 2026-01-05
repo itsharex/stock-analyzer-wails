@@ -37,13 +37,12 @@ func (a *App) startup(ctx context.Context) {
 // initAIService 初始化或重新初始化 AI 服务
 func (a *App) initAIService() error {
 	start := time.Now()
-	cfg, err := services.LoadDashscopeConfig()
+	cfg, err := services.LoadAIConfig()
 	if err != nil {
 		a.aiInitErr = err
 		return err
 	}
 
-	// 如果 API Key 为空，不报错，但标记服务未就绪
 	if cfg.APIKey == "" {
 		a.aiService = nil
 		a.aiInitErr = fmt.Errorf("API Key 未配置")
@@ -61,23 +60,23 @@ func (a *App) initAIService() error {
 
 	logger.Info("AI 服务初始化成功",
 		zap.String("module", "app"),
+		zap.String("provider", string(cfg.Provider)),
 		zap.Int64("duration_ms", time.Since(start).Milliseconds()),
 	)
 	return nil
 }
 
 // GetConfig 获取当前配置
-func (a *App) GetConfig() (services.DashscopeResolvedConfig, error) {
-	return services.LoadDashscopeConfig()
+func (a *App) GetConfig() (services.AIResolvedConfig, error) {
+	return services.LoadAIConfig()
 }
 
 // SaveConfig 保存配置并重置 AI 服务
-func (a *App) SaveConfig(config services.DashscopeResolvedConfig) error {
-	err := services.SaveDashscopeConfig(config)
+func (a *App) SaveConfig(config services.AIResolvedConfig) error {
+	err := services.SaveAIConfig(config)
 	if err != nil {
 		return err
 	}
-	// 重新初始化 AI 服务
 	return a.initAIService()
 }
 

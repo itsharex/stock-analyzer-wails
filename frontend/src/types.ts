@@ -40,10 +40,11 @@ export interface AnalysisReport {
  * 系统配置类型定义
  */
 export interface AppConfig {
+  provider: string
   apiKey: string
   baseUrl: string
   model: string
-  models?: string[] // 可选模型列表
+  providerModels: Record<string, string[]>
 }
 
 /**
