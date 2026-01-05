@@ -91,6 +91,17 @@ export interface RadarData {
 }
 
 /**
+ * 智能交易计划
+ */
+export interface TradePlan {
+  suggestedPosition: string
+  stopLoss: number
+  takeProfit: number
+  riskRewardRatio: number
+  strategy: string
+}
+
+/**
  * 深度技术分析结果
  */
 export interface TechnicalAnalysisResult {
@@ -99,6 +110,7 @@ export interface TechnicalAnalysisResult {
   riskScore: number
   actionAdvice: string
   radarData?: RadarData
+  tradePlan?: TradePlan
 }
 
 /**

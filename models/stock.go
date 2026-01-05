@@ -66,12 +66,22 @@ type TechnicalAnalysisResult struct {
 	RiskScore    int               `json:"riskScore"`    // 0-100
 	ActionAdvice string            `json:"actionAdvice"` // "买入", "卖出", "观望", "减持", "增持"
 	RadarData    *RadarData        `json:"radarData,omitempty"` // 多维度评分雷达图数据
+	TradePlan    *TradePlan        `json:"tradePlan,omitempty"` // 智能交易计划
 }
 
 // RadarData 多维度评分雷达图数据
 type RadarData struct {
 	Scores  map[string]int    `json:"scores"`  // 维度名称 -> 分数 (0-100)
 	Reasons map[string]string `json:"reasons"` // 维度名称 -> 评分理由
+}
+
+// TradePlan 智能交易计划
+type TradePlan struct {
+	SuggestedPosition string  `json:"suggestedPosition"` // 建议仓位 (如 "30%")
+	StopLoss          float64 `json:"stopLoss"`          // 止损价
+	TakeProfit        float64 `json:"takeProfit"`        // 止盈价
+	RiskRewardRatio   float64 `json:"riskRewardRatio"`   // 盈亏比
+	Strategy          string  `json:"strategy"`          // 操作策略描述
 }
 
 // TechnicalDrawing AI识别的绘图数据

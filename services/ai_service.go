@@ -155,17 +155,21 @@ func (s *AIService) AnalyzeTechnical(stock *models.StockData, klines []*models.K
 	
 	当前指标: %s
 	
-	请输出四部分内容：
+	请输出五部分内容：
 	1. 【文字分析】：识别经典形态、量价配合、趋势阶段及操盘建议。
 	2. 【风险评估】：请以 JSON 格式输出风险得分和操盘建议，放在 <RISK_JSON> 标签内。
 	JSON 格式示例：{"riskScore": 65, "actionAdvice": "观望"}
 	3. 【绘图数据】：请以 JSON 格式输出识别到的关键线段，放在 <DRAWING_JSON> 标签内。
 	4. 【多维度评分】：请以 JSON 格式输出五个维度的评分（0-100）及理由，放在 <RADAR_JSON> 标签内。
-	维度包括：技术面(technical)、基本面(fundamental)、资金面(capital)、估值面(valuation)、风险面(risk)。
+	5. 【智能交易计划】：请以 JSON 格式输出具体的交易建议，放在 <TRADE_JSON> 标签内。
+	包括：建议仓位(suggestedPosition, 如"30%%")、止损价(stopLoss)、止盈价(takeProfit)、盈亏比(riskRewardRatio)、操作策略(strategy)。
 	JSON 格式示例：
 	{
-	  "scores": {"technical": 80, "fundamental": 70, "capital": 60, "valuation": 50, "risk": 85},
-	  "reasons": {"technical": "上升通道保持良好", "fundamental": "业绩稳健增长", "capital": "主力小幅流出", "valuation": "处于历史中位", "risk": "财务状况健康"}
+	  "suggestedPosition": "30%%",
+	  "stopLoss": 15.5,
+	  "takeProfit": 18.5,
+	  "riskRewardRatio": 2.5,
+	  "strategy": "分批建仓，突破压力位后可加仓"
 	}`, stock.Name, stock.Code, strings.Join(klineSummary, "\n"), indicatorInfo)
 
 	ctx := context.Background()
@@ -211,10 +215,20 @@ func (s *AIService) AnalyzeTechnical(stock *models.StockData, klines []*models.K
 		json.Unmarshal([]byte(jsonStr), radarData)
 	}
 
+	// 提取交易计划 JSON
+	tradePlan := &models.TradePlan{}
+	reTrade := regexp.MustCompile(`(?s)<TRADE_JSON>(.*?)</TRADE_JSON>`)
+	matchTrade := reTrade.FindStringSubmatch(content)
+	if len(matchTrade) > 1 {
+		jsonStr := strings.TrimSpace(matchTrade[1])
+		json.Unmarshal([]byte(jsonStr), tradePlan)
+	}
+
 	// 移除 JSON 标签后的纯文字分析
 	cleanAnalysis := reDrawing.ReplaceAllString(content, "")
 	cleanAnalysis = reRisk.ReplaceAllString(cleanAnalysis, "")
 	cleanAnalysis = reRadar.ReplaceAllString(cleanAnalysis, "")
+	cleanAnalysis = reTrade.ReplaceAllString(cleanAnalysis, "")
 
 	return &models.TechnicalAnalysisResult{
 		Analysis:     cleanAnalysis,
@@ -222,6 +236,7 @@ func (s *AIService) AnalyzeTechnical(stock *models.StockData, klines []*models.K
 		RiskScore:    riskData.RiskScore,
 		ActionAdvice: riskData.ActionAdvice,
 		RadarData:    radarData,
+		TradePlan:    tradePlan,
 	}, nil
 }
 

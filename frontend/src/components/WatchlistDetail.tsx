@@ -5,6 +5,7 @@ import { StockData, KLineData, TechnicalAnalysisResult } from '../types'
 import { useWailsAPI } from '../hooks/useWailsAPI'
 import KLineChart from './KLineChart'
 import RadarChart from './RadarChart'
+import TradePlanCard from './TradePlanCard'
 import { 
   Activity, 
   Clock, 
@@ -75,11 +76,7 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
     }
   }
 
-  const getRiskColor = (score: number) => {
-    if (score < 30) return 'text-green-400'
-    if (score < 70) return 'text-yellow-400'
-    return 'text-red-400'
-  }
+
 
   return (
     <div className="flex flex-col h-full bg-slate-50 overflow-hidden">
@@ -255,11 +252,16 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
                   </div>
                   <div className="bg-white border border-slate-200 rounded-2xl p-4 flex flex-col items-center justify-center shadow-sm hover:shadow-md transition-shadow">
                     <p className="text-[10px] text-slate-400 uppercase tracking-widest font-bold mb-2">风险得分</p>
-                    <div className={`text-3xl font-black font-mono ${getRiskColor(analysisResult.riskScore)}`}>
+                    <div className="text-2xl font-black text-slate-800">
                       {analysisResult.riskScore}
                     </div>
                   </div>
                 </div>
+
+                {/* 智能交易计划 */}
+                {analysisResult.tradePlan && (
+                  <TradePlanCard plan={analysisResult.tradePlan} currentPrice={stock.price} />
+                )}
 
                 {/* 核心结论 */}
                 <div className="bg-blue-600/5 border border-blue-600/10 rounded-2xl p-5 mb-6 relative overflow-hidden group">
