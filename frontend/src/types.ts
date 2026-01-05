@@ -83,6 +83,14 @@ export interface TechnicalDrawing {
 }
 
 /**
+ * 雷达图评分数据
+ */
+export interface RadarData {
+  scores: Record<string, number>
+  reasons: Record<string, string>
+}
+
+/**
  * 深度技术分析结果
  */
 export interface TechnicalAnalysisResult {
@@ -90,6 +98,7 @@ export interface TechnicalAnalysisResult {
   drawings: TechnicalDrawing[]
   riskScore: number
   actionAdvice: string
+  radarData?: RadarData
 }
 
 /**

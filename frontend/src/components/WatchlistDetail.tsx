@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm'
 import { StockData, KLineData, TechnicalAnalysisResult } from '../types'
 import { useWailsAPI } from '../hooks/useWailsAPI'
 import KLineChart from './KLineChart'
+import RadarChart from './RadarChart'
 import { 
   Activity, 
   Clock, 
@@ -13,7 +14,8 @@ import {
   LineChart as LineChartIcon,
   PencilRuler,
   ShieldCheck,
-  Zap
+  Zap,
+  BarChart3
 } from 'lucide-react'
 import { GlossaryPanel, GlossaryTooltip } from './GlossaryTooltip'
 import { STOCK_GLOSSARY } from '../utils/glossary'
@@ -230,6 +232,19 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
               </div>
             ) : analysisResult ? (
               <div className="space-y-8">
+                {/* 多维度评分雷达图 */}
+                {analysisResult.radarData && (
+                  <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
+                    <div className="flex items-center space-x-2 mb-4">
+                      <div className="p-1 bg-blue-50 rounded-lg">
+                        <BarChart3 className="w-4 h-4 text-blue-600" />
+                      </div>
+                      <h4 className="text-sm font-bold text-slate-800">多维度投资评分</h4>
+                    </div>
+                    <RadarChart data={analysisResult.radarData} />
+                  </div>
+                )}
+
                 {/* 风险与建议看板 */}
                 <div className="grid grid-cols-2 gap-4">
                   <div className="bg-white border border-slate-200 rounded-2xl p-4 flex flex-col items-center justify-center shadow-sm hover:shadow-md transition-shadow">

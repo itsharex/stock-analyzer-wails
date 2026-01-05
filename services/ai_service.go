@@ -147,25 +147,26 @@ func (s *AIService) AnalyzeTechnical(stock *models.StockData, klines []*models.K
 		indicatorInfo += fmt.Sprintf("RSI:%.1f; ", lastK.RSI)
 	}
 
-	prompt := fmt.Sprintf(`你是一位顶级技术分析师。请对股票 %s (%s) 进行深度形态识别和风险评估。
-你的受众包含大量股票新手，请在提到专业术语时，使用括号附带通俗易懂的解释。
-
-最近60个交易日数据(T-0为最新):
-%s
-
-当前指标: %s
-
-请输出三部分内容：
-1. 【文字分析】：识别经典形态、量价配合、趋势阶段及操盘建议。
-2. 【风险评估】：请以 JSON 格式输出风险得分和操盘建议，放在 <RISK_JSON> 标签内。
-JSON 格式示例：{"riskScore": 65, "actionAdvice": "观望"}
-注意：riskScore 为 0-100 的整数，actionAdvice 必须是 "买入", "卖出", "观望", "减持", "增持" 之一。
-3. 【绘图数据】：请以 JSON 格式输出识别到的关键线段，放在 <DRAWING_JSON> 标签内。
-JSON 格式示例：
-[
-  {"type": "support", "price": 15.5, "label": "强支撑位"},
-  {"type": "trendline", "start": "2023-10-01", "startPrice": 14.2, "end": "2023-12-01", "endPrice": 17.5, "label": "上升趋势线"}
-]`, stock.Name, stock.Code, strings.Join(klineSummary, "\n"), indicatorInfo)
+	prompt := fmt.Sprintf(`你是一位顶级全能投资分析师。请对股票 %s (%s) 进行深度多维度评估。
+	你的受众包含大量股票新手，请在提到专业术语时，使用括号附带通俗易懂的解释。
+	
+	最近60个交易日数据(T-0为最新):
+	%s
+	
+	当前指标: %s
+	
+	请输出四部分内容：
+	1. 【文字分析】：识别经典形态、量价配合、趋势阶段及操盘建议。
+	2. 【风险评估】：请以 JSON 格式输出风险得分和操盘建议，放在 <RISK_JSON> 标签内。
+	JSON 格式示例：{"riskScore": 65, "actionAdvice": "观望"}
+	3. 【绘图数据】：请以 JSON 格式输出识别到的关键线段，放在 <DRAWING_JSON> 标签内。
+	4. 【多维度评分】：请以 JSON 格式输出五个维度的评分（0-100）及理由，放在 <RADAR_JSON> 标签内。
+	维度包括：技术面(technical)、基本面(fundamental)、资金面(capital)、估值面(valuation)、风险面(risk)。
+	JSON 格式示例：
+	{
+	  "scores": {"technical": 80, "fundamental": 70, "capital": 60, "valuation": 50, "risk": 85},
+	  "reasons": {"technical": "上升通道保持良好", "fundamental": "业绩稳健增长", "capital": "主力小幅流出", "valuation": "处于历史中位", "risk": "财务状况健康"}
+	}`, stock.Name, stock.Code, strings.Join(klineSummary, "\n"), indicatorInfo)
 
 	ctx := context.Background()
 	messages := []*schema.Message{
@@ -201,15 +202,26 @@ JSON 格式示例：
 		json.Unmarshal([]byte(jsonStr), &riskData)
 	}
 
+	// 提取雷达图 JSON
+	radarData := &models.RadarData{}
+	reRadar := regexp.MustCompile(`(?s)<RADAR_JSON>(.*?)</RADAR_JSON>`)
+	matchRadar := reRadar.FindStringSubmatch(content)
+	if len(matchRadar) > 1 {
+		jsonStr := strings.TrimSpace(matchRadar[1])
+		json.Unmarshal([]byte(jsonStr), radarData)
+	}
+
 	// 移除 JSON 标签后的纯文字分析
 	cleanAnalysis := reDrawing.ReplaceAllString(content, "")
 	cleanAnalysis = reRisk.ReplaceAllString(cleanAnalysis, "")
+	cleanAnalysis = reRadar.ReplaceAllString(cleanAnalysis, "")
 
 	return &models.TechnicalAnalysisResult{
 		Analysis:     cleanAnalysis,
 		Drawings:     drawings,
 		RiskScore:    riskData.RiskScore,
 		ActionAdvice: riskData.ActionAdvice,
+		RadarData:    radarData,
 	}, nil
 }
 
