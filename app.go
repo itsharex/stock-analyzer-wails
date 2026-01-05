@@ -21,6 +21,7 @@ type App struct {
 	aiService        *services.AIService
 	watchlistService *services.WatchlistService
 	alertStorage     *services.AlertStorage
+	positionStorage  *services.PositionStorageService
 	aiInitErr        error
 	alerts           []*models.PriceAlert
 	alertMutex       sync.Mutex
@@ -30,12 +31,13 @@ type App struct {
 // NewApp 创建新的App应用程序
 func NewApp() *App {
 	watchlistSvc, _ := services.NewWatchlistService()
-	storage, _ := services.NewAlertStorage()
+	alertSvc, _ := services.NewAlertStorage()
 	return &App{
 		stockService:     services.NewStockService(),
 		aiService:        nil,
 		watchlistService: watchlistSvc,
-		alertStorage:     storage,
+		alertStorage:     alertSvc,
+		positionStorage:  services.NewPositionStorageService(),
 		alertConfig: models.AlertConfig{
 			Sensitivity: 0.005, // 默认 0.5%
 			Cooldown:    1,     // 默认 1 小时
@@ -100,112 +102,156 @@ func (a *App) checkAlerts() {
 			continue
 		}
 
-		// 碰撞检测逻辑
 		triggered := false
-		msg := ""
-		
-		// 阈值：距离关键位 0.5% 以内触发
-		threshold := alert.Price * 0.005
-		diff := stock.Price - alert.Price
-
-		// 避免频繁触发：1小时冷却时间
-		if time.Since(alert.LastTriggered) < 1*time.Hour {
-			continue
-		}
-
-		if alert.Type == "resistance" && stock.Price >= alert.Price {
+		if alert.Type == "above" && stock.Price >= alert.Price {
 			triggered = true
-			msg = fmt.Sprintf("突破压力位！%s 当前价 %.2f 已站上 AI 识别的压力位 %.2f", stock.Name, stock.Price, alert.Price)
-		} else if alert.Type == "support" && stock.Price <= alert.Price {
+		} else if alert.Type == "below" && stock.Price <= alert.Price {
 			triggered = true
-			msg = fmt.Sprintf("跌破支撑位！%s 当前价 %.2f 已跌穿 AI 识别的支撑位 %.2f", stock.Name, stock.Price, alert.Price)
-		} else if diff > -threshold && diff < threshold {
-			triggered = true
-			msg = fmt.Sprintf("接近关键位！%s 当前价 %.2f 正在挑战 AI 识别的 %s %.2f", stock.Name, stock.Price, alert.Label, alert.Price)
 		}
 
 		if triggered {
+			// 检查冷却时间
+			if time.Since(alert.LastTriggered) < time.Duration(a.alertConfig.Cooldown)*time.Hour {
+				continue
+			}
+
+			// 触发告警
 			alert.LastTriggered = time.Now()
 			
-			// 异步生成 AI 建议，避免阻塞监控主循环
-			go func(al *models.PriceAlert, st *models.StockData, baseMsg string) {
-				advice, _ := a.aiService.GenerateAlertAdvice(st.Name, al.Type, al.Label, al.Role, st.Price, al.Price)
-				
-					// 发送系统通知
-					runtime.EventsEmit(a.ctx, "price_alert", map[string]interface{}{
-						"stockCode": al.StockCode,
-						"stockName": al.StockName,
-						"message":   baseMsg,
-						"advice":    advice,
-						"type":      al.Type,
-						"price":     st.Price,
-						"role":      al.Role,
-					})
+			// 发送 Wails 事件
+			runtime.EventsEmit(a.ctx, "price_alert", map[string]interface{}{
+				"code":  alert.StockCode,
+				"name":  alert.StockName,
+				"price": stock.Price,
+				"type":  alert.Type,
+				"target": alert.Price,
+			})
 
-					// 持久化到告警历史
-					if a.alertStorage != nil {
-						a.alertStorage.SaveAlert(al, advice)
-					}
-					
-					logger.Info("触发价格预警",
-						zap.String("stock", al.StockName),
-						zap.Float64("price", st.Price),
-						zap.String("msg", baseMsg),
-						zap.String("advice", advice),
-					)
-				}(alert, stock, msg)
+			// 记录到历史
+			if a.alertStorage != nil {
+				a.alertStorage.SaveAlert(alert, fmt.Sprintf("股价已%s预警位 %.2f", map[string]string{"above":"突破","below":"跌破"}[alert.Type], alert.Price))
+			}
 		}
 	}
 }
 
-// UpdateAlertsFromAnalysis 从 AI 分析结果中更新预警位
-func (a *App) UpdateAlertsFromAnalysis(code string, name string, result *models.TechnicalAnalysisResult, role string) {
+// AddAlert 添加新的价格预警
+func (a *App) AddAlert(alert models.PriceAlert) error {
 	a.alertMutex.Lock()
 	defer a.alertMutex.Unlock()
 
-	logger.Info("开始更新预警位", 
-		zap.String("code", code), 
-		zap.Int("drawing_count", len(result.Drawings)),
-		zap.String("role", role),
-	)
+	alert.IsActive = true
+	alert.LastTriggered = time.Unix(0, 0)
+	a.alerts = append(a.alerts, &alert)
 
-	// 清除该股票旧的 AI 预警
+	// 持久化保存
+	if a.alertStorage != nil {
+		return a.alertStorage.SaveActiveAlerts(a.alerts)
+	}
+	return nil
+}
+
+// GetActiveAlerts 获取所有激活的预警
+func (a *App) GetActiveAlerts() ([]*models.PriceAlert, error) {
+	a.alertMutex.Lock()
+	defer a.alertMutex.Unlock()
+	return a.alerts, nil
+}
+
+// RemoveAlert 移除预警
+func (a *App) RemoveAlert(stockCode string, alertType string, price float64) error {
+	a.alertMutex.Lock()
+	defer a.alertMutex.Unlock()
+
 	newAlerts := make([]*models.PriceAlert, 0)
 	for _, alert := range a.alerts {
-		if alert.StockCode != code {
-			newAlerts = append(newAlerts, alert)
+		if alert.StockCode == stockCode && alert.Type == alertType && alert.Price == price {
+			continue
 		}
-	}
-
-	// 添加新的预警位
-	addedCount := 0
-	for _, drawing := range result.Drawings {
-		if (drawing.Type == "support" || drawing.Type == "resistance") && drawing.Price > 0 {
-			newAlerts = append(newAlerts, &models.PriceAlert{
-				StockCode: code,
-				StockName: name,
-				Type:      drawing.Type,
-				Price:     drawing.Price,
-				Label:     drawing.Label,
-				Role:      role,
-				IsActive:  true,
-			})
-			addedCount++
-			logger.Info("成功添加预警位", 
-				zap.String("type", drawing.Type), 
-				zap.Float64("price", drawing.Price),
-				zap.String("label", drawing.Label),
-			)
-		}
+		newAlerts = append(newAlerts, alert)
 	}
 	a.alerts = newAlerts
+
+	// 持久化保存
+	if a.alertStorage != nil {
+		return a.alertStorage.SaveActiveAlerts(a.alerts)
+	}
+	return nil
+}
+
+// GetAlertHistory 获取告警历史
+func (a *App) GetAlertHistory(stockCode string, limit int) ([]map[string]interface{}, error) {
+	if a.alertStorage == nil {
+		return nil, fmt.Errorf("告警存储服务未就绪")
+	}
+	return a.alertStorage.GetAlertHistory(stockCode, limit)
+}
+
+// UpdateAlertConfig 更新告警全局配置
+func (a *App) UpdateAlertConfig(config models.AlertConfig) error {
+	a.alertConfig = config
+	return nil
+}
+
+// GetAlertConfig 获取告警全局配置
+func (a *App) GetAlertConfig() (models.AlertConfig, error) {
+	return a.alertConfig, nil
+}
+
+// SetAlertsFromAI 接收 AI 识别的支撑位和压力位并自动设置预警
+func (a *App) SetAlertsFromAI(code string, name string, drawings []models.TechnicalDrawing) {
+	a.alertMutex.Lock()
+	
+	addedCount := 0
+	for _, d := range drawings {
+		if d.Price == 0 {
+			continue
+		}
+
+		// 检查是否已存在相同的预警
+		exists := false
+		alertType := "above"
+		if d.Type == "support" {
+			alertType = "below"
+		}
+
+		for _, existing := range a.alerts {
+			if existing.StockCode == code && existing.Type == alertType && MathAbs(existing.Price-d.Price) < 0.01 {
+				exists = true
+				break
+			}
+		}
+
+		if !exists {
+			a.alerts = append(a.alerts, &models.PriceAlert{
+				StockCode:     code,
+				StockName:     name,
+				Price:         d.Price,
+				Type:          alertType,
+				IsActive:      true,
+				LastTriggered: time.Unix(0, 0),
+			})
+			addedCount++
+		}
+	}
+	
+	newAlerts := a.alerts
+	a.alertMutex.Unlock()
 	
 	// 持久化保存活跃预警
 	if a.alertStorage != nil {
-		a.alertStorage.SaveActiveAlerts(a.alerts)
+		a.alertStorage.SaveActiveAlerts(newAlerts)
 	}
 	
-	logger.Info("预警位更新完成", zap.Int("added_count", addedCount), zap.Int("total_active", len(a.alerts)))
+	logger.Info("预警位更新完成", zap.Int("added_count", addedCount), zap.Int("total_active", len(newAlerts)))
+}
+
+// MathAbs 辅助函数
+func MathAbs(v float64) float64 {
+	if v < 0 {
+		return -v
+	}
+	return v
 }
 
 // initAIService 初始化或重新初始化 AI 服务
@@ -286,6 +332,21 @@ func (a *App) GetStockHealthCheck(code string) (*models.HealthCheckResult, error
 	return a.stockService.GetStockHealthCheck(code)
 }
 
+// AddPosition 添加持仓记录
+func (a *App) AddPosition(pos models.Position) error {
+	return a.positionStorage.SavePosition(&pos)
+}
+
+// GetPositions 获取所有活跃持仓
+func (a *App) GetPositions() (map[string]*models.Position, error) {
+	return a.positionStorage.GetPositions()
+}
+
+// RemovePosition 移除持仓记录
+func (a *App) RemovePosition(code string) error {
+	return a.positionStorage.RemovePosition(code)
+}
+
 // AnalyzeEntryStrategy 获取 AI 智能建仓方案
 func (a *App) AnalyzeEntryStrategy(code string) (*models.EntryStrategyResult, error) {
 	if a.aiService == nil {
@@ -331,45 +392,19 @@ func (a *App) GetKLineData(code string, limit int, period string) ([]*models.KLi
 	return a.stockService.GetKLineData(code, limit, period)
 }
 
-// AnalyzeStock 分析股票
-func (a *App) AnalyzeStock(code string) (*models.AnalysisReport, error) {
-	if a.aiService == nil {
-		return nil, fmt.Errorf("AI服务未就绪，请检查配置: %v", a.aiInitErr)
-	}
-	
-	stock, err := a.stockService.GetStockByCode(code)
-	if err != nil {
-		return nil, err
-	}
-	
-	return a.aiService.AnalyzeStock(stock)
+// AddToWatchlist 添加到自选股
+func (a *App) AddToWatchlist(stock models.StockData) error {
+	return a.watchlistService.AddToWatchlist(&stock)
 }
 
-// AnalyzeTechnical 深度技术面分析（支持多角色切换和绘图数据）
-func (a *App) AnalyzeTechnical(code string, period string, role string) (*models.TechnicalAnalysisResult, error) {
-	if a.aiService == nil {
-		return nil, fmt.Errorf("AI服务未就绪")
-	}
+// RemoveFromWatchlist 从自选股移除
+func (a *App) RemoveFromWatchlist(code string) error {
+	return a.watchlistService.RemoveFromWatchlist(code)
+}
 
-	stock, err := a.stockService.GetStockByCode(code)
-	if err != nil {
-		return nil, err
-	}
-
-	klines, err := a.stockService.GetKLineData(code, 100, period)
-	if err != nil {
-		return nil, err
-	}
-
-	result, err := a.aiService.AnalyzeTechnical(stock, klines, role)
-	if err != nil {
-		return nil, err
-	}
-
-	// 自动更新该股票的预警位
-	a.UpdateAlertsFromAnalysis(stock.Code, stock.Name, result, role)
-
-	return result, nil
+// GetWatchlist 获取自选股列表
+func (a *App) GetWatchlist() ([]*models.StockData, error) {
+	return a.watchlistService.GetWatchlist()
 }
 
 // SearchStock 搜索股票
@@ -377,61 +412,30 @@ func (a *App) SearchStock(keyword string) ([]*models.StockData, error) {
 	return a.stockService.SearchStock(keyword)
 }
 
-// GetAlertHistory 获取告警历史
-func (a *App) GetAlertHistory(stockCode string, limit int) ([]map[string]interface{}, error) {
-	if a.alertStorage == nil {
-		return []map[string]interface{}{}, nil
+// AnalyzeStock 分析股票
+func (a *App) AnalyzeStock(code string) (*models.AnalysisReport, error) {
+	if a.aiService == nil {
+		return nil, fmt.Errorf("AI服务未就绪")
 	}
-	return a.alertStorage.GetAlertHistory(stockCode, limit)
-}
-
-// GetAlertConfig 获取预警配置
-func (a *App) GetAlertConfig() models.AlertConfig {
-	return a.alertConfig
-}
-
-// UpdateAlertConfig 更新预警配置
-func (a *App) UpdateAlertConfig(config models.AlertConfig) {
-	a.alertConfig = config
-}
-
-// GetActiveAlerts 获取当前所有活跃的预警订阅
-func (a *App) GetActiveAlerts() []*models.PriceAlert {
-	a.alertMutex.Lock()
-	defer a.alertMutex.Unlock()
-	return a.alerts
-}
-
-// RemoveAlert 移除指定的预警订阅
-func (a *App) RemoveAlert(stockCode string, alertType string, price float64) {
-	a.alertMutex.Lock()
-	defer a.alertMutex.Unlock()
-	
-	newAlerts := []*models.PriceAlert{}
-	for _, alert := range a.alerts {
-		if alert.StockCode == stockCode && alert.Type == alertType && alert.Price == price {
-			continue
-		}
-		newAlerts = append(newAlerts, alert)
+	stock, err := a.stockService.GetStockByCode(code)
+	if err != nil {
+		return nil, err
 	}
-	a.alerts = newAlerts
-	
-	// 持久化保存更新后的预警列表
-	if a.alertStorage != nil {
-		a.alertStorage.SaveActiveAlerts(a.alerts)
+	return a.aiService.AnalyzeStock(stock)
+}
+
+// AnalyzeTechnical 深度技术分析
+func (a *App) AnalyzeTechnical(code string, period string, role string) (*models.TechnicalAnalysisResult, error) {
+	if a.aiService == nil {
+		return nil, fmt.Errorf("AI服务未就绪")
 	}
-}
-
-// Watchlist 相关接口
-
-func (a *App) AddToWatchlist(stock *models.StockData) error {
-	return a.watchlistService.AddToWatchlist(stock)
-}
-
-func (a *App) RemoveFromWatchlist(code string) error {
-	return a.watchlistService.RemoveFromWatchlist(code)
-}
-
-func (a *App) GetWatchlist() ([]*models.StockData, error) {
-	return a.watchlistService.GetWatchlist()
+	stock, err := a.stockService.GetStockByCode(code)
+	if err != nil {
+		return nil, err
+	}
+	klines, err := a.stockService.GetKLineData(code, 100, period)
+	if err != nil {
+		return nil, err
+	}
+	return a.aiService.AnalyzeTechnical(stock, klines, period)
 }

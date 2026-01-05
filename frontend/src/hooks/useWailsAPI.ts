@@ -103,6 +103,21 @@ const getIntradayData = useCallback(async (code: string): Promise<IntradayRespon
     return window.go.main.App.AnalyzeEntryStrategy(code)
   }, [])
 
+  const addPosition = useCallback(async (pos: any): Promise<void> => {
+    // @ts-ignore
+    return window.go.main.App.AddPosition(pos)
+  }, [])
+
+  const getPositions = useCallback(async (): Promise<Record<string, any>> => {
+    // @ts-ignore
+    return window.go.main.App.GetPositions()
+  }, [])
+
+  const removePosition = useCallback(async (code: string): Promise<void> => {
+    // @ts-ignore
+    return window.go.main.App.RemovePosition(code)
+  }, [])
+
 return {
     getStockData,
     getIntradayData,
@@ -124,6 +139,9 @@ return {
 	    getActiveAlerts,
 	    removeAlert,
 	    analyzeEntryStrategy,
+	    addPosition,
+	    getPositions,
+	    removePosition,
 	  }
 }
 

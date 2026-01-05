@@ -210,6 +210,7 @@ type Position struct {
 	Strategy      EntryStrategyResult `json:"strategy"`
 	CurrentStatus string              `json:"currentStatus"` // "holding", "closed"
 	LogicStatus   string              `json:"logicStatus"`   // "valid", "violated", "warning"
+	UpdatedAt     time.Time           `json:"updatedAt"`
 }
 
 // EastMoneyResponse 东方财富API响应结构

@@ -39,7 +39,7 @@ interface WatchlistDetailProps {
 }
 
 function WatchlistDetail({ stock }: WatchlistDetailProps) {
-  const { getKLineData, analyzeTechnical, getIntradayData, getMoneyFlowData, getStockHealthCheck, analyzeEntryStrategy } = useWailsAPI()
+  const { getKLineData, analyzeTechnical, getIntradayData, getMoneyFlowData, getStockHealthCheck, analyzeEntryStrategy, addPosition } = useWailsAPI()
   const [klineData, setKlineData] = useState<KLineData[]>([])
   const [intradayData, setIntradayData] = useState<IntradayData[]>([])
   const [moneyFlowResponse, setMoneyFlowResponse] = useState<MoneyFlowResponse | null>(null)
@@ -455,7 +455,23 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
               <div className="mb-8">
                 <EntryStrategyPanel 
                   strategy={entryStrategy} 
-                  onConfirm={() => alert('建仓功能开发中，敬请期待！')} 
+                  onConfirm={async () => {
+                    try {
+                      await addPosition({
+                        stockCode: stock.code,
+                        stockName: stock.name,
+                        entryPrice: stock.price,
+                        entryTime: new Date().toISOString(),
+                        strategy: entryStrategy,
+                        currentStatus: 'holding',
+                        logicStatus: 'valid'
+                      })
+                      alert('建仓成功！系统已开始实时监控您的建仓逻辑。')
+                    } catch (error) {
+                      console.error('建仓失败:', error)
+                      alert('建仓失败，请重试')
+                    }
+                  }} 
                 />
               </div>
             )}
