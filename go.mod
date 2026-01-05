@@ -5,8 +5,8 @@ go 1.22.0
 toolchain go1.24.9
 
 require (
-	github.com/cloudwego/eino v0.7.11
-	github.com/cloudwego/eino-ext/components/model/qwen v0.1.3
+	github.com/cloudwego/eino v0.7.13
+	github.com/cloudwego/eino-ext/components/model/openai v0.1.7
 	github.com/wailsapp/wails/v2 v2.11.0
 	go.uber.org/zap v1.27.0
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
@@ -21,7 +21,7 @@ require (
 	github.com/bytedance/sonic v1.14.1 // indirect
 	github.com/bytedance/sonic/loader v0.3.0 // indirect
 	github.com/cloudwego/base64x v0.1.6 // indirect
-	github.com/cloudwego/eino-ext/libs/acl/openai v0.1.10 // indirect
+	github.com/cloudwego/eino-ext/libs/acl/openai v0.1.11 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/eino-contrib/jsonschema v1.0.3 // indirect
 	github.com/evanphx/json-patch v0.5.2 // indirect
