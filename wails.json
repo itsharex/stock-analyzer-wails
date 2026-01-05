@@ -1,0 +1,20 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "stock-analyzer-wails",
+  "outputfilename": "stock-analyzer",
+  "frontend:install": "npm install",
+  "frontend:build": "npm run build",
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:dev:serverUrl": "auto",
+  "author": {
+    "name": "Stock Analyzer",
+    "email": "info@stock-analyzer.com"
+  },
+  "info": {
+    "companyName": "Stock Analyzer",
+    "productName": "A股股票分析AI-Agent",
+    "productVersion": "1.0.0",
+    "copyright": "Copyright © 2026",
+    "comments": "基于AI的A股股票分析工具"
+  }
+}
