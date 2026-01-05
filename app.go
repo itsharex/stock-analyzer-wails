@@ -146,6 +146,12 @@ func (a *App) UpdateAlertsFromAnalysis(code string, name string, result *models.
 	a.alertMutex.Lock()
 	defer a.alertMutex.Unlock()
 
+	logger.Info("开始更新预警位", 
+		zap.String("code", code), 
+		zap.Int("drawing_count", len(result.Drawings)),
+		zap.String("role", role),
+	)
+
 	// 清除该股票旧的 AI 预警
 	newAlerts := make([]*models.PriceAlert, 0)
 	for _, alert := range a.alerts {
@@ -155,8 +161,9 @@ func (a *App) UpdateAlertsFromAnalysis(code string, name string, result *models.
 	}
 
 	// 添加新的预警位
+	addedCount := 0
 	for _, drawing := range result.Drawings {
-		if drawing.Type == "support" || drawing.Type == "resistance" {
+		if (drawing.Type == "support" || drawing.Type == "resistance") && drawing.Price > 0 {
 			newAlerts = append(newAlerts, &models.PriceAlert{
 				StockCode: code,
 				StockName: name,
@@ -166,9 +173,16 @@ func (a *App) UpdateAlertsFromAnalysis(code string, name string, result *models.
 				Role:      role,
 				IsActive:  true,
 			})
+			addedCount++
+			logger.Info("成功添加预警位", 
+				zap.String("type", drawing.Type), 
+				zap.Float64("price", drawing.Price),
+				zap.String("label", drawing.Label),
+			)
 		}
 	}
 	a.alerts = newAlerts
+	logger.Info("预警位更新完成", zap.Int("added_count", addedCount), zap.Int("total_active", len(a.alerts)))
 }
 
 // initAIService 初始化或重新初始化 AI 服务
