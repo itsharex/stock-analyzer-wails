@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react'
 import { useWailsAPI } from '../hooks/useWailsAPI'
+import { parseError, formatErrorMessage } from '../utils/errorHandler'
 import type { StockData, AnalysisReport } from '../types'
 
 interface StockSearchProps {
@@ -65,11 +66,23 @@ function StockSearch({ onStockDataLoaded, onAnalysisComplete, onError, onLoading
 
   const handleAddToWatchlist = async () => {
     if (!currentStock) return
+    
     try {
       await addToWatchlist(currentStock)
       if (onWatchlistChanged) onWatchlistChanged()
+      
+      // 显示成功提示
+      const successMessage = `✅ 成功添加 ${currentStock.name}(${currentStock.code}) 到自选股`
+      alert(successMessage)
     } catch (err: any) {
-      alert(err.message || '添加失败')
+      console.error('添加自选股失败:', err)
+      
+      // 使用新的错误处理逻辑
+      const errorResult = parseError(err)
+      const errorMessage = formatErrorMessage(errorResult)
+      
+      // 显示详细的错误信息
+      alert(`❌ 添加自选股失败\n\n${errorMessage}`)
     }
   }
 

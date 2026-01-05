@@ -1,7 +1,6 @@
 package services
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -53,10 +52,10 @@ type appYAML struct {
 }
 
 type AIResolvedConfig struct {
-	Provider       Provider            `json:"provider"`
-	APIKey         string              `json:"apiKey"`
-	BaseURL        string              `json:"baseUrl"`
-	Model          string              `json:"model"`
+	Provider       Provider              `json:"provider"`
+	APIKey         string                `json:"apiKey"`
+	BaseURL        string                `json:"baseUrl"`
+	Model          string                `json:"model"`
 	ProviderModels map[Provider][]string `json:"providerModels"`
 }
 
@@ -86,14 +85,14 @@ func GetAppDataDir() string {
 func LoadAIConfig() (AIResolvedConfig, error) {
 	start := time.Now()
 	var cfg appYAML
-	
+
 	// 默认值
 	cfg.AI.Provider = ProviderQwen
 	cfg.AI.Model = "qwen-plus"
 	cfg.AI.BaseURL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 
 	path := filepath.Join(GetAppDataDir(), "config.yaml")
-	
+
 	// 尝试从新位置读取
 	raw, err := os.ReadFile(path)
 	if err != nil {

@@ -84,8 +84,25 @@ func (s *StockService) GetStockByCode(code string) (*models.StockData, error) {
 
 	// 5. 转换为标准模型
 	data := result.Data
+	
+	// 添加调试日志
+	logger.Debug("API返回的原始数据",
+		zap.String("module", "services.stock"),
+		zap.String("op", "GetStockByCode.parse"),
+		zap.String("requested_code", code),
+		zap.Any("f12_value", data["f12"]),
+		zap.Any("f58_value", data["f58"]),
+		zap.Any("raw_data_keys", getMapKeys(data)),
+	)
+	
+	// 使用输入的代码作为 Code 字段，确保不为空
+	stockCode := getString(data["f12"])
+	if stockCode == "" {
+		stockCode = code // 如果 API 返回的代码为空，使用输入的代码
+	}
+	
 	stock := &models.StockData{
-		Code:       getString(data["f12"]),
+		Code:       stockCode,
 		Name:       getString(data["f58"]),
 		Price:      getFloat(data["f43"]) / 100,
 		Change:     getFloat(data["f169"]) / 100,
@@ -152,6 +169,15 @@ func getInt64(v interface{}) int64 {
 		return int64(f)
 	}
 	return 0
+}
+
+// getMapKeys 获取 map 的所有键，用于调试
+func getMapKeys(m map[string]interface{}) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
 }
 
 // GetStockList 保持不变，用于列表展示
