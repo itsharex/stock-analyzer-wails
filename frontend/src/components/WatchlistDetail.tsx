@@ -13,8 +13,7 @@ import {
   LineChart as LineChartIcon,
   PencilRuler,
   ShieldCheck,
-  Zap,
-  BookOpen
+  Zap
 } from 'lucide-react'
 import { GlossaryPanel, GlossaryTooltip } from './GlossaryTooltip'
 import { STOCK_GLOSSARY } from '../utils/glossary'
@@ -257,11 +256,6 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
                   <ReactMarkdown 
                     remarkPlugins={[remarkGfm]}
                     components={{
-                      text: ({ value }) => {
-                        // 简单的文本替换逻辑，将术语包装在 GlossaryTooltip 中
-                        // 注意：这里只是示意，实际 ReactMarkdown 处理文本节点需要更精细
-                        return <span>{value}</span>
-                      },
                       // 我们可以通过自定义渲染器来处理特定词汇
                       strong: ({ children }) => {
                         const content = String(children);
