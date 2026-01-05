@@ -4,6 +4,7 @@ import StockInfo from './components/StockInfo'
 import AnalysisReport from './components/AnalysisReport'
 import Settings from './components/Settings'
 import Watchlist from './components/Watchlist'
+import WatchlistDetail from './components/WatchlistDetail'
 import { useWailsAPI } from './hooks/useWailsAPI'
 import type { StockData, AnalysisReport as AnalysisReportType, NavItem, AppConfig } from './types'
 
@@ -15,6 +16,7 @@ function App() {
   const [error, setError] = useState<string>('')
   const [currentConfig, setCurrentConfig] = useState<AppConfig | null>(null)
   const [watchlistRefresh, setWatchlistRefresh] = useState(0)
+  const [selectedWatchlistStock, setSelectedWatchlistStock] = useState<StockData | null>(null)
 
   const { getConfig, getStockData: fetchStockData } = useWailsAPI()
 
@@ -55,8 +57,12 @@ function App() {
     setError('')
     try {
       const data = await fetchStockData(code)
-      setStockData(data)
-      setAnalysisReport(null)
+      if (activeTab === 'watchlist') {
+        setSelectedWatchlistStock(data)
+      } else {
+        setStockData(data)
+        setAnalysisReport(null)
+      }
     } catch (err: any) {
       setError(err.message || '获取数据失败')
     } finally {
@@ -92,6 +98,18 @@ function App() {
           </button>
 
           <button
+            onClick={() => setActiveTab('watchlist')}
+            className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${
+              activeTab === 'watchlist' 
+                ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' 
+                : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+            }`}
+          >
+            <span className="text-xl">⭐</span>
+            <span className="font-medium">自选行情</span>
+          </button>
+
+          <button
             onClick={() => setActiveTab('settings')}
             className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${
               activeTab === 'settings' 
@@ -107,7 +125,7 @@ function App() {
         <div className="p-6 border-t border-slate-800">
           <div className="bg-slate-800/50 rounded-lg p-3">
             <p className="text-[10px] text-slate-500 mb-1">当前版本</p>
-            <p className="text-xs font-mono text-slate-300">v1.2.0 (Watchlist)</p>
+            <p className="text-xs font-mono text-slate-300">v1.3.0 (K-Line)</p>
           </div>
         </div>
       </aside>
@@ -117,7 +135,7 @@ function App() {
         {/* 顶部状态栏 */}
         <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-8 z-10">
           <h2 className="text-lg font-semibold text-gray-800">
-            {activeTab === 'analysis' ? '股票分析工作台' : '系统参数配置'}
+            {activeTab === 'analysis' ? '股票分析工作台' : activeTab === 'watchlist' ? '自选行情中心' : '系统参数配置'}
           </h2>
           <div className="flex items-center space-x-6 text-sm">
             {currentConfig && (
@@ -138,7 +156,6 @@ function App() {
         <div className="flex-1 overflow-y-auto p-8">
           {activeTab === 'analysis' ? (
             <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-4 gap-8">
-              {/* 左侧：搜索和自选股 */}
               <div className="lg:col-span-1 space-y-8">
                 <StockSearch
                   onStockDataLoaded={handleStockDataLoaded}
@@ -152,8 +169,6 @@ function App() {
                   refreshTrigger={watchlistRefresh}
                 />
               </div>
-
-              {/* 中间/右侧：股票信息和分析报告 */}
               <div className="lg:col-span-3 space-y-8">
                 {error && (
                   <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start">
@@ -161,9 +176,7 @@ function App() {
                     <p className="text-red-700 text-sm">{error}</p>
                   </div>
                 )}
-
                 {stockData && <StockInfo stockData={stockData} />}
-
                 {loading ? (
                   <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-12 flex flex-col items-center justify-center min-h-[400px]">
                     <div className="relative w-20 h-20 mb-6">
@@ -188,12 +201,35 @@ function App() {
                 ) : null}
               </div>
             </div>
+          ) : activeTab === 'watchlist' ? (
+            <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-4 gap-8">
+              <div className="lg:col-span-1">
+                <Watchlist 
+                  onSelectStock={handleSelectFromWatchlist} 
+                  refreshTrigger={watchlistRefresh}
+                />
+              </div>
+              <div className="lg:col-span-3">
+                {selectedWatchlistStock ? (
+                  <WatchlistDetail stock={selectedWatchlistStock} />
+                ) : (
+                  <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-12 flex flex-col items-center justify-center text-center min-h-[500px]">
+                    <div className="w-24 h-24 bg-blue-50 rounded-full flex items-center justify-center mb-6">
+                      <span className="text-4xl">⭐</span>
+                    </div>
+                    <h3 className="text-xl font-bold text-gray-800 mb-2">自选行情中心</h3>
+                    <p className="text-gray-500 max-w-sm text-sm leading-relaxed">
+                      请从左侧列表中选择一只自选股，查看其详细的 K 线走势和行情指标。
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
           ) : (
             <Settings onConfigSaved={handleConfigSaved} />
           )}
         </div>
 
-        {/* 底部免责声明 */}
         <footer className="h-10 bg-white border-t border-gray-100 flex items-center justify-center px-8 text-[10px] text-gray-400 uppercase tracking-widest">
           ⚠️ Disclaimer: AI-generated content is for reference only and does not constitute investment advice.
         </footer>

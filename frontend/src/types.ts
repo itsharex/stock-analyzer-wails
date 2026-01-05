@@ -22,6 +22,18 @@ export interface StockData {
 }
 
 /**
+ * K线数据点
+ */
+export interface KLineData {
+  time: string              // 时间 (YYYY-MM-DD)
+  open: number              // 开盘价
+  high: number              // 最高价
+  low: number               // 最低价
+  close: number             // 收盘价
+  volume: number            // 成交量
+}
+
+/**
  * AI 分析报告类型定义
  */
 export interface AnalysisReport {
@@ -50,4 +62,4 @@ export interface AppConfig {
 /**
  * 导航菜单项
  */
-export type NavItem = 'analysis' | 'settings'
+export type NavItem = 'analysis' | 'watchlist' | 'settings'

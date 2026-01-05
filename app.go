@@ -14,43 +14,21 @@ import (
 
 // App 应用程序结构
 type App struct {
-	ctx                context.Context
-	stockService       *services.StockService
-	aiService          *services.AIService
-	watchlistService   *services.WatchlistService
-	aiInitErr          error
-	watchlistInitErr   error
-	watchlistAvailable bool
+	ctx              context.Context
+	stockService     *services.StockService
+	aiService        *services.AIService
+	watchlistService *services.WatchlistService
+	aiInitErr        error
 }
 
 // NewApp 创建新的App应用程序
 func NewApp() *App {
-	app := &App{
-		stockService:       services.NewStockService(),
-		aiService:          nil,
-		watchlistAvailable: true,
+	watchlistSvc, _ := services.NewWatchlistService()
+	return &App{
+		stockService:     services.NewStockService(),
+		aiService:        nil,
+		watchlistService: watchlistSvc,
 	}
-
-	// 初始化自选股服务
-	watchlistSvc, err := services.NewWatchlistService()
-	if err != nil {
-		logger.Error("自选股服务初始化失败",
-			zap.String("module", "app"),
-			zap.String("op", "init_watchlist_service"),
-			zap.Error(err),
-		)
-		app.watchlistInitErr = err
-		app.watchlistAvailable = false
-		app.watchlistService = nil
-	} else {
-		app.watchlistService = watchlistSvc
-		logger.Info("自选股服务初始化成功",
-			zap.String("module", "app"),
-			zap.String("op", "init_watchlist_service"),
-		)
-	}
-
-	return app
 }
 
 // startup 在应用程序启动时调用
@@ -113,6 +91,14 @@ func (a *App) GetStockData(code string) (*models.StockData, error) {
 	return a.stockService.GetStockByCode(code)
 }
 
+// GetKLineData 获取K线数据
+func (a *App) GetKLineData(code string, limit int) ([]*models.KLineData, error) {
+	if code == "" {
+		return nil, fmt.Errorf("股票代码不能为空")
+	}
+	return a.stockService.GetKLineData(code, limit)
+}
+
 // AnalyzeStock 分析股票
 func (a *App) AnalyzeStock(code string) (*models.AnalysisReport, error) {
 	if a.aiService == nil {
@@ -135,90 +121,13 @@ func (a *App) SearchStock(keyword string) ([]*models.StockData, error) {
 // Watchlist 相关接口
 
 func (a *App) AddToWatchlist(stock *models.StockData) error {
-	start := time.Now()
-	
-	if !a.watchlistAvailable {
-		logger.Error("自选股服务不可用",
-			zap.String("module", "app"),
-			zap.String("op", "add_to_watchlist"),
-			zap.String("stock_code", stock.Code),
-			zap.Error(a.watchlistInitErr),
-		)
-		return fmt.Errorf("自选股功能不可用，初始化错误: %v", a.watchlistInitErr)
-	}
-
-	logger.Info("开始添加股票到自选股",
-		zap.String("module", "app"),
-		zap.String("op", "add_to_watchlist"),
-		zap.String("stock_code", stock.Code),
-		zap.String("stock_name", stock.Name),
-	)
-
-	err := a.watchlistService.AddToWatchlist(stock)
-	if err != nil {
-		logger.Error("添加股票到自选股失败",
-			zap.String("module", "app"),
-			zap.String("op", "add_to_watchlist"),
-			zap.String("stock_code", stock.Code),
-			zap.String("stock_name", stock.Name),
-			zap.Error(err),
-			zap.Int64("duration_ms", time.Since(start).Milliseconds()),
-		)
-		return fmt.Errorf("添加股票到自选股失败: %w", err)
-	}
-
-	logger.Info("成功添加股票到自选股",
-		zap.String("module", "app"),
-		zap.String("op", "add_to_watchlist"),
-		zap.String("stock_code", stock.Code),
-		zap.String("stock_name", stock.Name),
-		zap.Int64("duration_ms", time.Since(start).Milliseconds()),
-	)
-	return nil
+	return a.watchlistService.AddToWatchlist(stock)
 }
 
 func (a *App) RemoveFromWatchlist(code string) error {
-	if !a.watchlistAvailable {
-		logger.Error("自选股服务不可用",
-			zap.String("module", "app"),
-			zap.String("op", "remove_from_watchlist"),
-			zap.String("stock_code", code),
-			zap.Error(a.watchlistInitErr),
-		)
-		return fmt.Errorf("自选股功能不可用，初始化错误: %v", a.watchlistInitErr)
-	}
-
-	err := a.watchlistService.RemoveFromWatchlist(code)
-	if err != nil {
-		logger.Error("从自选股移除股票失败",
-			zap.String("module", "app"),
-			zap.String("op", "remove_from_watchlist"),
-			zap.String("stock_code", code),
-			zap.Error(err),
-		)
-		return fmt.Errorf("从自选股移除股票失败: %w", err)
-	}
-	return nil
+	return a.watchlistService.RemoveFromWatchlist(code)
 }
 
 func (a *App) GetWatchlist() ([]*models.StockData, error) {
-	if !a.watchlistAvailable {
-		logger.Error("自选股服务不可用",
-			zap.String("module", "app"),
-			zap.String("op", "get_watchlist"),
-			zap.Error(a.watchlistInitErr),
-		)
-		return nil, fmt.Errorf("自选股功能不可用，初始化错误: %v", a.watchlistInitErr)
-	}
-
-	stocks, err := a.watchlistService.GetWatchlist()
-	if err != nil {
-		logger.Error("获取自选股列表失败",
-			zap.String("module", "app"),
-			zap.String("op", "get_watchlist"),
-			zap.Error(err),
-		)
-		return nil, fmt.Errorf("获取自选股列表失败: %w", err)
-	}
-	return stocks, nil
+	return a.watchlistService.GetWatchlist()
 }
