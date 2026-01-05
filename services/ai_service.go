@@ -239,54 +239,11 @@ func (s *AIService) AnalyzeTechnical(stock *models.StockData, klines []*models.K
 		return strings.TrimSpace(s)
 	}
 
-	// 提取绘图 JSON
+	// 使用递归模糊解析器提取绘图数据
 	drawings := []models.TechnicalDrawing{}
 	reDrawing := regexp.MustCompile(`(?s)<DRAWING_JSON>(.*?)</DRAWING_JSON>`)
-	matchDrawing := reDrawing.FindStringSubmatch(content)
-	if len(matchDrawing) > 1 {
-		jsonStr := cleanJSON(matchDrawing[1])
-		
-		// 尝试解析为数组格式
-		err := json.Unmarshal([]byte(jsonStr), &drawings)
-		if err != nil {
-			// 如果数组解析失败，尝试解析为对象格式
-			var objMap map[string]interface{}
-			if err2 := json.Unmarshal([]byte(jsonStr), &objMap); err2 == nil {
-				// 1. 尝试从 segments 数组中提取
-				if segs, ok := objMap["segments"].([]interface{}); ok {
-					for _, s := range segs {
-						if m, ok := s.(map[string]interface{}); ok {
-							d := models.TechnicalDrawing{}
-							if t, ok := m["type"].(string); ok { d.Type = t }
-							if l, ok := m["label"].(string); ok { d.Label = l }
-							if r, ok := m["role"].(string); ok { 
-								if d.Type == "" || d.Type == "horizontal" { d.Type = r }
-								if d.Label == "" { d.Label = r }
-							}
-							if p, ok := m["price"].(float64); ok { d.Price = p }
-							if p, ok := m["level"].(float64); ok { d.Price = p }
-							if d.Price > 0 {
-								drawings = append(drawings, d)
-							}
-						}
-					}
-				}
-				
-				// 2. 如果 drawings 依然为空，尝试从顶层的 support/resistance 提取
-				if len(drawings) == 0 {
-					if p, ok := objMap["support"].(float64); ok {
-						drawings = append(drawings, models.TechnicalDrawing{Type: "support", Price: p, Label: "支撑位"})
-					}
-					if p, ok := objMap["resistance"].(float64); ok {
-						drawings = append(drawings, models.TechnicalDrawing{Type: "resistance", Price: p, Label: "压力位"})
-					}
-				}
-			} else {
-				fmt.Printf("Drawing JSON Unmarshal Error: %v, Raw: %s\n", err, jsonStr)
-			}
-		}
-	} else {
-		fmt.Printf("No DRAWING_JSON found in AI response. Raw content length: %d\n", len(content))
+	if match := reDrawing.FindStringSubmatch(content); len(match) > 1 {
+		drawings = robustParseDrawings(cleanJSON(match[1]))
 	}
 
 	// 提取风险 JSON
@@ -295,28 +252,22 @@ func (s *AIService) AnalyzeTechnical(stock *models.StockData, klines []*models.K
 		ActionAdvice string `json:"actionAdvice"`
 	}{RiskScore: 50, ActionAdvice: "观望"}
 	reRisk := regexp.MustCompile(`(?s)<RISK_JSON>(.*?)</RISK_JSON>`)
-	matchRisk := reRisk.FindStringSubmatch(content)
-	if len(matchRisk) > 1 {
-		jsonStr := cleanJSON(matchRisk[1])
-		json.Unmarshal([]byte(jsonStr), &riskData)
+	if match := reRisk.FindStringSubmatch(content); len(match) > 1 {
+		json.Unmarshal([]byte(cleanJSON(match[1])), &riskData)
 	}
 
 	// 提取雷达图 JSON
 	radarData := &models.RadarData{}
 	reRadar := regexp.MustCompile(`(?s)<RADAR_JSON>(.*?)</RADAR_JSON>`)
-	matchRadar := reRadar.FindStringSubmatch(content)
-	if len(matchRadar) > 1 {
-		jsonStr := cleanJSON(matchRadar[1])
-		json.Unmarshal([]byte(jsonStr), radarData)
+	if match := reRadar.FindStringSubmatch(content); len(match) > 1 {
+		json.Unmarshal([]byte(cleanJSON(match[1])), radarData)
 	}
 
 	// 提取交易计划 JSON
 	tradePlan := &models.TradePlan{}
 	reTrade := regexp.MustCompile(`(?s)<TRADE_JSON>(.*?)</TRADE_JSON>`)
-	matchTrade := reTrade.FindStringSubmatch(content)
-	if len(matchTrade) > 1 {
-		jsonStr := cleanJSON(matchTrade[1])
-		json.Unmarshal([]byte(jsonStr), tradePlan)
+	if match := reTrade.FindStringSubmatch(content); len(match) > 1 {
+		json.Unmarshal([]byte(cleanJSON(match[1])), tradePlan)
 	}
 
 	// 移除 JSON 标签后的纯文字分析
@@ -333,6 +284,64 @@ func (s *AIService) AnalyzeTechnical(stock *models.StockData, klines []*models.K
 		RadarData:    radarData,
 		TradePlan:    tradePlan,
 	}, nil
+}
+
+// robustParseDrawings 递归模糊解析绘图数据
+func robustParseDrawings(jsonStr string) []models.TechnicalDrawing {
+	var results []models.TechnicalDrawing
+	var raw interface{}
+	if err := json.Unmarshal([]byte(jsonStr), &raw); err != nil {
+		return results
+	}
+
+	// 辅助函数：尝试从 map 中获取 float64
+	getFloat := func(m map[string]interface{}, keys ...string) (float64, bool) {
+		for _, k := range keys {
+			if v, ok := m[k].(float64); ok { return v, true }
+		}
+		return 0, false
+	}
+
+	// 辅助函数：尝试从 map 中获取 string
+	getString := func(m map[string]interface{}, keys ...string) (string, bool) {
+		for _, k := range keys {
+			if v, ok := m[k].(string); ok { return v, true }
+		}
+		return "", false
+	}
+
+	var search func(data interface{})
+	search = func(data interface{}) {
+		switch v := data.(type) {
+		case []interface{}:
+			for _, item := range v { search(item) }
+		case map[string]interface{}:
+			// 启发式识别：如果一个对象同时拥有“价格特征”
+			price, hasPrice := getFloat(v, "price", "level", "value", "val", "support", "resistance")
+			label, _ := getString(v, "label", "name", "desc", "role")
+			role, hasRole := getString(v, "type", "role", "kind")
+			
+			if hasPrice && price > 0 {
+				dType := role
+				if !hasRole {
+					// 如果没有明确 type，尝试从字段名推断
+					if _, ok := v["support"]; ok { dType = "support" }
+					if _, ok := v["resistance"]; ok { dType = "resistance" }
+				}
+				
+				results = append(results, models.TechnicalDrawing{
+					Price: price,
+					Type:  dType,
+					Label: label,
+				})
+			}
+			// 继续深挖子节点（如 segments 数组）
+			for _, val := range v { search(val) }
+		}
+	}
+
+	search(raw)
+	return results
 }
 
 func extractSectionImpl(text, startMarker, endMarker string) string {
