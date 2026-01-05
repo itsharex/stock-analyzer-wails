@@ -2,7 +2,6 @@ package services
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"stock-analyzer-wails/models"
@@ -23,8 +22,16 @@ type FileWatchlistRepository struct {
 }
 
 func NewFileWatchlistRepository() (*FileWatchlistRepository, error) {
-	cwd, _ := os.Getwd()
-	path := filepath.Join(cwd, "watchlist.json")
+	// 使用跨平台的应用数据目录
+	path := filepath.Join(GetAppDataDir(), "watchlist.json")
+	
+	// 迁移逻辑：如果当前目录下有旧文件，移动到新位置
+	if _, err := os.Stat("watchlist.json"); err == nil {
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			os.Rename("watchlist.json", path)
+		}
+	}
+
 	return &FileWatchlistRepository{
 		filePath: path,
 	}, nil
@@ -60,10 +67,9 @@ func (r *FileWatchlistRepository) Add(stock *models.StockData) error {
 		return err
 	}
 
-	// 检查是否已存在
 	for _, s := range stocks {
 		if s.Code == stock.Code {
-			return fmt.Errorf("股票 %s 已在自选股中", stock.Code)
+			return nil // 已存在则不重复添加
 		}
 	}
 
@@ -81,23 +87,16 @@ func (r *FileWatchlistRepository) Remove(code string) error {
 	}
 
 	newStocks := make([]*models.StockData, 0)
-	found := false
 	for _, s := range stocks {
 		if s.Code == code {
-			found = true
 			continue
 		}
 		newStocks = append(newStocks, s)
 	}
 
-	if !found {
-		return fmt.Errorf("未找到股票代码: %s", code)
-	}
-
 	return r.saveInternal(newStocks)
 }
 
-// 内部辅助方法（不带锁）
 func (r *FileWatchlistRepository) getAllInternal() ([]*models.StockData, error) {
 	if _, err := os.Stat(r.filePath); os.IsNotExist(err) {
 		return []*models.StockData{}, nil
@@ -125,7 +124,6 @@ type WatchlistService struct {
 }
 
 func NewWatchlistService() (*WatchlistService, error) {
-	// 目前默认使用文件存储，后续可轻松切换为 MongoDB 实现
 	repo, err := NewFileWatchlistRepository()
 	if err != nil {
 		return nil, err

@@ -1,8 +1,10 @@
 package services
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"time"
 
 	"stock-analyzer-wails/internal/logger"
@@ -10,6 +12,8 @@ import (
 	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"
 )
+
+const AppName = "StockAnalyzer"
 
 // Provider 类型定义
 type Provider string
@@ -49,33 +53,65 @@ type appYAML struct {
 }
 
 type AIResolvedConfig struct {
-	Provider       Provider              `json:"provider"`
-	APIKey         string                `json:"apiKey"`
-	BaseURL        string                `json:"baseUrl"`
-	Model          string                `json:"model"`
+	Provider       Provider            `json:"provider"`
+	APIKey         string              `json:"apiKey"`
+	BaseURL        string              `json:"baseUrl"`
+	Model          string              `json:"model"`
 	ProviderModels map[Provider][]string `json:"providerModels"`
+}
+
+// GetAppDataDir 获取跨平台的应用数据目录
+func GetAppDataDir() string {
+	var dir string
+	switch runtime.GOOS {
+	case "windows":
+		dir = os.Getenv("LOCALAPPDATA")
+		if dir == "" {
+			dir = os.Getenv("APPDATA")
+		}
+	case "darwin":
+		home, _ := os.UserHomeDir()
+		dir = filepath.Join(home, "Library", "Application Support")
+	default: // Linux and others
+		home, _ := os.UserHomeDir()
+		dir = filepath.Join(home, ".local", "share")
+	}
+
+	appDir := filepath.Join(dir, AppName)
+	// 确保目录存在
+	os.MkdirAll(appDir, 0755)
+	return appDir
 }
 
 func LoadAIConfig() (AIResolvedConfig, error) {
 	start := time.Now()
 	var cfg appYAML
-
+	
 	// 默认值
 	cfg.AI.Provider = ProviderQwen
 	cfg.AI.Model = "qwen-plus"
 	cfg.AI.BaseURL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 
-	if path, ok, err := findConfigYAMLPath(); err == nil && ok {
-		raw, err := os.ReadFile(path)
-		if err == nil {
-			yaml.Unmarshal(raw, &cfg)
+	path := filepath.Join(GetAppDataDir(), "config.yaml")
+	
+	// 尝试从新位置读取
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		// 如果新位置没有，尝试从当前目录读取（兼容旧版本）
+		if oldRaw, oldErr := os.ReadFile("config.yaml"); oldErr == nil {
+			raw = oldRaw
+			// 迁移到新位置
+			os.WriteFile(path, oldRaw, 0644)
 		}
+	}
+
+	if len(raw) > 0 {
+		yaml.Unmarshal(raw, &cfg)
 	}
 
 	logger.Info("AI 配置加载完成",
 		zap.String("module", "services.config"),
-		zap.String("provider", string(cfg.AI.Provider)),
-		zap.String("model", cfg.AI.Model),
+		zap.String("path", path),
 		zap.Int64("duration_ms", time.Since(start).Milliseconds()),
 	)
 
@@ -89,14 +125,7 @@ func LoadAIConfig() (AIResolvedConfig, error) {
 }
 
 func SaveAIConfig(config AIResolvedConfig) error {
-	path, ok, err := findConfigYAMLPath()
-	if err != nil {
-		return err
-	}
-	if !ok {
-		cwd, _ := os.Getwd()
-		path = filepath.Join(cwd, "config.yaml")
-	}
+	path := filepath.Join(GetAppDataDir(), "config.yaml")
 
 	cfg := appYAML{
 		AI: AIConfigYAML{
@@ -113,20 +142,4 @@ func SaveAIConfig(config AIResolvedConfig) error {
 	}
 
 	return os.WriteFile(path, data, 0644)
-}
-
-func findConfigYAMLPath() (path string, ok bool, err error) {
-	paths := []string{}
-	if exe, err := os.Executable(); err == nil {
-		paths = append(paths, filepath.Join(filepath.Dir(exe), "config.yaml"))
-	}
-	if cwd, err := os.Getwd(); err == nil {
-		paths = append(paths, filepath.Join(cwd, "config.yaml"))
-	}
-	for _, p := range paths {
-		if _, err := os.Stat(p); err == nil {
-			return p, true, nil
-		}
-	}
-	return "", false, nil
 }
