@@ -1,6 +1,31 @@
 package services
 
-import "testing"
+import (
+	"context"
+	"testing"
+
+	"stock-analyzer-wails/models"
+
+	"github.com/cloudwego/eino/components/model"
+	"github.com/cloudwego/eino/schema"
+)
+
+// MockChatModel 模拟 Eino 的 ChatModel
+type MockChatModel struct {
+	model.ChatModel
+	mockResponse string
+	mockError    error
+}
+
+func (m *MockChatModel) Generate(ctx context.Context, messages []*schema.Message, opts ...model.Option) (*schema.Message, error) {
+	if m.mockError != nil {
+		return nil, m.mockError
+	}
+	return &schema.Message{
+		Role:    schema.Assistant,
+		Content: m.mockResponse,
+	}, nil
+}
 
 func TestExtractSectionImpl(t *testing.T) {
 	t.Parallel()
@@ -68,4 +93,53 @@ func TestExtractSectionImpl(t *testing.T) {
 	}
 }
 
+func TestAnalyzeStock_Mock(t *testing.T) {
+	// 1. 准备测试数据
+	mockStock := &models.StockData{
+		Code:       "600519",
+		Name:       "贵州茅台",
+		Price:      1700.00,
+		ChangeRate: 1.5,
+	}
 
+	mockAIResponse := `## 摘要
+贵州茅台今日表现强劲。
+## 基本面分析
+公司盈利能力极强。
+## 技术面分析
+均线多头排列。
+## 投资建议
+建议持有。
+## 风险等级
+低风险。
+## 目标价位
+1800-1900元。`
+
+	// 2. 初始化带 Mock 的服务
+	mockModel := &MockChatModel{
+		mockResponse: mockAIResponse,
+	}
+	service := &AIService{
+		chatModel: mockModel,
+	}
+
+	// 3. 执行测试
+	report, err := service.AnalyzeStock(mockStock)
+
+	// 4. 验证结果
+	if err != nil {
+		t.Fatalf("AnalyzeStock 失败: %v", err)
+	}
+
+	if report.StockCode != "600519" {
+		t.Errorf("期望代码 600519, 实际 %s", report.StockCode)
+	}
+
+	if report.Summary != "\n贵州茅台今日表现强劲。\n" {
+		t.Errorf("摘要提取错误, 实际: %q", report.Summary)
+	}
+
+	if report.RiskLevel != "\n低风险。\n" {
+		t.Errorf("风险等级提取错误, 实际: %q", report.RiskLevel)
+	}
+}
