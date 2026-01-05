@@ -245,9 +245,45 @@ func (s *AIService) AnalyzeTechnical(stock *models.StockData, klines []*models.K
 	matchDrawing := reDrawing.FindStringSubmatch(content)
 	if len(matchDrawing) > 1 {
 		jsonStr := cleanJSON(matchDrawing[1])
+		
+		// 尝试解析为数组格式
 		err := json.Unmarshal([]byte(jsonStr), &drawings)
 		if err != nil {
-			fmt.Printf("Drawing JSON Unmarshal Error: %v, Raw: %s\n", err, jsonStr)
+			// 如果数组解析失败，尝试解析为对象格式
+			var objMap map[string]interface{}
+			if err2 := json.Unmarshal([]byte(jsonStr), &objMap); err2 == nil {
+				// 1. 尝试从 segments 数组中提取
+				if segs, ok := objMap["segments"].([]interface{}); ok {
+					for _, s := range segs {
+						if m, ok := s.(map[string]interface{}); ok {
+							d := models.TechnicalDrawing{}
+							if t, ok := m["type"].(string); ok { d.Type = t }
+							if l, ok := m["label"].(string); ok { d.Label = l }
+							if r, ok := m["role"].(string); ok { 
+								if d.Type == "" || d.Type == "horizontal" { d.Type = r }
+								if d.Label == "" { d.Label = r }
+							}
+							if p, ok := m["price"].(float64); ok { d.Price = p }
+							if p, ok := m["level"].(float64); ok { d.Price = p }
+							if d.Price > 0 {
+								drawings = append(drawings, d)
+							}
+						}
+					}
+				}
+				
+				// 2. 如果 drawings 依然为空，尝试从顶层的 support/resistance 提取
+				if len(drawings) == 0 {
+					if p, ok := objMap["support"].(float64); ok {
+						drawings = append(drawings, models.TechnicalDrawing{Type: "support", Price: p, Label: "支撑位"})
+					}
+					if p, ok := objMap["resistance"].(float64); ok {
+						drawings = append(drawings, models.TechnicalDrawing{Type: "resistance", Price: p, Label: "压力位"})
+					}
+				}
+			} else {
+				fmt.Printf("Drawing JSON Unmarshal Error: %v, Raw: %s\n", err, jsonStr)
+			}
 		}
 	} else {
 		fmt.Printf("No DRAWING_JSON found in AI response. Raw content length: %d\n", len(content))
