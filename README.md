@@ -80,7 +80,24 @@ sudo apt-get install libgtk-3-dev libwebkit2gtk-4.0-dev
 
 将项目文件解压到本地目录，例如：`/path/to/stock-analyzer-wails`
 
-### 2. 配置环境变量
+### 2. 配置 DashScope（推荐使用 `config.yaml`）
+
+你可以在以下位置创建 `config.yaml`（二选一即可）：  
+- 与可执行文件同目录（生产构建后更推荐）  
+- 项目根目录（开发模式更方便）  
+
+示例（可直接拷贝 `config.yaml.example` 并重命名为 `config.yaml`）：
+
+```yaml
+dashscope:
+  api_key: "your-dashscope-api-key-here"
+  model: "qwen-plus-2025-07-28"
+  base_url: "https://dashscope.aliyuncs.com/compatible-moe/dv1"
+```
+
+**回退规则**：若未找到 `config.yaml` 或字段为空，将回退读取环境变量（兼容旧用法）。
+
+### 3. 配置环境变量（可选：作为回退方式）
 创建 `.env` 文件（或设置系统环境变量）：
 
 ```bash
@@ -94,7 +111,7 @@ export DASHSCOPE_MODEL="qwen-plus"
 export DASHSCOPE_BASE_URL="https://dashscope.aliyuncs.com/compatible-mode/v1"
 ```
 
-### 3. 安装依赖
+### 4. 安装依赖
 
 ```bash
 cd stock-analyzer-wails
@@ -117,6 +134,14 @@ wails dev
 ```
 
 这将启动开发服务器，支持热重载。应用会自动打开桌面窗口。
+
+## 日志（zap）
+
+- 默认输出到 **stdout**，同时写入日志文件并进行滚动：`<可执行文件目录>/logs/app.log`（开发模式下通常是项目目录的 `logs/app.log`）。
+- 可通过环境变量调整：
+  - `LOG_LEVEL`: `debug|info|warn|error`（默认 `info`）
+  - `LOG_FILE_PATH`: 自定义日志文件路径
+  - `LOG_MAX_SIZE_MB` / `LOG_MAX_BACKUPS` / `LOG_MAX_AGE_DAYS` / `LOG_COMPRESS`: 文件滚动策略
 
 ### 构建生产版本
 

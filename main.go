@@ -2,8 +2,11 @@ package main
 
 import (
 	"embed"
-	"log"
+	"os"
 
+	"stock-analyzer-wails/internal/logger"
+
+	"go.uber.org/zap"
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
@@ -15,6 +18,13 @@ import (
 var assets embed.FS
 
 func main() {
+	if err := logger.InitFromEnv(); err != nil {
+		// logger 尚未初始化完成，只能兜底输出到 stderr
+		_, _ = os.Stderr.WriteString("初始化 logger 失败: " + err.Error() + "\n")
+		os.Exit(1)
+	}
+	defer logger.Sync()
+
 	// 创建应用实例
 	app := NewApp()
 
@@ -59,6 +69,11 @@ func main() {
 	})
 
 	if err != nil {
-		log.Fatal("启动应用失败:", err)
+		logger.Error("启动应用失败",
+			zap.String("module", "main"),
+			zap.String("op", "wails.Run"),
+			zap.Error(err),
+		)
+		os.Exit(1)
 	}
 }

@@ -17,6 +17,9 @@ go.work
 # Build directory
 build/
 
+# Logs
+logs/
+
 # Frontend
 frontend/node_modules/
 frontend/dist/
@@ -39,3 +42,7 @@ Thumbs.db
 
 # Wails
 wailsjs/
+AGENTS.md
+
+# Local runtime config (do NOT commit secrets)
+config.yaml

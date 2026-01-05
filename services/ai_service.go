@@ -3,55 +3,67 @@ package services
 import (
 	"context"
 	"fmt"
-	"os"
 	"time"
 
+	"stock-analyzer-wails/internal/logger"
 	"stock-analyzer-wails/models"
 
 	"github.com/cloudwego/eino-ext/components/model/qwen"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
+	"go.uber.org/zap"
 )
 
 type AIService struct {
 	chatModel model.ChatModel
 }
 
-func NewAIService() *AIService {
+func NewAIService(cfg DashscopeResolvedConfig) (*AIService, error) {
 	ctx := context.Background()
-
-	// 从环境变量获取配置
-	apiKey := os.Getenv("DASHSCOPE_API_KEY")
-	modelName := os.Getenv("DASHSCOPE_MODEL")
-	if modelName == "" {
-		modelName = "qwen-plus-2025-07-28" // 默认使用 qwen-plus
-	}
-	apiKey = "sk-05352b6fd06c4e8b9a88daa1df825fdd"
-	baseURL := os.Getenv("DASHSCOPE_BASE_URL")
-	if baseURL == "" {
-		baseURL = "https://dashscope.aliyuncs.com/compatible-moe/dv1"
-	}
+	start := time.Now()
 
 	// 初始化 Eino Qwen 适配器
 	chatModel, err := qwen.NewChatModel(ctx, &qwen.ChatModelConfig{
-		BaseURL:     baseURL,
-		APIKey:      apiKey,
-		Model:       modelName,
+		BaseURL:     cfg.BaseURL,
+		APIKey:      cfg.APIKey,
+		Model:       cfg.Model,
 		Temperature: of(float32(0.7)),
 		MaxTokens:   of(2048),
 	})
 	if err != nil {
-		fmt.Printf("初始化 Eino ChatModel 失败: %v\n", err)
-		return &AIService{}
+		logger.Error("初始化 Eino ChatModel 失败",
+			zap.String("module", "services.ai"),
+			zap.String("op", "NewAIService.qwen.NewChatModel"),
+			zap.String("model", cfg.Model),
+			zap.String("base_url", cfg.BaseURL),
+			zap.Int64("duration_ms", time.Since(start).Milliseconds()),
+			zap.Error(err),
+		)
+		return nil, fmt.Errorf("初始化 Eino ChatModel 失败: %w", err)
 	}
+
+	logger.Info("AI 服务初始化成功",
+		zap.String("module", "services.ai"),
+		zap.String("op", "NewAIService"),
+		zap.String("model", cfg.Model),
+		zap.String("base_url", cfg.BaseURL),
+		zap.Int64("duration_ms", time.Since(start).Milliseconds()),
+	)
 
 	return &AIService{
 		chatModel: chatModel,
-	}
+	}, nil
 }
 
 func (s *AIService) AnalyzeStock(stock *models.StockData) (*models.AnalysisReport, error) {
+	start := time.Now()
 	if s.chatModel == nil {
+		logger.Error("AI服务未正确初始化",
+			zap.String("module", "services.ai"),
+			zap.String("op", "AnalyzeStock"),
+			zap.String("stock_code", stock.Code),
+			zap.String("stock_name", stock.Name),
+		)
 		return nil, fmt.Errorf("AI服务未正确初始化，请检查 API Key 配置")
 	}
 
@@ -108,7 +120,15 @@ func (s *AIService) AnalyzeStock(stock *models.StockData) (*models.AnalysisRepor
 
 	resp, err := s.chatModel.Generate(ctx, messages)
 	if err != nil {
-		return nil, fmt.Errorf("AI分析请求失败: %v", err)
+		logger.Error("AI分析请求失败",
+			zap.String("module", "services.ai"),
+			zap.String("op", "AnalyzeStock.Generate"),
+			zap.String("stock_code", stock.Code),
+			zap.String("stock_name", stock.Name),
+			zap.Int64("duration_ms", time.Since(start).Milliseconds()),
+			zap.Error(err),
+		)
+		return nil, fmt.Errorf("AI分析请求失败: %w", err)
 	}
 
 	// 解析 AI 返回的内容
@@ -129,43 +149,77 @@ func (s *AIService) AnalyzeStock(stock *models.StockData) (*models.AnalysisRepor
 		report.Summary = analysis
 	}
 
+	logger.Info("AI分析完成",
+		zap.String("module", "services.ai"),
+		zap.String("op", "AnalyzeStock"),
+		zap.String("stock_code", stock.Code),
+		zap.String("stock_name", stock.Name),
+		zap.Int64("duration_ms", time.Since(start).Milliseconds()),
+	)
 	return report, nil
 }
 
 // extractSection 从分析文本中提取指定章节
 func (s *AIService) extractSection(text, startMarker, endMarker string) string {
-	startIdx := -1
-	endIdx := len(text)
+	return extractSectionImpl(text, startMarker, endMarker)
+}
 
-	if startMarker != "" {
-		for i := 0; i < len(text); i++ {
-			if i+len(startMarker) <= len(text) && text[i:i+len(startMarker)] == startMarker {
+func extractSectionImpl(text, startMarker, endMarker string) string {
+	startIdx := -1
+	if startMarker == "" {
+		startIdx = 0
+	} else {
+		for i := 0; i+len(startMarker) <= len(text); i++ {
+			if text[i:i+len(startMarker)] == startMarker {
 				startIdx = i + len(startMarker)
 				break
 			}
 		}
-	} else {
-		startIdx = 0
+	}
+	if startIdx == -1 {
+		return ""
 	}
 
-	if endMarker != "" && startIdx != -1 {
-		for i := startIdx; i < len(text); i++ {
-			if i+len(endMarker) <= len(text) && text[i:i+len(endMarker)] == endMarker {
-				endIdx = i
-				break
-			}
+	// endMarker 为空则截取到末尾
+	if endMarker == "" {
+		return text[startIdx:]
+	}
+
+	// 查找 startIdx 之后的 endMarker
+	endRel := -1
+	for i := startIdx; i+len(endMarker) <= len(text); i++ {
+		if text[i:i+len(endMarker)] == endMarker {
+			endRel = i
+			break
+		}
+	}
+	if endRel != -1 {
+		if startIdx < endRel {
+			return text[startIdx:endRel]
+		}
+		return ""
+	}
+
+	// endMarker 若仅出现在 startMarker 之前，则认为顺序不合法
+	for i := 0; i+len(endMarker) <= startIdx; i++ {
+		if text[i:i+len(endMarker)] == endMarker {
+			return ""
 		}
 	}
 
-	if startIdx != -1 && startIdx < endIdx {
-		return text[startIdx:endIdx]
-	}
-
-	return ""
+	// endMarker 不存在：截取到末尾
+	return text[startIdx:]
 }
 
 func (s *AIService) QuickAnalyze(stock *models.StockData) (string, error) {
+	start := time.Now()
 	if s.chatModel == nil {
+		logger.Error("AI服务未正确初始化",
+			zap.String("module", "services.ai"),
+			zap.String("op", "QuickAnalyze"),
+			zap.String("stock_code", stock.Code),
+			zap.String("stock_name", stock.Name),
+		)
 		return "", fmt.Errorf("AI服务未正确初始化")
 	}
 	ctx := context.Background()
@@ -177,8 +231,23 @@ func (s *AIService) QuickAnalyze(stock *models.StockData) (string, error) {
 		schema.UserMessage(prompt),
 	})
 	if err != nil {
+		logger.Error("快速分析请求失败",
+			zap.String("module", "services.ai"),
+			zap.String("op", "QuickAnalyze.Generate"),
+			zap.String("stock_code", stock.Code),
+			zap.String("stock_name", stock.Name),
+			zap.Int64("duration_ms", time.Since(start).Milliseconds()),
+			zap.Error(err),
+		)
 		return "", err
 	}
+	logger.Info("快速分析完成",
+		zap.String("module", "services.ai"),
+		zap.String("op", "QuickAnalyze"),
+		zap.String("stock_code", stock.Code),
+		zap.String("stock_name", stock.Name),
+		zap.Int64("duration_ms", time.Since(start).Milliseconds()),
+	)
 	return resp.Content, nil
 }
 
