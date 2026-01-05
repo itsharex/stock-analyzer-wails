@@ -150,7 +150,9 @@ func (s *AIService) GenerateAlertAdvice(stockName, alertType, label, role string
 }
 
 func (s *AIService) AnalyzeEntryStrategy(stock *models.StockData, klines []*models.KLineData, moneyFlow *models.MoneyFlowResponse, health *models.HealthCheckResult) (*models.EntryStrategyResult, error) {
-	ctx := context.Background()
+	// 设置 20 秒的超时时间
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
 
 	// 构建 K 线摘要
 	klineSummary := ""

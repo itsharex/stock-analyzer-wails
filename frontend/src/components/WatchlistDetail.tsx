@@ -64,6 +64,8 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
   const [showRSI, setShowRSI] = useState(false)
   const [showAIDrawings, setShowAIDrawings] = useState(true)
   const [showMoneyFlow, setShowMoneyFlow] = useState(true)
+  const [entryAnalysisStatus, setEntryAnalysisStatus] = useState<'idle' | 'checking' | 'analyzing' | 'error'>('idle')
+  const [entryAnalysisError, setEntryAnalysisError] = useState<string>('')
 
   const loadKLineData = useCallback(async () => {
     if (chartType !== 'kline') return
@@ -79,7 +81,6 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
   }, [stock.code, period, chartType, getKLineData])
 
   const loadIntradayData = useCallback(async () => {
-    if (chartType !== 'intraday') return
     setLoading(true)
     try {
       const [intraResp, flowResp, healthResp] = await Promise.all([
@@ -96,12 +97,14 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
     } finally {
       setLoading(false)
     }
-  }, [stock.code, chartType, getIntradayData, getMoneyFlowData, getStockHealthCheck])
+  }, [stock.code, getIntradayData, getMoneyFlowData, getStockHealthCheck])
 
   useEffect(() => {
     setAnalysisResult(null)
     setHealthCheck(null)
     setEntryStrategy(null)
+    setEntryAnalysisStatus('idle')
+    setEntryAnalysisError('')
   }, [stock.code])
 
   useEffect(() => {
@@ -134,12 +137,49 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
   }
 
   const handleEntryAnalyze = async () => {
+    // 数据完整性检查
+    if (!intradayData || intradayData.length === 0) {
+      setEntryAnalysisStatus('checking')
+      setEntryAnalysisError('正在同步分时数据...')
+      await loadIntradayData()
+      setTimeout(() => {
+        setEntryAnalysisStatus('idle')
+        setEntryAnalysisError('')
+      }, 1500)
+      return
+    }
+
+    if (!moneyFlowResponse) {
+      setEntryAnalysisStatus('checking')
+      setEntryAnalysisError('正在同步资金流向数据...')
+      await loadIntradayData()
+      setTimeout(() => {
+        setEntryAnalysisStatus('idle')
+        setEntryAnalysisError('')
+      }, 1500)
+      return
+    }
+
     setEntryLoading(true)
+    setEntryAnalysisStatus('analyzing')
+    setEntryAnalysisError('')
+    
     try {
       const result = await analyzeEntryStrategy(stock.code)
+      if (!result) {
+        throw new Error('不幸的是，AI 引擎暂时无法给出建议，请稍后再试')
+      }
       setEntryStrategy(result)
+      setEntryAnalysisStatus('idle')
     } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : '未知错误'
       console.error('建仓分析失败:', error)
+      setEntryAnalysisStatus('error')
+      setEntryAnalysisError(`分析失败: ${errorMsg}`)
+      setTimeout(() => {
+        setEntryAnalysisStatus('idle')
+        setEntryAnalysisError('')
+      }, 3000)
     } finally {
       setEntryLoading(false)
     }
@@ -372,14 +412,35 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
                   <p className="text-[10px] text-slate-400 font-medium">DeepSeek-V3 引擎驱动</p>
                 </div>
               </div>
-              <button 
-                onClick={handleEntryAnalyze}
-                disabled={entryLoading}
-                className="flex items-center space-x-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-indigo-100 disabled:opacity-50"
-              >
-                {entryLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Target className="w-3 h-3" />}
-                <span>建仓分析</span>
-              </button>
+              <div className="flex-1">
+                <button 
+                  onClick={handleEntryAnalyze}
+                  disabled={entryLoading}
+                  className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-indigo-100 disabled:opacity-50"
+                >
+                  {entryLoading ? (
+                    <>
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      <span>正在分析...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Target className="w-3 h-3" />
+                      <span>建仓分析</span>
+                    </>
+                  )}
+                </button>
+                {/* 状态提示文字 */}
+                {entryAnalysisStatus !== 'idle' && (
+                  <div className={`mt-2 text-xs text-center font-medium px-2 py-1 rounded-lg transition-all ${
+                    entryAnalysisStatus === 'checking' ? 'text-blue-600 bg-blue-50' :
+                    entryAnalysisStatus === 'analyzing' ? 'text-indigo-600 bg-indigo-50' :
+                    'text-red-600 bg-red-50'
+                  }`}>
+                    {entryAnalysisError}
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="flex p-1 bg-slate-100 rounded-2xl border border-slate-200">
