@@ -14,17 +14,20 @@ import (
 
 // App 应用程序结构
 type App struct {
-	ctx          context.Context
-	stockService *services.StockService
-	aiService    *services.AIService
-	aiInitErr    error
+	ctx              context.Context
+	stockService     *services.StockService
+	aiService        *services.AIService
+	watchlistService *services.WatchlistService
+	aiInitErr        error
 }
 
 // NewApp 创建新的App应用程序
 func NewApp() *App {
+	watchlistSvc, _ := services.NewWatchlistService()
 	return &App{
-		stockService: services.NewStockService(),
-		aiService:    nil,
+		stockService:     services.NewStockService(),
+		aiService:        nil,
+		watchlistService: watchlistSvc,
 	}
 }
 
@@ -105,4 +108,18 @@ func (a *App) AnalyzeStock(code string) (*models.AnalysisReport, error) {
 // SearchStock 搜索股票
 func (a *App) SearchStock(keyword string) ([]*models.StockData, error) {
 	return a.stockService.SearchStock(keyword)
+}
+
+// Watchlist 相关接口
+
+func (a *App) AddToWatchlist(stock *models.StockData) error {
+	return a.watchlistService.AddToWatchlist(stock)
+}
+
+func (a *App) RemoveFromWatchlist(code string) error {
+	return a.watchlistService.RemoveFromWatchlist(code)
+}
+
+func (a *App) GetWatchlist() ([]*models.StockData, error) {
+	return a.watchlistService.GetWatchlist()
 }

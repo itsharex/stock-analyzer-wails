@@ -3,6 +3,7 @@ import StockSearch from './components/StockSearch'
 import StockInfo from './components/StockInfo'
 import AnalysisReport from './components/AnalysisReport'
 import Settings from './components/Settings'
+import Watchlist from './components/Watchlist'
 import { useWailsAPI } from './hooks/useWailsAPI'
 import type { StockData, AnalysisReport as AnalysisReportType, NavItem, AppConfig } from './types'
 
@@ -13,10 +14,10 @@ function App() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string>('')
   const [currentConfig, setCurrentConfig] = useState<AppConfig | null>(null)
+  const [watchlistRefresh, setWatchlistRefresh] = useState(0)
 
-  const { getConfig } = useWailsAPI()
+  const { getConfig, getStockData: fetchStockData } = useWailsAPI()
 
-  // 初始化加载配置
   useEffect(() => {
     fetchConfig()
   }, [])
@@ -41,9 +42,26 @@ function App() {
     setError('')
   }
 
-  // 当设置页面保存成功后，通知父组件刷新配置
   const handleConfigSaved = () => {
     fetchConfig()
+  }
+
+  const handleWatchlistChanged = () => {
+    setWatchlistRefresh(prev => prev + 1)
+  }
+
+  const handleSelectFromWatchlist = async (code: string) => {
+    setLoading(true)
+    setError('')
+    try {
+      const data = await fetchStockData(code)
+      setStockData(data)
+      setAnalysisReport(null)
+    } catch (err: any) {
+      setError(err.message || '获取数据失败')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -89,7 +107,7 @@ function App() {
         <div className="p-6 border-t border-slate-800">
           <div className="bg-slate-800/50 rounded-lg p-3">
             <p className="text-[10px] text-slate-500 mb-1">当前版本</p>
-            <p className="text-xs font-mono text-slate-300">v1.1.0 (Eino Inside)</p>
+            <p className="text-xs font-mono text-slate-300">v1.2.0 (Watchlist)</p>
           </div>
         </div>
       </aside>
@@ -119,26 +137,32 @@ function App() {
         {/* 内容滚动区 */}
         <div className="flex-1 overflow-y-auto p-8">
           {activeTab === 'analysis' ? (
-            <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-8">
-              {/* 左侧：搜索和股票信息 */}
+            <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-4 gap-8">
+              {/* 左侧：搜索和自选股 */}
               <div className="lg:col-span-1 space-y-8">
                 <StockSearch
                   onStockDataLoaded={handleStockDataLoaded}
                   onAnalysisComplete={handleAnalysisComplete}
                   onError={setError}
                   onLoadingChange={setLoading}
+                  onWatchlistChanged={handleWatchlistChanged}
                 />
-                {stockData && <StockInfo stockData={stockData} />}
+                <Watchlist 
+                  onSelectStock={handleSelectFromWatchlist} 
+                  refreshTrigger={watchlistRefresh}
+                />
               </div>
 
-              {/* 右侧：分析报告 */}
-              <div className="lg:col-span-2">
+              {/* 中间/右侧：股票信息和分析报告 */}
+              <div className="lg:col-span-3 space-y-8">
                 {error && (
-                  <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6 flex items-start">
+                  <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start">
                     <span className="mr-3 mt-0.5">⚠️</span>
                     <p className="text-red-700 text-sm">{error}</p>
                   </div>
                 )}
+
+                {stockData && <StockInfo stockData={stockData} />}
 
                 {loading ? (
                   <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-12 flex flex-col items-center justify-center min-h-[400px]">
@@ -151,17 +175,17 @@ function App() {
                   </div>
                 ) : analysisReport ? (
                   <AnalysisReport report={analysisReport} />
-                ) : (
+                ) : !stockData ? (
                   <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-12 flex flex-col items-center justify-center text-center min-h-[400px]">
                     <div className="w-24 h-24 bg-slate-50 rounded-full flex items-center justify-center mb-6">
                       <span className="text-4xl">📈</span>
                     </div>
                     <h3 className="text-xl font-bold text-gray-800 mb-2">准备就绪</h3>
                     <p className="text-gray-500 max-w-sm text-sm leading-relaxed">
-                      请输入 A 股代码（如 600519）开始您的智能投资分析之旅。
+                      请输入 A 股代码或从自选股中选择，开始您的智能投资分析之旅。
                     </p>
                   </div>
-                )}
+                ) : null}
               </div>
             </div>
           ) : (

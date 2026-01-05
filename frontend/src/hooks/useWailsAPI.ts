@@ -27,11 +27,30 @@ export const useWailsAPI = () => {
     return window.go.main.App.SaveConfig(config)
   }, [])
 
+  // Watchlist API
+  const addToWatchlist = useCallback(async (stock: StockData): Promise<void> => {
+    // @ts-ignore
+    return window.go.main.App.AddToWatchlist(stock)
+  }, [])
+
+  const removeFromWatchlist = useCallback(async (code: string): Promise<void> => {
+    // @ts-ignore
+    return window.go.main.App.RemoveFromWatchlist(code)
+  }, [])
+
+  const getWatchlist = useCallback(async (): Promise<StockData[]> => {
+    // @ts-ignore
+    return window.go.main.App.GetWatchlist()
+  }, [])
+
   return {
     getStockData,
     analyzeStock,
     searchStock,
     getConfig,
     saveConfig,
+    addToWatchlist,
+    removeFromWatchlist,
+    getWatchlist,
   }
 }

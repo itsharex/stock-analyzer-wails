@@ -7,15 +7,17 @@ interface StockSearchProps {
   onAnalysisComplete: (report: AnalysisReport) => void
   onError: (error: string) => void
   onLoadingChange: (loading: boolean) => void
+  onWatchlistChanged?: () => void
 }
 
-function StockSearch({ onStockDataLoaded, onAnalysisComplete, onError, onLoadingChange }: StockSearchProps) {
+function StockSearch({ onStockDataLoaded, onAnalysisComplete, onError, onLoadingChange, onWatchlistChanged }: StockSearchProps) {
   const [stockCode, setStockCode] = useState('')
   const [isSearching, setIsSearching] = useState(false)
   const [searchSuggestions, setSearchSuggestions] = useState<StockData[]>([])
   const [showSuggestions, setShowSuggestions] = useState(false)
+  const [currentStock, setCurrentStock] = useState<StockData | null>(null)
   
-  const { getStockData, analyzeStock, searchStock } = useWailsAPI()
+  const { getStockData, analyzeStock, searchStock, addToWatchlist } = useWailsAPI()
 
   const handleGetStockData = useCallback(async () => {
     if (!stockCode.trim()) {
@@ -30,6 +32,7 @@ function StockSearch({ onStockDataLoaded, onAnalysisComplete, onError, onLoading
 
     try {
       const data = await getStockData(stockCode.trim())
+      setCurrentStock(data)
       onStockDataLoaded(data)
       onLoadingChange(false)
     } catch (err: any) {
@@ -60,6 +63,16 @@ function StockSearch({ onStockDataLoaded, onAnalysisComplete, onError, onLoading
     }
   }, [stockCode, analyzeStock, onAnalysisComplete, onLoadingChange, onError])
 
+  const handleAddToWatchlist = async () => {
+    if (!currentStock) return
+    try {
+      await addToWatchlist(currentStock)
+      if (onWatchlistChanged) onWatchlistChanged()
+    } catch (err: any) {
+      alert(err.message || '添加失败')
+    }
+  }
+
   const handleSearchSuggestions = useCallback(async (keyword: string) => {
     if (!keyword.trim()) {
       setSearchSuggestions([])
@@ -72,7 +85,6 @@ function StockSearch({ onStockDataLoaded, onAnalysisComplete, onError, onLoading
       setSearchSuggestions(results.slice(0, 5))
       setShowSuggestions(true)
     } catch (err) {
-      // 搜索建议失败不显示错误，继续允许用户输入
       setSearchSuggestions([])
     }
   }, [searchStock])
@@ -124,7 +136,6 @@ function StockSearch({ onStockDataLoaded, onAnalysisComplete, onError, onLoading
             支持沪深A股代码，如：600519（茅台）、000001（平安）
           </p>
 
-          {/* 搜索建议下拉框 */}
           {showSuggestions && searchSuggestions.length > 0 && (
             <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-gray-300 rounded-lg shadow-lg z-10">
               {searchSuggestions.map((stock) => (
@@ -158,6 +169,16 @@ function StockSearch({ onStockDataLoaded, onAnalysisComplete, onError, onLoading
             AI分析
           </button>
         </div>
+
+        {currentStock && (
+          <button
+            type="button"
+            onClick={handleAddToWatchlist}
+            className="w-full py-2 border-2 border-dashed border-gray-200 text-gray-500 hover:border-blue-300 hover:text-blue-500 rounded-lg transition-all flex items-center justify-center space-x-2 text-sm font-medium"
+          >
+            <span>⭐ 加入自选股</span>
+          </button>
+        )}
 
         <div className="pt-4 border-t border-gray-200">
           <h3 className="text-sm font-medium text-gray-700 mb-2">常用股票</h3>
