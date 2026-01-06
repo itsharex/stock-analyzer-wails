@@ -1,0 +1,201 @@
+package services
+
+import (
+	"database/sql"
+	"fmt"
+	"os"
+	"path/filepath"
+	"time"
+
+	"stock-analyzer-wails/internal/logger"
+
+	"go.uber.org/zap"
+	_ "modernc.org/sqlite"
+)
+
+// DBService 数据库服务
+type DBService struct {
+	db *sql.DB
+}
+
+// NewDBService 初始化数据库连接并创建表
+func NewDBService() (*DBService, error) {
+	dbPath := filepath.Join(GetAppDataDir(), "stock_analyzer.db")
+
+	// 确保目录存在（GetAppDataDir 通常已创建，但这里做一次兜底）
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
+		return nil, fmt.Errorf("创建数据库目录失败: %w", err)
+	}
+
+	// 检查数据库文件是否存在，如果不存在则创建
+	_, err := os.Stat(dbPath)
+	isNewDB := os.IsNotExist(err)
+
+	// 连接数据库
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		return nil, fmt.Errorf("无法连接到数据库: %w", err)
+	}
+
+	// 设置连接池参数
+	db.SetMaxOpenConns(1) // SQLite 建议最大连接数为 1
+	db.SetMaxIdleConns(1)
+	db.SetConnMaxLifetime(time.Hour)
+
+	// 立即验证连接可用性（避免延迟到首次 Query/Exec 才报错）
+	if err := db.Ping(); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("数据库连接不可用: %w", err)
+	}
+
+	svc := &DBService{db: db}
+
+	if isNewDB {
+		logger.Info("数据库文件不存在，开始初始化表结构", zap.String("path", dbPath))
+		if err := svc.initTables(); err != nil {
+			_ = db.Close()
+			return nil, fmt.Errorf("初始化数据库表失败: %w", err)
+		}
+		logger.Info("数据库表结构初始化完成")
+	} else {
+		logger.Info("数据库连接成功", zap.String("path", dbPath))
+	}
+
+	return svc, nil
+}
+
+// initTables 初始化数据库表结构
+func (s *DBService) initTables() error {
+	// 开启事务
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			_ = tx.Rollback()
+			panic(r)
+		}
+	}()
+
+	// 1. Watchlist 表
+	_, err = tx.Exec(`
+		CREATE TABLE IF NOT EXISTS watchlist (
+			code TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
+			data TEXT NOT NULL, -- 存储 StockData 的 JSON 字符串
+			added_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
+	`)
+	if err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("创建 watchlist 表失败: %w", err)
+	}
+
+	// 2. Alerts 表
+	_, err = tx.Exec(`
+		CREATE TABLE IF NOT EXISTS alerts (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			stock_code TEXT NOT NULL,
+			stock_name TEXT NOT NULL,
+			price REAL NOT NULL,
+			type TEXT NOT NULL, -- 'above' or 'below'
+			is_active BOOLEAN NOT NULL,
+			last_triggered DATETIME,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(stock_code, price, type)
+		);
+	`)
+	if err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("创建 alerts 表失败: %w", err)
+	}
+
+	// 3. Alert History 表
+	_, err = tx.Exec(`
+		CREATE TABLE IF NOT EXISTS alert_history (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			stock_code TEXT NOT NULL,
+			stock_name TEXT NOT NULL,
+			triggered_price REAL NOT NULL,
+			message TEXT NOT NULL,
+			triggered_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
+	`)
+	if err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("创建 alert_history 表失败: %w", err)
+	}
+
+	// 4. Positions 表
+	_, err = tx.Exec(`
+		CREATE TABLE IF NOT EXISTS positions (
+			stock_code TEXT PRIMARY KEY,
+			stock_name TEXT NOT NULL,
+			entry_price REAL NOT NULL,
+			entry_time DATETIME NOT NULL,
+			current_status TEXT NOT NULL, -- 'holding', 'closed'
+			logic_status TEXT NOT NULL, -- 'valid', 'violated'
+			strategy_json TEXT NOT NULL, -- 存储 EntryStrategyResult 的 JSON 字符串
+			trailing_config_json TEXT NOT NULL, -- 存储 TrailingStopConfig 的 JSON 字符串
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
+	`)
+	if err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("创建 positions 表失败: %w", err)
+	}
+
+	// 5. Config 表 (用于存储全局配置，如 AI 配置、Alert 配置等)
+	_, err = tx.Exec(`
+		CREATE TABLE IF NOT EXISTS config (
+			key TEXT PRIMARY KEY,
+			value TEXT NOT NULL
+		);
+	`)
+	if err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("创建 config 表失败: %w", err)
+	}
+
+	// 提交事务
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+
+	// 插入默认配置
+	return s.insertDefaultConfigs()
+}
+
+// GetDB 返回数据库连接对象
+func (s *DBService) GetDB() *sql.DB {
+	return s.db
+}
+
+// Close 关闭数据库连接
+func (s *DBService) Close() {
+	if s.db != nil {
+		_ = s.db.Close()
+		logger.Info("数据库连接已关闭")
+	}
+}
+
+// insertDefaultConfigs 插入默认配置项
+func (s *DBService) insertDefaultConfigs() error {
+	// 默认配置值
+	defaults := map[string]string{
+		"trailing_stop_default_activation": "0.05", // 默认盈利 5% 启动
+		"trailing_stop_default_callback":   "0.03", // 默认回撤 3% 止盈
+	}
+
+	for key, value := range defaults {
+		_, err := s.db.Exec(`
+			INSERT OR IGNORE INTO config (key, value) VALUES (?, ?)
+		`, key, value)
+		if err != nil {
+			return fmt.Errorf("插入默认配置 (%s) 失败: %w", key, err)
+		}
+	}
+	logger.Info("默认配置项插入完成")
+	return nil
+}

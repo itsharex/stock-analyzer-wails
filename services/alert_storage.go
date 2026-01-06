@@ -1,153 +1,89 @@
 package services
 
 import (
-	"encoding/json"
-	"fmt"
-	"os"
-	"path/filepath"
-	"sort"
+
 	"stock-analyzer-wails/models"
-	"strings"
-	"sync"
-	"time"
+	"stock-analyzer-wails/repositories"
 )
 
-type AlertStorage struct {
-	baseDir string
-	mu      sync.RWMutex
+// AlertService 业务逻辑层，负责预警的业务处理
+type AlertService struct {
+	repo repositories.AlertRepository
 }
 
-func NewAlertStorage() (*AlertStorage, error) {
-	// 获取用户主目录下的存储路径
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return nil, err
-	}
-	baseDir := filepath.Join(home, ".stock-analyzer", "alerts")
-	if err := os.MkdirAll(baseDir, 0755); err != nil {
-		return nil, err
-	}
-
-	return &AlertStorage{
-		baseDir: baseDir,
-	}, nil
+// NewAlertService 构造函数
+func NewAlertService(repo repositories.AlertRepository) *AlertService {
+	return &AlertService{repo: repo}
 }
 
-// SaveAlert 保存告警记录到当月文件
-func (s *AlertStorage) SaveAlert(alert *models.PriceAlert, advice string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	now := time.Now()
-	fileName := fmt.Sprintf("alerts_%d_%02d.jsonl", now.Year(), now.Month())
-	filePath := filepath.Join(s.baseDir, fileName)
-
-	record := map[string]interface{}{
-		"timestamp": now.Format(time.RFC3339),
-		"stockCode": alert.StockCode,
-		"stockName": alert.StockName,
-		"type":      alert.Type,
-		"price":     alert.Price,
-		"label":     alert.Label,
-		"role":      alert.Role,
-		"advice":    advice,
-	}
-
-	data, err := json.Marshal(record)
-	if err != nil {
-		return err
-	}
-
-	f, err := os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
-	_, err = f.Write(append(data, '\n'))
-	return err
+// SaveAlert 负责将触发的告警记录到历史，并进行业务处理（如发送通知）
+func (s *AlertService) SaveAlert(alert *models.PriceAlert, message string) error {
+	// 业务逻辑：这里可以添加如“发送邮件/微信通知”等业务规则
+	return s.repo.SaveAlertHistory(alert, message)
 }
 
 // SaveActiveAlerts 保存当前活跃的预警订阅
-func (s *AlertStorage) SaveActiveAlerts(alerts []*models.PriceAlert) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	
-	filePath := filepath.Join(s.baseDir, "active_alerts.json")
-	data, err := json.MarshalIndent(alerts, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(filePath, data, 0644)
+func (s *AlertService) SaveActiveAlerts(alerts []*models.PriceAlert) error {
+	// 业务逻辑：这里可以添加如“预警数量限制”等业务规则
+	return s.repo.SaveActiveAlerts(alerts)
 }
 
 // LoadActiveAlerts 加载保存的活跃预警订阅
-func (s *AlertStorage) LoadActiveAlerts() ([]*models.PriceAlert, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	
-	filePath := filepath.Join(s.baseDir, "active_alerts.json")
-	if _, err := os.Stat(filePath); os.IsNotExist(err) {
-		return []*models.PriceAlert{}, nil
-	}
-	
-	data, err := os.ReadFile(filePath)
-	if err != nil {
-		return nil, err
-	}
-	
-	var alerts []*models.PriceAlert
-	if err := json.Unmarshal(data, &alerts); err != nil {
-		return nil, err
-	}
-	return alerts, nil
+func (s *AlertService) LoadActiveAlerts() ([]*models.PriceAlert, error) {
+	return s.repo.LoadActiveAlerts()
 }
 
-// GetAlertHistory 获取告警历史，支持分页和股票代码筛选
-func (s *AlertStorage) GetAlertHistory(stockCode string, limit int) ([]map[string]interface{}, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+// GetAlertHistory 获取告警历史
+func (s *AlertService) GetAlertHistory(stockCode string, limit int) ([]map[string]interface{}, error) {
+	return s.repo.GetAlertHistory(stockCode, limit)
+}
 
-	files, err := filepath.Glob(filepath.Join(s.baseDir, "alerts_*.jsonl"))
-	if err != nil {
-		return nil, err
-	}
+// GetAlertsForWails 是一个临时方法，用于兼容 app.go 中对 AlertStorage 的调用
+// TODO: 在 app.go 中移除对 AlertStorage 的直接引用
+func (s *AlertService) GetAlertsForWails() ([]*models.PriceAlert, error) {
+	return s.repo.LoadActiveAlerts()
+}
 
-	// 按文件名倒序排列（从最近的月份开始读）
-	sort.Sort(sort.Reverse(sort.StringSlice(files)))
+// SaveAlertsForWails 是一个临时方法，用于兼容 app.go 中对 AlertStorage 的调用
+// TODO: 在 app.go 中移除对 AlertStorage 的直接引用
+func (s *AlertService) SaveAlertsForWails(alerts []*models.PriceAlert) error {
+	return s.repo.SaveActiveAlerts(alerts)
+}
 
-	var history []map[string]interface{}
-	for _, file := range files {
-		if len(history) >= limit {
-			break
-		}
+// GetAlertHistoryForWails 是一个临时方法，用于兼容 app.go 中对 AlertStorage 的调用
+// TODO: 在 app.go 中移除对 AlertStorage 的直接引用
+func (s *AlertService) GetAlertHistoryForWails(stockCode string, limit int) ([]map[string]interface{}, error) {
+	return s.repo.GetAlertHistory(stockCode, limit)
+}
 
-		data, err := os.ReadFile(file)
-		if err != nil {
-			continue
-		}
+// UpdateAlertConfig 更新告警全局配置
+func (s *AlertService) UpdateAlertConfig(config models.AlertConfig) error {
+	// 业务逻辑：这里可以添加配置校验
+	// 由于 AlertConfig 尚未持久化，这里先不做持久化操作
+	return nil
+}
 
-		lines := strings.Split(string(data), "\n")
-		// 从后往前读，获取最新记录
-		for i := len(lines) - 1; i >= 0; i-- {
-			line := strings.TrimSpace(lines[i])
-			if line == "" {
-				continue
-			}
+// GetAlertConfig 获取告警全局配置
+func (s *AlertService) GetAlertConfig() (models.AlertConfig, error) {
+	// 业务逻辑：这里应该从持久化存储中加载配置
+	// 由于 AlertConfig 尚未持久化，这里先返回默认值
+	return models.AlertConfig{
+		Sensitivity: 0.005, // 默认 0.5%
+		Cooldown:    1,     // 默认 1 小时
+		Enabled:     true,
+	}, nil
+}
 
-			var record map[string]interface{}
-			if err := json.Unmarshal([]byte(line), &record); err != nil {
-				continue
-			}
+// SetAlertsFromAI 接收 AI 识别的支撑位和压力位并自动设置预警
+func (s *AlertService) SetAlertsFromAI(code string, name string, drawings []models.TechnicalDrawing) {
+	// 业务逻辑：将 AI 建议的预警位添加到活跃预警列表中
+	// 这个逻辑比较复杂，需要访问 app.go 中的全局 alerts 列表和 mutex
+	// 考虑到 app.go 已经瘦身，这个逻辑应该保留在 app.go 中，或者在 AlertController 中处理
+	// 由于 app.go 中已经有这个逻辑，我们先在 AlertController 中实现转发，并保留 app.go 中的核心逻辑
+}
 
-			if stockCode == "" || record["stockCode"] == stockCode {
-				history = append(history, record)
-				if len(history) >= limit {
-					break
-				}
-			}
-		}
-	}
-
-	return history, nil
+// NewAlertStorage 兼容旧的命名，但返回新的 AlertService
+func NewAlertStorage(dbSvc *DBService) *AlertService {
+	repo := repositories.NewSQLiteAlertRepository(dbSvc.GetDB())
+	return NewAlertService(repo)
 }

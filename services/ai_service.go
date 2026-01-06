@@ -5,16 +5,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"regexp"
-	"stock-analyzer-wails/internal/logger"
-	"stock-analyzer-wails/models"
-	"strings"
-	"time"
-
-	"github.com/cloudwego/eino-ext/components/model/openai"
-	"github.com/cloudwego/eino/components/model"
-	"github.com/cloudwego/eino/schema"
-	"go.uber.org/zap"
+		"regexp"
+		"stock-analyzer-wails/models"
+		"strings"
+		"time"
+	
+		"stock-analyzer-wails/internal/logger"
+		"go.uber.org/zap"
+	
+		"github.com/cloudwego/eino-ext/components/model/openai"
+		"github.com/cloudwego/eino/components/model"
+		"github.com/cloudwego/eino/schema"
 )
 
 type AIService struct {
@@ -236,24 +237,23 @@ func (s *AIService) AnalyzeEntryStrategy(stock *models.StockData, klines []*mode
 		schema.UserMessage(userPrompt),
 	}
 
-	resp, err := s.chatModel.Generate(ctx, messages)
-	if err != nil {
-		logger.Error("建仓分析 AI 调用失败",
-			zap.String("module", "services.ai"),
-			zap.String("op", "AnalyzeEntryStrategy"),
-			zap.String("step", "ai_generate"),
-			zap.String("stock_code", stock.Code),
-			zap.Error(err),
-			zap.Int64("duration_ms", time.Since(start).Milliseconds()),
-		)
-		if errors.Is(err, context.DeadlineExceeded) {
-			return nil, fmt.Errorf("建仓分析失败(step=ai_generate, code=ENTRY_AI_TIMEOUT): AI 调用超时")
+		resp, err := s.chatModel.Generate(ctx, messages)
+		if err != nil {
+			// 解决冲突：保留日志记录和更详细的错误信息
+			logger.Error("建仓分析 AI 调用失败",
+				zap.String("module", "services.ai"),
+				zap.String("op", "AnalyzeEntryStrategy"),
+				zap.String("step", "ai_generate"),
+				zap.String("stock_code", stock.Code),
+				zap.Error(err),
+				zap.Int64("duration_ms", time.Since(start).Milliseconds()),
+			)
+			if errors.Is(err, context.DeadlineExceeded) {
+				return nil, fmt.Errorf("建仓分析失败(step=ai_generate, code=ENTRY_AI_TIMEOUT): AI 调用超时")
+			}
+			return nil, fmt.Errorf("建仓分析失败(step=ai_generate, code=ENTRY_AI_REQUEST_FAILED): %v", err)
 		}
-		return nil, fmt.Errorf("建仓分析失败(step=ai_generate, code=ENTRY_AI_REQUEST_FAILED): %v", err)
-	}
-
-	// 解析 JSON
-	cleanJSON := s.extractJSON(resp.Content)
+		cleanJSON := s.extractJSON(resp.Content)
 	var result models.EntryStrategyResult
 	if err := json.Unmarshal([]byte(cleanJSON), &result); err != nil {
 		logger.Error("建仓分析解析失败（JSON）",

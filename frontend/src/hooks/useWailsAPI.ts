@@ -1,5 +1,6 @@
 import { useCallback } from 'react'
-import type { StockData, AnalysisReport, AppConfig, KLineData, TechnicalAnalysisResult, IntradayResponse, MoneyFlowResponse, HealthCheckResult, EntryStrategyResult } from '../types'
+import type { StockData, AnalysisReport, AppConfig, KLineData, TechnicalAnalysisResult, IntradayResponse, MoneyFlowResponse, HealthCheckResult, EntryStrategyResult, StockDetail } from '../types'
+import { StreamIntradayData } from '../../wailsjs/go/main/App'
 
 export const useWailsAPI = () => {
   const getStockData = useCallback(async (code: string): Promise<StockData> => {
@@ -17,9 +18,18 @@ const getIntradayData = useCallback(async (code: string): Promise<IntradayRespon
     return window.go.main.App.GetIntradayData(code)
   }, [])
 
-  const getMoneyFlowData = useCallback(async (code: string): Promise<MoneyFlowResponse> => {
+	const getMoneyFlowData = useCallback(async (code: string): Promise<MoneyFlowResponse> => {
+	    // @ts-ignore
+	    return window.go.main.App.GetMoneyFlowData(code)
+	  }, [])
+	
+	  const streamIntradayData = useCallback(async (code: string): Promise<void> => {
+	    return StreamIntradayData(code)
+	  }, [])
+
+  const getStockDetail = useCallback(async (code: string): Promise<StockDetail> => {
     // @ts-ignore
-    return window.go.main.App.GetMoneyFlowData(code)
+    return window.go.main.App.GetStockDetail(code)
   }, [])
 
   const getStockHealthCheck = useCallback(async (code: string): Promise<HealthCheckResult> => {
@@ -118,11 +128,13 @@ const getIntradayData = useCallback(async (code: string): Promise<IntradayRespon
     return window.go.main.App.RemovePosition(code)
   }, [])
 
-return {
-    getStockData,
-    getIntradayData,
-    getMoneyFlowData,
-    getStockHealthCheck,
+		return {
+		    getStockData,
+		    getIntradayData,
+		    getMoneyFlowData,
+		    streamIntradayData,
+		    getStockDetail,
+	    getStockHealthCheck,
     batchAnalyzeStocks,
     getKLineData,
 	    analyzeStock,

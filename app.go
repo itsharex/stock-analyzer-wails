@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"runtime/debug"
 	"stock-analyzer-wails/models"
-	"stock-analyzer-wails/services"
+		"stock-analyzer-wails/services"
+		"stock-analyzer-wails/repositories"
+		"stock-analyzer-wails/controllers"
 	"strings"
 	"sync"
 	"time"
@@ -23,37 +25,92 @@ type App struct {
 	ctx              context.Context
 	stockService     *services.StockService
 	aiService        *services.AIService
-	watchlistService *services.WatchlistService
-	alertStorage     *services.AlertStorage
-	positionStorage  *services.PositionStorageService
-	aiInitErr        error
+		alertStorage     *services.AlertService
+		positionStorage  *services.PositionService
+		configService    *services.ConfigService // 新增 ConfigService
+		dbService        *services.DBService // 新增 DBService
+		aiInitErr        error
 	alerts           []*models.PriceAlert
 	alertMutex       sync.Mutex
 	alertConfig      models.AlertConfig
+	
+	// Controllers (Wails Bindings)
+		WatchlistController *controllers.WatchlistController
+		AlertController     *controllers.AlertController
+		PositionController  *controllers.PositionController
+		ConfigController    *controllers.ConfigController
+		
+		// Services (for internal use)
+		watchlistService *services.WatchlistService // 保持，用于内部逻辑调用
 }
 
 // NewApp 创建新的App应用程序
-func NewApp() *App {
-	watchlistSvc, _ := services.NewWatchlistService()
-	alertSvc, _ := services.NewAlertStorage()
-	return &App{
-		stockService:     services.NewStockService(),
-		aiService:        nil,
-		watchlistService: watchlistSvc,
-		alertStorage:     alertSvc,
-		positionStorage:  services.NewPositionStorageService(),
-		alertConfig: models.AlertConfig{
-			Sensitivity: 0.005, // 默认 0.5%
-			Cooldown:    1,     // 默认 1 小时
-			Enabled:     true,
-		},
-	}
+	func NewApp() *App {
+		// 初始化数据库服务
+		dbSvc, err := services.NewDBService()
+		if err != nil {
+			// 数据库初始化失败是致命错误，这里直接 panic 或返回 nil
+			// 但由于 NewApp 不返回 error，我们先记录错误并返回一个 App 实例
+			logger.Error("初始化数据库服务失败", zap.Error(err))
+		}
+
+			// --- 依赖注入 (DI) ---
+		// --- 依赖注入 (DI) ---
+				// 1. Repository 层
+				watchlistRepo := repositories.NewSQLiteWatchlistRepository(dbSvc.GetDB())
+				alertRepo := repositories.NewSQLiteAlertRepository(dbSvc.GetDB())
+				positionRepo := repositories.NewSQLitePositionRepository(dbSvc.GetDB())
+				configRepo := repositories.NewSQLiteConfigRepository(dbSvc.GetDB())
+	
+				// 2. Service 层
+				watchlistSvc := services.NewWatchlistService(watchlistRepo)
+				alertSvc := services.NewAlertService(alertRepo)
+				positionSvc := services.NewPositionService(positionRepo)
+				configSvc := services.NewConfigService(configRepo)
+	
+				// 3. Controller 层 (Wails 绑定)
+				watchlistCtrl := controllers.NewWatchlistController(watchlistSvc)
+				alertCtrl := controllers.NewAlertController(alertSvc)
+				positionCtrl := controllers.NewPositionController(positionSvc)
+				configCtrl := controllers.NewConfigController(configSvc)
+
+			return &App{
+				stockService:     services.NewStockService(),
+				aiService:        nil,
+				dbService:        dbSvc, // 存储 DBService
+				
+		// Controllers
+					WatchlistController: watchlistCtrl,
+					AlertController: alertCtrl,
+					PositionController: positionCtrl,
+					ConfigController: configCtrl,
+					
+					// Services (for internal use)
+					watchlistService: watchlistSvc,
+					alertStorage:     alertSvc,
+					positionStorage:  positionSvc,
+					configService: configSvc,
+				alertConfig: models.AlertConfig{
+				Sensitivity: 0.005, // 默认 0.5%
+				Cooldown:    1,     // 默认 1 小时
+				Enabled:     true,
+			},
+		}
 }
 
-// startup 在应用程序启动时调用
-func (a *App) startup(ctx context.Context) {
-	a.ctx = ctx
-	a.initAIService()
+	// startup 在应用程序启动时调用
+	func (a *App) startup(ctx context.Context) {
+		a.ctx = ctx
+		
+		// 注册需要上下文的服务的 Startup 方法
+		a.stockService.Startup(ctx)
+		
+		// 迁移旧的 AI 配置
+		if err := a.configService.MigrateAIConfigFromYAML(); err != nil {
+			logger.Error("执行 YAML 配置迁移失败", zap.Error(err))
+		}
+		
+		a.initAIService()
 	
 	// 加载持久化的预警订阅
 	if a.alertStorage != nil {
@@ -265,116 +322,61 @@ func (a *App) checkAlerts() {
 	}
 }
 
+// --- Alert 转发器 ---
 // AddAlert 添加新的价格预警
 func (a *App) AddAlert(alert models.PriceAlert) error {
-	a.alertMutex.Lock()
-	defer a.alertMutex.Unlock()
-
-	alert.IsActive = true
-	alert.LastTriggered = time.Unix(0, 0)
-	a.alerts = append(a.alerts, &alert)
-
-	// 持久化保存
-	if a.alertStorage != nil {
-		return a.alertStorage.SaveActiveAlerts(a.alerts)
+	// 这是一个复杂逻辑，需要先获取所有预警，添加新的，再保存
+	// 考虑到 AlertController 已经有 SaveAlerts 方法，我们直接调用它
+	alerts, err := a.AlertController.GetAlerts()
+	if err != nil {
+		return err
 	}
-	return nil
+	alerts = append(alerts, &alert)
+	return a.AlertController.SaveAlerts(alerts)
 }
 
 // GetActiveAlerts 获取所有激活的预警
 func (a *App) GetActiveAlerts() ([]*models.PriceAlert, error) {
-	a.alertMutex.Lock()
-	defer a.alertMutex.Unlock()
-	return a.alerts, nil
+	return a.AlertController.GetAlerts()
 }
 
 // RemoveAlert 移除预警
 func (a *App) RemoveAlert(stockCode string, alertType string, price float64) error {
-	a.alertMutex.Lock()
-	defer a.alertMutex.Unlock()
-
+	// 这是一个复杂逻辑，需要先获取所有预警，移除匹配的，再保存
+	alerts, err := a.AlertController.GetAlerts()
+	if err != nil {
+		return err
+	}
+	
 	newAlerts := make([]*models.PriceAlert, 0)
-	for _, alert := range a.alerts {
-		if alert.StockCode == stockCode && alert.Type == alertType && alert.Price == price {
-			continue
+	for _, alert := range alerts {
+		if alert.StockCode != stockCode || alert.Type != alertType || alert.Price != price {
+			newAlerts = append(newAlerts, alert)
 		}
-		newAlerts = append(newAlerts, alert)
 	}
-	a.alerts = newAlerts
-
-	// 持久化保存
-	if a.alertStorage != nil {
-		return a.alertStorage.SaveActiveAlerts(a.alerts)
-	}
-	return nil
+	return a.AlertController.SaveAlerts(newAlerts)
 }
 
 // GetAlertHistory 获取告警历史
 func (a *App) GetAlertHistory(stockCode string, limit int) ([]map[string]interface{}, error) {
-	if a.alertStorage == nil {
-		return nil, fmt.Errorf("告警存储服务未就绪")
-	}
-	return a.alertStorage.GetAlertHistory(stockCode, limit)
+	return a.AlertController.GetAlertHistory(stockCode, limit)
 }
 
 // UpdateAlertConfig 更新告警全局配置
 func (a *App) UpdateAlertConfig(config models.AlertConfig) error {
-	a.alertConfig = config
-	return nil
+	return a.AlertController.UpdateAlertConfig(config)
 }
 
 // GetAlertConfig 获取告警全局配置
 func (a *App) GetAlertConfig() (models.AlertConfig, error) {
-	return a.alertConfig, nil
+	return a.AlertController.GetAlertConfig()
 }
 
 // SetAlertsFromAI 接收 AI 识别的支撑位和压力位并自动设置预警
 func (a *App) SetAlertsFromAI(code string, name string, drawings []models.TechnicalDrawing) {
-	a.alertMutex.Lock()
-	
-	addedCount := 0
-	for _, d := range drawings {
-		if d.Price == 0 {
-			continue
-		}
-
-		// 检查是否已存在相同的预警
-		exists := false
-		alertType := "above"
-		if d.Type == "support" {
-			alertType = "below"
-		}
-
-		for _, existing := range a.alerts {
-			if existing.StockCode == code && existing.Type == alertType && MathAbs(existing.Price-d.Price) < 0.01 {
-				exists = true
-				break
-			}
-		}
-
-		if !exists {
-			a.alerts = append(a.alerts, &models.PriceAlert{
-				StockCode:     code,
-				StockName:     name,
-				Price:         d.Price,
-				Type:          alertType,
-				IsActive:      true,
-				LastTriggered: time.Unix(0, 0),
-			})
-			addedCount++
-		}
-	}
-	
-	newAlerts := a.alerts
-	a.alertMutex.Unlock()
-	
-	// 持久化保存活跃预警
-	if a.alertStorage != nil {
-		a.alertStorage.SaveActiveAlerts(newAlerts)
-	}
-	
-	logger.Info("预警位更新完成", zap.Int("added_count", addedCount), zap.Int("total_active", len(newAlerts)))
+	a.AlertController.SetAlertsFromAI(code, name, drawings)
 }
+// --- Alert 转发器 结束 ---
 
 // MathAbs 辅助函数
 func MathAbs(v float64) float64 {
@@ -386,8 +388,14 @@ func MathAbs(v float64) float64 {
 
 // initAIService 初始化或重新初始化 AI 服务
 func (a *App) initAIService() error {
+	if a.dbService == nil {
+		a.aiInitErr = fmt.Errorf("数据库服务未就绪，无法加载 AI 配置")
+		return a.aiInitErr
+	}
+	
 	start := time.Now()
-	cfg, err := services.LoadAIConfig()
+		configSvc := services.NewConfigService(repositories.NewSQLiteConfigRepository(a.dbService.GetDB()))
+	cfg, err := configSvc.LoadAIConfig()
 	if err != nil {
 		a.aiInitErr = err
 		return err
@@ -416,19 +424,19 @@ func (a *App) initAIService() error {
 	return nil
 }
 
-// GetConfig 获取当前配置
-func (a *App) GetConfig() (services.AIResolvedConfig, error) {
-	return services.LoadAIConfig()
-}
+// GetConfig Wails 绑定方法：获取配置 (已废弃，由 ConfigController 替代)
+// func (a *App) GetConfig() (services.AIResolvedConfig, error) {
+// 	return a.configService.LoadAIConfig()
+// }
 
-// SaveConfig 保存配置并重置 AI 服务
-func (a *App) SaveConfig(config services.AIResolvedConfig) error {
-	err := services.SaveAIConfig(config)
-	if err != nil {
-		return err
-	}
-	return a.initAIService()
-}
+// SaveConfig Wails 绑定方法：保存配置 (已废弃，由 ConfigController 替代)
+// func (a *App) SaveConfig(config services.AIResolvedConfig) error {
+// 	err := a.configService.SaveAIConfig(config)
+// 	if err != nil {
+// 		return err
+// 	}
+// 	return a.initAIService()
+// }
 
 // GetStockData 获取股票数据
 func (a *App) GetStockData(code string) (*models.StockData, error) {
@@ -438,12 +446,29 @@ func (a *App) GetStockData(code string) (*models.StockData, error) {
 	return a.stockService.GetStockByCode(code)
 }
 
+// GetStockDetail 获取个股详情页所需的所有数据
+func (a *App) GetStockDetail(code string) (*models.StockDetail, error) {
+	if code == "" {
+		return nil, fmt.Errorf("股票代码不能为空")
+	}
+	return a.stockService.GetStockDetail(code)
+}
+
 // GetIntradayData 获取分时数据
 func (a *App) GetIntradayData(code string) (*models.IntradayResponse, error) {
 	if code == "" {
 		return nil, fmt.Errorf("股票代码不能为空")
 	}
 	return a.stockService.GetIntradayData(code)
+}
+
+// StreamIntradayData 启动分时 SSE 流并通过 Wails Events 推送到前端
+// 前端监听事件名：intradayDataUpdate:{code}
+func (a *App) StreamIntradayData(code string) {
+	if code == "" {
+		return
+	}
+	a.stockService.StreamIntradayData(code)
 }
 
 // GetMoneyFlowData 获取资金流向数据
@@ -462,20 +487,22 @@ func (a *App) GetStockHealthCheck(code string) (*models.HealthCheckResult, error
 	return a.stockService.GetStockHealthCheck(code)
 }
 
+// --- Position 转发器 ---
 // AddPosition 添加持仓记录
 func (a *App) AddPosition(pos models.Position) error {
-	return a.positionStorage.SavePosition(&pos)
+	return a.PositionController.AddPosition(pos)
 }
 
 // GetPositions 获取所有活跃持仓
 func (a *App) GetPositions() (map[string]*models.Position, error) {
-	return a.positionStorage.GetPositions()
+	return a.PositionController.GetPositions()
 }
 
 // RemovePosition 移除持仓记录
 func (a *App) RemovePosition(code string) error {
-	return a.positionStorage.RemovePosition(code)
+	return a.PositionController.RemovePosition(code)
 }
+// --- Position 转发器 结束 ---
 
 func newTraceID() string {
 	b := make([]byte, 8)
@@ -607,6 +634,30 @@ func (a *App) AnalyzeEntryStrategy(code string) (res *models.EntryStrategyResult
 		return nil, fmt.Errorf("traceId=%s: %w", traceId, e)
 	}
 
+	// 注入全局默认配置
+	if res != nil && a.dbService != nil {
+		configSvc := services.NewConfigService(repositories.NewSQLiteConfigRepository(a.dbService.GetDB()))
+		globalConfig, err := configSvc.GetGlobalStrategyConfig()
+		if err == nil {
+			// 将全局配置注入到结果中
+			if res.TrailingStopConfig == nil {
+				res.TrailingStopConfig = &models.TrailingStopConfig{}
+			}
+			// 如果用户没有手动指定，使用全局默认值
+			if res.TrailingStopConfig.ActivationThreshold == 0 {
+				res.TrailingStopConfig.ActivationThreshold = globalConfig.TrailingStopActivation
+			}
+			if res.TrailingStopConfig.CallbackRate == 0 {
+				res.TrailingStopConfig.CallbackRate = globalConfig.TrailingStopCallback
+			}
+			logger.Debug("已注入全局默认配置",
+				zap.String("module", "app.entry_strategy"),
+				zap.Float64("activation_threshold", res.TrailingStopConfig.ActivationThreshold),
+				zap.Float64("callback_rate", res.TrailingStopConfig.CallbackRate),
+			)
+		}
+	}
+
 	logger.Info("建仓分析成功（入口）",
 		zap.String("module", "app.entry_strategy"),
 		zap.String("op", "AnalyzeEntryStrategy"),
@@ -633,20 +684,22 @@ func (a *App) GetKLineData(code string, limit int, period string) ([]*models.KLi
 	return a.stockService.GetKLineData(code, limit, period)
 }
 
+// --- Watchlist 转发器 ---
 // AddToWatchlist 添加到自选股
 func (a *App) AddToWatchlist(stock models.StockData) error {
-	return a.watchlistService.AddToWatchlist(&stock)
+	return a.WatchlistController.AddToWatchlist(stock)
 }
 
 // RemoveFromWatchlist 从自选股移除
 func (a *App) RemoveFromWatchlist(code string) error {
-	return a.watchlistService.RemoveFromWatchlist(code)
+	return a.WatchlistController.RemoveFromWatchlist(code)
 }
 
 // GetWatchlist 获取自选股列表
 func (a *App) GetWatchlist() ([]*models.StockData, error) {
-	return a.watchlistService.GetWatchlist()
+	return a.WatchlistController.GetWatchlist()
 }
+// --- Watchlist 转发器 结束 ---
 
 // SearchStock 搜索股票
 func (a *App) SearchStock(keyword string) ([]*models.StockData, error) {
@@ -679,4 +732,34 @@ func (a *App) AnalyzeTechnical(code string, period string, role string) (*models
 		return nil, err
 	}
 	return a.aiService.AnalyzeTechnical(stock, klines, period, role)
+}
+
+// --- Config 转发器 ---
+// GetConfig 获取 AI 配置
+func (a *App) GetConfig() (services.AIResolvedConfig, error) {
+	return a.ConfigController.GetAIConfig()
+}
+
+// SaveConfig 保存 AI 配置
+func (a *App) SaveConfig(config services.AIResolvedConfig) error {
+	return a.ConfigController.SaveAIConfig(config)
+}
+
+// GetGlobalStrategyConfig 获取全局交易策略配置
+func (a *App) GetGlobalStrategyConfig() (services.GlobalStrategyConfig, error) {
+	return a.ConfigController.GetGlobalStrategyConfig()
+}
+
+// UpdateGlobalStrategyConfig 更新全局交易策略配置
+func (a *App) UpdateGlobalStrategyConfig(config services.GlobalStrategyConfig) error {
+	return a.ConfigController.UpdateGlobalStrategyConfig(config)
+}
+// --- Config 转发器 结束 ---
+
+// shutdown 在应用程序退出时调用
+func (a *App) shutdown(ctx context.Context) {
+	// 关闭数据库连接
+	if a.dbService != nil {
+		a.dbService.Close()
+	}
 }

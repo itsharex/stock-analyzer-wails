@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { StockData, KLineData, TechnicalAnalysisResult, IntradayData, MoneyFlowResponse, HealthCheckResult, EntryStrategyResult, TrailingStopConfig } from '../types'
+import { StockData, KLineData, TechnicalAnalysisResult, IntradayData, MoneyFlowResponse, HealthCheckResult, EntryStrategyResult, TrailingStopConfig, StockDetail } from '../types'
+import { EventsOn, EventsOff } from '../../wailsjs/runtime/runtime'
 import { parseError } from '../utils/errorHandler'
 import { useWailsAPI } from '../hooks/useWailsAPI'
 import KLineChart from './KLineChart'
@@ -12,6 +13,9 @@ import StockHealthPanel from './StockHealthPanel'
 import RadarChart from './RadarChart'
 import TradePlanCard from './TradePlanCard'
 import EntryStrategyPanel from './EntryStrategyPanel'
+import OrderBookPanel from './OrderBookPanel'
+import FinancialPanel from './FinancialPanel'
+import IndustryPanel from './IndustryPanel'
 import { 
   Activity, 
   Clock, 
@@ -39,9 +43,11 @@ interface WatchlistDetailProps {
 }
 
 function WatchlistDetail({ stock }: WatchlistDetailProps) {
-  const { getKLineData, analyzeTechnical, getIntradayData, getMoneyFlowData, getStockHealthCheck, analyzeEntryStrategy, addPosition } = useWailsAPI()
+  const { getKLineData, analyzeTechnical, getStockDetail, getIntradayData, getMoneyFlowData, getStockHealthCheck, analyzeEntryStrategy, addPosition, streamIntradayData } = useWailsAPI()
   const [klineData, setKlineData] = useState<KLineData[]>([])
+  const [stockDetail, setStockDetail] = useState<StockDetail | null>(null)
   const [intradayData, setIntradayData] = useState<IntradayData[]>([])
+  const intradayDataRef = useRef<IntradayData[]>([])
   const [moneyFlowResponse, setMoneyFlowResponse] = useState<MoneyFlowResponse | null>(null)
   const [healthCheck, setHealthCheck] = useState<HealthCheckResult | null>(null)
   const [preClose, setPreClose] = useState<number>(0)
@@ -84,21 +90,25 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
   const loadIntradayData = useCallback(async () => {
     setLoading(true)
     try {
-      const [intraResp, flowResp, healthResp] = await Promise.all([
+      // 1. 获取初始数据 (非实时部分)
+      const [detailResp, intraResp, flowResp, healthResp] = await Promise.all([
+        getStockDetail(stock.code),
         getIntradayData(stock.code),
         getMoneyFlowData(stock.code),
         getStockHealthCheck(stock.code)
       ])
+      setStockDetail(detailResp)
       setIntradayData(intraResp.data)
+      intradayDataRef.current = intraResp.data // 更新 ref
       setPreClose(intraResp.preClose)
       setMoneyFlowResponse(flowResp)
       setHealthCheck(healthResp)
     } catch (error) {
-      console.error('加载分时/资金流向数据失败:', error)
+      console.error('加载详情数据失败:', error)
     } finally {
       setLoading(false)
     }
-  }, [stock.code, getIntradayData, getMoneyFlowData, getStockHealthCheck])
+  }, [stock.code, getStockDetail, getIntradayData, getMoneyFlowData, getStockHealthCheck])
 
   useEffect(() => {
     setAnalysisResult(null)
@@ -116,13 +126,63 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
     }
   }, [chartType, loadKLineData, loadIntradayData])
 
+  // SSE 实时数据监听
   useEffect(() => {
     if (chartType !== 'intraday') return
-    const timer = setInterval(() => {
-      loadIntradayData()
-    }, 30000)
-    return () => clearInterval(timer)
-  }, [chartType, loadIntradayData])
+
+    const eventName = `intradayDataUpdate:${stock.code}`
+    
+    // 1. 启动 SSE 代理
+    streamIntradayData(stock.code)
+
+    // 2. 监听 Wails 事件
+    const handler = (newTrends: string[]) => {
+      // newTrends 是一个包含最新分时数据的字符串数组，例如 ["14:59,10.00,10.01,1000,1000000,100,10.00,10.00"]
+      if (newTrends.length === 0) return
+
+      // 简化处理：只取最新的一个点
+      const latestTrend = newTrends[newTrends.length - 1]
+      const parts = latestTrend.split(',')
+      if (parts.length < 8) return
+
+      const newPoint: IntradayData = {
+        time: parts[0],
+        price: parseFloat(parts[2]),
+        avgPrice: parseFloat(parts[7]),
+        volume: parseInt(parts[5]),
+        preClose: preClose, // 沿用初始的 preClose
+      }
+
+      // 检查最新点是否已存在 (以时间为准)
+      const currentData = intradayDataRef.current
+      const lastPoint = currentData[currentData.length - 1]
+
+      if (lastPoint && lastPoint.time === newPoint.time) {
+        // 时间相同，更新最后一个点
+        const updatedData = [...currentData.slice(0, -1), newPoint]
+        intradayDataRef.current = updatedData
+        setIntradayData(updatedData)
+      } else if (lastPoint && newPoint.time > lastPoint.time) {
+        // 时间更新，添加新点
+        const updatedData = [...currentData, newPoint]
+        intradayDataRef.current = updatedData
+        setIntradayData(updatedData)
+      } else if (!lastPoint) {
+        // 初始数据为空，直接设置
+        intradayDataRef.current = [newPoint]
+        setIntradayData([newPoint])
+      }
+    }
+
+    EventsOn(eventName, handler)
+
+    return () => {
+      // 3. 清理监听器
+      EventsOff(eventName)
+      // 4. 停止 SSE 流 (通过 Wails Context 取消 Go 协程)
+      // Wails 会在组件卸载时自动取消 Go 协程的 Context，无需显式调用停止函数
+    }
+  }, [chartType, stock.code, preClose, streamIntradayData])
 
   const handleAnalyze = async (selectedRole = role) => {
     setAnalysisLoading(true)
@@ -147,20 +207,9 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
 
   const handleEntryAnalyze = async () => {
     // 数据完整性检查
-    if (!intradayData || intradayData.length === 0) {
+    if (!stockDetail || !intradayData || intradayData.length === 0 || !moneyFlowResponse) {
       setEntryAnalysisStatus('checking')
-      setEntryAnalysisError('正在同步分时数据...')
-      await loadIntradayData()
-      setTimeout(() => {
-        setEntryAnalysisStatus('idle')
-        setEntryAnalysisError('')
-      }, 1500)
-      return
-    }
-
-    if (!moneyFlowResponse) {
-      setEntryAnalysisStatus('checking')
-      setEntryAnalysisError('正在同步资金流向数据...')
+      setEntryAnalysisError('正在同步深度数据...')
       await loadIntradayData()
       setTimeout(() => {
         setEntryAnalysisStatus('idle')
@@ -266,85 +315,92 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
             <p className="text-xs text-slate-400 uppercase tracking-wider">最高</p>
             <p className="text-sm font-semibold text-slate-700">{stock.high.toFixed(2)}</p>
           </div>
-          <div className="text-center">
-            <p className="text-xs text-slate-400 uppercase tracking-wider">最低</p>
-            <p className="text-sm font-semibold text-slate-700">{stock.low.toFixed(2)}</p>
-          </div>
-          <div className="text-center">
-            <p className="text-xs text-slate-400 uppercase tracking-wider">成交量</p>
-            <p className="text-sm font-semibold text-slate-700">{(stock.volume / 10000).toFixed(2)}万</p>
-          </div>
-          <div className="text-center">
-            <p className="text-xs text-slate-400 uppercase tracking-wider">换手率</p>
-            <p className="text-sm font-semibold text-slate-700">{stock.turnover.toFixed(2)}%</p>
-          </div>
+	          <div className="text-center">
+	            <p className="text-xs text-slate-400 uppercase tracking-wider">成交量</p>
+	            <p className="text-sm font-semibold text-slate-700">{(stock.volume / 10000).toFixed(2)}万</p>
+	          </div>
+	          <div className="text-center">
+	            <p className="text-xs text-slate-400 uppercase tracking-wider">换手率</p>
+	            <p className="text-sm font-semibold text-slate-700">{stock.turnover.toFixed(2)}%</p>
+	          </div>
+	          <div className="text-center">
+	            <p className="text-xs text-slate-400 uppercase tracking-wider">量比</p>
+	            <p className="text-sm font-semibold text-slate-700">{((stockDetail?.stockData?.volumeRatio ?? stockDetail?.volumeRatio) != null) ? (stockDetail?.stockData?.volumeRatio ?? stockDetail?.volumeRatio)!.toFixed(2) : '--'}</p>
+	          </div>
+	          <div className="text-center">
+	            <p className="text-xs text-slate-400 uppercase tracking-wider">委比</p>
+	            <p className="text-sm font-semibold text-slate-700">{((stockDetail?.stockData?.warrantRatio ?? stockDetail?.warrantRatio) != null) ? (stockDetail?.stockData?.warrantRatio ?? stockDetail?.warrantRatio)!.toFixed(2) : '--'}</p>
+	          </div>
         </div>
       </div>
 
       <div className="flex-1 flex overflow-hidden">
-        <div className="flex-1 flex flex-col p-2 lg:p-4 overflow-y-auto">
-          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4 flex-1 flex flex-col">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center space-x-2">
-                <div className="flex bg-slate-100 rounded-lg p-1 mr-2">
-                  <button 
-                    onClick={() => setChartType('intraday')}
-                    className={`px-4 py-1.5 text-sm font-bold rounded-md transition-all ${chartType === 'intraday' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                  >
+	        <div className="flex-1 flex flex-col p-2 lg:p-4 overflow-y-auto">
+	          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
+	            <OrderBookPanel orderBook={stockDetail?.orderBook} />
+	            <FinancialPanel financialSummary={stockDetail?.financial_summary} />
+	            <IndustryPanel industryInfo={stockDetail?.industry_info} />
+	          </div>
+		          <div className="flex-1 min-h-[400px] bg-white rounded-lg shadow-md p-4 mb-4">	            <div className="flex items-center justify-between mb-4">
+	              <div className="flex items-center space-x-2">
+	                <div className="flex bg-gray-700 rounded-lg p-1 mr-2">                 <button 
+	                    onClick={() => setChartType('intraday')}
+	                    className={`px-4 py-1.5 text-sm font-bold rounded-md transition-all ${chartType === 'intraday' ? 'bg-gray-900 text-blue-400 shadow-sm' : 'text-gray-400 hover:text-white'}`}
+	                  >
                     分时
                   </button>
                   <button 
-                    onClick={() => setChartType('kline')}
-                    className={`px-4 py-1.5 text-sm font-bold rounded-md transition-all ${chartType === 'kline' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                  >
+	                    onClick={() => setChartType('kline')}
+	                    className={`px-4 py-1.5 text-sm font-bold rounded-md transition-all ${chartType === 'kline' ? 'bg-gray-900 text-blue-400 shadow-sm' : 'text-gray-400 hover:text-white'}`}
+	                  >
                     K线
                   </button>
                 </div>
 
-                {chartType === 'kline' ? (
+	                {chartType === 'kline' && (
                   <>
                     <div className="relative">
-                      <select 
-                        value={period}
-                        onChange={(e) => setPeriod(e.target.value)}
-                        className="appearance-none bg-slate-100 border-none rounded-lg px-4 py-2 pr-10 text-sm font-medium text-slate-700 focus:ring-2 focus:ring-blue-500 cursor-pointer"
-                      >
-                        <option value="daily">日线</option>
-                        <option value="week">周线</option>
-                        <option value="month">月线</option>
-                      </select>
-                      <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-                    </div>
-                    <div className="h-6 w-px bg-slate-200 mx-2" />
-                    <div className="flex bg-slate-100 rounded-lg p-1">
-                      <button onClick={() => setShowMACD(!showMACD)} className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${showMACD ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>MACD</button>
-                      <button onClick={() => setShowKDJ(!showKDJ)} className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${showKDJ ? 'bg-white text-purple-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>KDJ</button>
-                      <button onClick={() => setShowRSI(!showRSI)} className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${showRSI ? 'bg-white text-cyan-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>RSI</button>
-                    </div>
-                    {analysisResult && (
-                      <button onClick={() => setShowAIDrawings(!showAIDrawings)} className={`flex items-center space-x-1 px-3 py-1 text-xs font-bold rounded-md transition-all ${showAIDrawings ? 'bg-blue-50 text-blue-600 border border-blue-200' : 'bg-slate-100 text-slate-500'}`}>
-                        <PencilRuler className="w-3 h-3" />
-                        <span>AI 绘图</span>
-                      </button>
-                    )}
-                  </>
-                ) : (
-                  <div className="flex bg-slate-100 rounded-lg p-1">
-                    <button onClick={() => setShowMoneyFlow(!showMoneyFlow)} className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${showMoneyFlow ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>资金流向</button>
-                  </div>
-                )}
+	                      <select 
+	                        value={period}
+	                        onChange={(e) => setPeriod(e.target.value)}
+	                        className="appearance-none bg-gray-700 border-none rounded-lg px-4 py-2 pr-10 text-sm font-medium text-white focus:ring-2 focus:ring-blue-500 cursor-pointer"
+	                      >
+	                        <option value="daily">日线</option>
+	                        <option value="week">周线</option>
+	                        <option value="month">月线</option>
+	                      </select>
+	                      <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+	                    </div>
+	                    <div className="h-6 w-px bg-gray-700 mx-2" />
+	                    <div className="flex bg-gray-700 rounded-lg p-1">
+	                      <button onClick={() => setShowMACD(!showMACD)} className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${showMACD ? 'bg-gray-900 text-blue-400 shadow-sm' : 'text-gray-400 hover:text-white'}`}>MACD</button>
+	      	                      <button onClick={() => setShowKDJ(!showKDJ)} className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${showKDJ ? 'bg-gray-900 text-purple-400 shadow-sm' : 'text-gray-400 hover:text-white'}`}>KDJ</button>
+	                      <button onClick={() => setShowRSI(!showRSI)} className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${showRSI ? 'bg-gray-900 text-cyan-400 shadow-sm' : 'text-gray-400 hover:text-white'}`}>RSI</button>
+	                    </div>
+	                    {analysisResult && (
+	                      <button onClick={() => setShowAIDrawings(!showAIDrawings)} className={`flex items-center space-x-1 px-3 py-1 text-xs font-bold rounded-md transition-all ${showAIDrawings ? 'bg-red-900/50 text-red-400 shadow-sm' : 'bg-gray-700 text-gray-400 hover:text-white'}`}>
+	                        <PencilRuler className="w-3 h-3" />
+	                        <span>AI 绘图</span>
+	                      </button>
+	                    )}
+	                    <button onClick={() => setShowMoneyFlow(!showMoneyFlow)} className={`flex items-center space-x-1 px-3 py-1 text-xs font-bold rounded-md transition-all ${showMoneyFlow ? 'bg-green-900/50 text-green-400 shadow-sm' : 'bg-gray-700 text-gray-400 hover:text-white'}`}>
+	                      <Wallet className="w-3 h-3" />
+	                      <span>资金流向</span>
+	                    </button>
+	                  </>
+	                )}
               </div>
-              <div className="flex items-center text-slate-400 text-xs space-x-4">
+	              <div className="flex items-center text-gray-400 text-xs space-x-4">
                 <span className="flex items-center"><Clock className="w-3 h-3 mr-1" /> {chartType === 'intraday' ? '30秒自动刷新' : '实时更新'}</span>
                 <span className="flex items-center"><Activity className="w-3 h-3 mr-1" /> 东方财富数据源</span>
               </div>
             </div>
 
-            {chartType === 'intraday' && moneyFlowResponse && (
-              <div className="mb-4 rounded-lg overflow-hidden border border-slate-800">
-                <SignalTicker data={moneyFlowResponse.data} />
-              </div>
-            )}
+	            {chartType === 'intraday' && moneyFlowResponse && (
+	              <div className="mb-4 rounded-lg overflow-hidden border border-gray-700">
+	                <SignalTicker data={moneyFlowResponse.data} />
+	              </div>
+	            )}
 
             {healthCheck && (
               <div className="mb-6">

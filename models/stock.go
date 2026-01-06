@@ -2,9 +2,12 @@ package models
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 )
+
+var ErrInvalidInput = errors.New("输入参数无效")
 
 // StockData 股票数据结构
 type StockData struct {
@@ -25,6 +28,8 @@ type StockData struct {
 	PB        float64 `json:"pb"`        // 市净率
 	TotalMV   float64 `json:"totalMV"`   // 总市值
 	CircMV    float64 `json:"circMV"`    // 流通市值
+	VolumeRatio float64 `json:"volumeRatio"` // 量比
+	WarrantRatio float64 `json:"warrantRatio"` // 委比
 }
 
 // KLineData K线数据点
@@ -58,22 +63,22 @@ type IntradayResponse struct {
 // MoneyFlowData 资金流向数据点
 type MoneyFlowData struct {
 	Time       string  `json:"time"`       // 时间 (HH:MM)
-	SuperLarge float64 `json:"superLarge"` // 特大单净流入
-	Large      float64 `json:"large"`      // 大单净流入
-	Medium     float64 `json:"medium"`     // 中单净流入
-	Small      float64 `json:"small"`      // 小单净流入
-	MainNet    float64 `json:"mainNet"`    // 主力净流入 (特大单+大单)
-	Signal     string  `json:"signal"`     // 异动信号: "扫货", "砸盘", "对倒", ""
+		Main    float64 `json:"main"`    // 主力净流入
+		Retail  float64 `json:"retail"`  // 散户净流入
+		Super   float64 `json:"super"`   // 超大单净流入
+		Big     float64 `json:"big"`     // 大单净流入
+		Medium  float64 `json:"medium"`  // 中单净流入
+		Small   float64 `json:"small"`   // 小单净流入
 }
 
-// MoneyFlowResponse 资金流向响应结构
-type MoneyFlowResponse struct {
-	Data        []MoneyFlowData `json:"data"`
-	TodayMain   float64         `json:"todayMain"`   // 今日主力净流入总额
-	TodayRetail float64         `json:"todayRetail"` // 今日散户净流入总额
-	Status      string          `json:"status"`      // 智能识别状态: "主力建仓", "散户追高", "机构洗盘", "平稳运行"
-	Description string          `json:"description"` // 状态详细描述
-}
+	// MoneyFlowResponse 资金流向响应结构
+	type MoneyFlowResponse struct {
+		Data        []MoneyFlowData `json:"data"`
+		TodayMain   float64         `json:"todayMain"`   // 今日主力净流入总额
+		TodayRetail float64         `json:"todayRetail"` // 今日散户净流入总额
+		Status      string          `json:"status"`      // 智能识别状态: "主力建仓", "散户追高", "机构洗盘", "平稳运行"
+		Description string          `json:"description"` // 状态详细描述
+	}
 
 // HealthCheckResult 股票深度体检结果
 type HealthCheckResult struct {
@@ -188,15 +193,16 @@ type AlertHistory struct {
 
 // EntryStrategyResult 智能建仓方案结构
 type EntryStrategyResult struct {
-	Recommendation    string        `json:"recommendation"`    // 总体建议
-	EntryPriceRange   string        `json:"entryPriceRange"`   // 建议买入价格区间
-	InitialPosition   string        `json:"initialPosition"`   // 建议首仓比例
-	StopLossPrice     float64       `json:"stopLossPrice"`     // 止损价
-	TakeProfitPrice   float64       `json:"takeProfitPrice"`   // 目标止盈价
-	CoreReasons       []CoreReason  `json:"coreReasons"`       // 核心建仓理由
-	RiskRewardRatio   float64       `json:"riskRewardRatio"`   // 预估盈亏比
-	ActionPlan        string        `json:"actionPlan"`        // 具体操作步骤
-}
+		Recommendation    string        `json:"recommendation"`    // 总体建议
+		EntryPriceRange   string        `json:"entryPriceRange"`   // 建议买入价格区间
+		InitialPosition   string        `json:"initialPosition"`   // 建议首仓比例
+		StopLossPrice     float64       `json:"stopLossPrice"`     // 止损价
+		TakeProfitPrice   float64       `json:"takeProfitPrice"`   // 目标止盈价
+		CoreReasons       []CoreReason  `json:"coreReasons"`       // 核心建仓理由
+		RiskRewardRatio   float64       `json:"riskRewardRatio"`   // 预估盈亏比
+		ActionPlan        string        `json:"actionPlan"`        // 具体操作步骤
+		TrailingStopConfig *TrailingStopConfig `json:"trailingStopConfig,omitempty"` // 移动止损配置
+	}
 
 func (r *EntryStrategyResult) UnmarshalJSON(data []byte) error {
 	type Alias EntryStrategyResult
