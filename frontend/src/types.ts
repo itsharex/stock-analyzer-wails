@@ -18,7 +18,9 @@ export interface StockData {
   pe: number                // 市盈率
   pb: number                // 市净率
   totalMV: number           // 总市值
-  circMV: number            // 流通市值
+  circMV: number,            // 流通市值
+  volumeRatio: number,         // 量比
+  warrantRatio: number,        // 委比
 }
 
 /**
@@ -213,6 +215,41 @@ export interface TrailingStopConfig {
   enabled: boolean
   activationThreshold: number
   callbackRate: number
+}
+
+export interface OrderBookItem {
+  price: number
+  volume: number
+}
+
+export interface OrderBook {
+  buy: OrderBookItem[]
+  sell: OrderBookItem[]
+  volume: number
+  amount: number
+}
+
+export interface FinancialSummary {
+  roe: number
+  net_profit_growth_rate: number
+  gross_profit_margin: number
+  total_market_value: number
+  circulating_market_value: number
+  dividend_yield: number
+  report_date: string // ISO date string
+}
+
+export interface IndustryInfo {
+  industry_name: string
+  concept_names: string[]
+  industry_pe: number
+}
+
+export interface StockDetail {
+  stockData: StockData
+  orderBook: OrderBook
+  financial_summary: FinancialSummary
+  industry_info: IndustryInfo
 }
 
 export interface Position {

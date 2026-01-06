@@ -23,18 +23,19 @@ const FinancialPanel: React.FC<FinancialPanelProps> = ({ financialSummary }) => 
     if (num === undefined || isNaN(num)) return '--'
     // 假设 marketCap 是以“亿”为单位的，其他是百分比或倍数
     if (unit === '亿') {
-      return `${(num / 100000000).toFixed(precision)}${unit}`
+      return `${num.toFixed(precision)}${unit}`
     }
     return `${num.toFixed(precision)}${unit}`
   }
 
   const dataPoints = [
-    { label: '市盈率 (PE)', value: formatNumber(financialSummary.pe, 'x'), icon: <Scale className="w-4 h-4 text-blue-400" /> },
-    { label: '市净率 (PB)', value: formatNumber(financialSummary.pb, 'x'), icon: <Scale className="w-4 h-4 text-blue-400" /> },
-    { label: '净资产收益率 (ROE)', value: formatNumber(financialSummary.roe * 100, '%'), icon: <TrendingUp className="w-4 h-4 text-green-400" /> },
-    { label: '净利润增长率', value: formatNumber(financialSummary.netProfitGrowth * 100, '%'), icon: <TrendingUp className="w-4 h-4 text-green-400" /> },
-    { label: '股息率', value: formatNumber(financialSummary.dividendYield * 100, '%'), icon: <DollarSign className="w-4 h-4 text-yellow-400" /> },
-    { label: '总市值', value: formatNumber(financialSummary.totalMarketValue, '亿', 2), icon: <Scale className="w-4 h-4 text-blue-400" /> },
+    
+    { label: '净资产收益率 (ROE)', value: formatNumber(financialSummary.roe, '%'), icon: <TrendingUp className="w-4 h-4 text-green-400" /> },
+    { label: '净利润增长率', value: formatNumber(financialSummary.net_profit_growth_rate, '%'), icon: <TrendingUp className="w-4 h-4 text-green-400" /> },
+    { label: '毛利率', value: formatNumber(financialSummary.gross_profit_margin, '%'), icon: <TrendingUp className="w-4 h-4 text-green-400" /> },
+    { label: '股息率', value: formatNumber(financialSummary.dividend_yield, '%'), icon: <DollarSign className="w-4 h-4 text-yellow-400" /> },
+    { label: '总市值', value: formatNumber(financialSummary.total_market_value, '亿', 2), icon: <Scale className="w-4 h-4 text-blue-400" /> },
+    { label: '流通市值', value: formatNumber(financialSummary.circulating_market_value, '亿', 2), icon: <Scale className="w-4 h-4 text-blue-400" /> },
   ]
 
   return (
