@@ -223,10 +223,14 @@ export interface OrderBookItem {
 }
 
 export interface OrderBook {
-  buy: OrderBookItem[]
-  sell: OrderBookItem[]
-  volume: number
-  amount: number
+  // 兼容后端当前返回的字段（Go models.OrderBook）：buy5/sell5
+  buy5?: OrderBookItem[]
+  sell5?: OrderBookItem[]
+  // 兼容旧前端字段：buy/sell + volume/amount
+  buy?: OrderBookItem[]
+  sell?: OrderBookItem[]
+  volume?: number
+  amount?: number
 }
 
 export interface FinancialSummary {
@@ -246,10 +250,32 @@ export interface IndustryInfo {
 }
 
 export interface StockDetail {
-  stockData: StockData
-  orderBook: OrderBook
-  financial_summary: FinancialSummary
-  industry_info: IndustryInfo
+  // 后端当前返回为“扁平字段 + orderBook/financial_summary/industry_info”
+  // 这里做兼容，避免运行时字段缺失导致白屏
+  stockData?: StockData
+  orderBook?: OrderBook
+  financial_summary?: FinancialSummary
+  industry_info?: IndustryInfo
+  // 允许扁平行情字段存在
+  code?: string
+  name?: string
+  price?: number
+  change?: number
+  changeRate?: number
+  volume?: number
+  amount?: number
+  high?: number
+  low?: number
+  open?: number
+  preClose?: number
+  amplitude?: number
+  turnover?: number
+  pe?: number
+  pb?: number
+  totalMV?: number
+  circMV?: number
+  volumeRatio?: number
+  warrantRatio?: number
 }
 
 export interface Position {

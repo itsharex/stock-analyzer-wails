@@ -13,6 +13,29 @@ function IntradayChart({ data, moneyFlowData, preClose, height = 400 }: Intraday
   const chartContainerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
 
+  const toUnixTimestampSeconds = (timeStr: string): number | null => {
+    if (!timeStr) return null
+    // 1) Full date/datetime like "2026-01-06 14:59" / "2026-01-06T14:59:00"
+    if (timeStr.includes('-')) {
+      const ms = new Date(timeStr.replace(/-/g, '/')).getTime()
+      return Number.isFinite(ms) ? Math.floor(ms / 1000) : null
+    }
+    // 2) Intraday time like "14:59" / "14:59:30"
+    const m = timeStr.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/)
+    if (m) {
+      const hh = Number(m[1])
+      const mm = Number(m[2])
+      const ss = m[3] ? Number(m[3]) : 0
+      if (![hh, mm, ss].every(Number.isFinite)) return null
+      if (hh < 0 || hh > 23 || mm < 0 || mm > 59 || ss < 0 || ss > 59) return null
+      const base = new Date()
+      base.setHours(0, 0, 0, 0)
+      const ms = base.getTime() + (hh * 3600 + mm * 60 + ss) * 1000
+      return Math.floor(ms / 1000)
+    }
+    return null
+  }
+
   useEffect(() => {
     if (!chartContainerRef.current || data.length === 0) return
 
@@ -86,34 +109,38 @@ function IntradayChart({ data, moneyFlowData, preClose, height = 400 }: Intraday
     })
 
     // 准备数据
-    const formattedPriceData = data.map(d => {
-      const timestamp = Math.floor(new Date(d.time.replace(/-/g, '/')).getTime() / 1000)
-      return {
-        time: timestamp as any,
-        value: d.price,
-      }
-    })
+    const formattedPriceData = data
+      .map(d => {
+        const timestamp = toUnixTimestampSeconds(d.time)
+        if (timestamp == null) return null
+        return { time: timestamp as any, value: d.price }
+      })
+      .filter(Boolean) as any[]
 
-    const formattedAvgPriceData = data.map(d => {
-      const timestamp = Math.floor(new Date(d.time.replace(/-/g, '/')).getTime() / 1000)
-      return {
-        time: timestamp as any,
-        value: d.avgPrice,
-      }
-    })
+    const formattedAvgPriceData = data
+      .map(d => {
+        const timestamp = toUnixTimestampSeconds(d.time)
+        if (timestamp == null) return null
+        return { time: timestamp as any, value: d.avgPrice }
+      })
+      .filter(Boolean) as any[]
 
-    const formattedVolumeData = data.map((d, i) => {
-      const timestamp = Math.floor(new Date(d.time.replace(/-/g, '/')).getTime() / 1000)
-      const color = i === 0 
-        ? (d.price >= preClose ? '#ef444480' : '#22c55e80')
-        : (d.price >= data[i-1].price ? '#ef444480' : '#22c55e80')
-      
-      return {
-        time: timestamp as any,
-        value: d.volume,
-        color: color,
-      }
-    })
+    const formattedVolumeData = data
+      .map((d, i) => {
+        const timestamp = toUnixTimestampSeconds(d.time)
+        if (timestamp == null) return null
+        const color =
+          i === 0
+            ? d.price >= preClose
+              ? '#ef444480'
+              : '#22c55e80'
+            : d.price >= data[i - 1].price
+              ? '#ef444480'
+              : '#22c55e80'
+
+        return { time: timestamp as any, value: d.volume, color }
+      })
+      .filter(Boolean) as any[]
 
     priceSeries.setData(formattedPriceData)
     avgPriceSeries.setData(formattedAvgPriceData)
@@ -124,7 +151,8 @@ function IntradayChart({ data, moneyFlowData, preClose, height = 400 }: Intraday
       const markers = moneyFlowData
         .filter(d => d.signal === '扫货' || d.signal === '砸盘')
         .map(d => {
-          const timestamp = Math.floor(new Date(d.time.replace(/-/g, '/')).getTime() / 1000)
+          const timestamp = toUnixTimestampSeconds(d.time)
+          if (timestamp == null) return null
           return {
             time: timestamp as any,
             position: d.signal === '扫货' ? 'belowBar' : 'aboveBar' as any,
@@ -134,6 +162,7 @@ function IntradayChart({ data, moneyFlowData, preClose, height = 400 }: Intraday
             size: 1,
           }
         })
+        .filter(Boolean) as any[]
       priceSeries.setMarkers(markers)
     }
 

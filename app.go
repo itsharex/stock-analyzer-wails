@@ -462,6 +462,15 @@ func (a *App) GetIntradayData(code string) (*models.IntradayResponse, error) {
 	return a.stockService.GetIntradayData(code)
 }
 
+// StreamIntradayData 启动分时 SSE 流并通过 Wails Events 推送到前端
+// 前端监听事件名：intradayDataUpdate:{code}
+func (a *App) StreamIntradayData(code string) {
+	if code == "" {
+		return
+	}
+	a.stockService.StreamIntradayData(code)
+}
+
 // GetMoneyFlowData 获取资金流向数据
 func (a *App) GetMoneyFlowData(code string) (*models.MoneyFlowResponse, error) {
 	if code == "" {

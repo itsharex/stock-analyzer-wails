@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { StockData, KLineData, TechnicalAnalysisResult, IntradayData, MoneyFlowResponse, HealthCheckResult, EntryStrategyResult, TrailingStopConfig, StockDetail } from '../types'
-import { EventsOn, EventsOff } from '../wailsjs/runtime'
+import { EventsOn, EventsOff } from '../../wailsjs/runtime/runtime'
 import { parseError } from '../utils/errorHandler'
 import { useWailsAPI } from '../hooks/useWailsAPI'
 import KLineChart from './KLineChart'
@@ -325,11 +325,11 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
 	          </div>
 	          <div className="text-center">
 	            <p className="text-xs text-slate-400 uppercase tracking-wider">量比</p>
-	            <p className="text-sm font-semibold text-slate-700">{stockDetail?.stockData.volumeRatio.toFixed(2) ?? '--'}</p>
+	            <p className="text-sm font-semibold text-slate-700">{((stockDetail?.stockData?.volumeRatio ?? stockDetail?.volumeRatio) != null) ? (stockDetail?.stockData?.volumeRatio ?? stockDetail?.volumeRatio)!.toFixed(2) : '--'}</p>
 	          </div>
 	          <div className="text-center">
 	            <p className="text-xs text-slate-400 uppercase tracking-wider">委比</p>
-	            <p className="text-sm font-semibold text-slate-700">{stockDetail?.stockData.warrantRatio.toFixed(2) ?? '--'}</p>
+	            <p className="text-sm font-semibold text-slate-700">{((stockDetail?.stockData?.warrantRatio ?? stockDetail?.warrantRatio) != null) ? (stockDetail?.stockData?.warrantRatio ?? stockDetail?.warrantRatio)!.toFixed(2) : '--'}</p>
 	          </div>
         </div>
       </div>
