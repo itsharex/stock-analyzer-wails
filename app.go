@@ -24,25 +24,39 @@ type App struct {
 	stockService     *services.StockService
 	aiService        *services.AIService
 	watchlistService *services.WatchlistService
-	alertStorage     *services.AlertStorage
-	positionStorage  *services.PositionStorageService
-	aiInitErr        error
+		alertStorage     *services.AlertStorage
+		positionStorage  *services.PositionStorageService
+		dbService        *services.DBService // 新增 DBService
+		aiInitErr        error
 	alerts           []*models.PriceAlert
 	alertMutex       sync.Mutex
 	alertConfig      models.AlertConfig
 }
 
 // NewApp 创建新的App应用程序
-func NewApp() *App {
-	watchlistSvc, _ := services.NewWatchlistService()
-	alertSvc, _ := services.NewAlertStorage()
-	return &App{
-		stockService:     services.NewStockService(),
-		aiService:        nil,
-		watchlistService: watchlistSvc,
-		alertStorage:     alertSvc,
-		positionStorage:  services.NewPositionStorageService(),
-		alertConfig: models.AlertConfig{
+	func NewApp() *App {
+		// 初始化数据库服务
+		dbSvc, err := services.NewDBService()
+		if err != nil {
+			// 数据库初始化失败是致命错误，这里直接 panic 或返回 nil
+			// 但由于 NewApp 不返回 error，我们先记录错误并返回一个 App 实例
+			logger.Error("初始化数据库服务失败", zap.Error(err))
+		}
+
+		// 使用 DBService 初始化其他服务
+		// 注意：这里暂时使用旧的 NewXXXService()，后续需要修改这些服务的构造函数以接受 dbSvc
+		watchlistSvc := services.NewWatchlistService(dbSvc)
+		alertSvc := services.NewAlertStorage(dbSvc)
+			positionSvc := services.NewPositionStorageService(dbSvc)
+
+		return &App{
+			stockService:     services.NewStockService(),
+			aiService:        nil,
+			dbService:        dbSvc, // 存储 DBService
+			watchlistService: watchlistSvc,
+			alertStorage:     alertSvc,
+			positionStorage:  positionSvc,
+			alertConfig: models.AlertConfig{
 			Sensitivity: 0.005, // 默认 0.5%
 			Cooldown:    1,     // 默认 1 小时
 			Enabled:     true,
@@ -679,4 +693,13 @@ func (a *App) AnalyzeTechnical(code string, period string, role string) (*models
 		return nil, err
 	}
 	return a.aiService.AnalyzeTechnical(stock, klines, period, role)
+}
+
+
+// shutdown 在应用程序退出时调用
+func (a *App) shutdown(ctx context.Context) {
+	// 关闭数据库连接
+	if a.dbService != nil {
+		a.dbService.Close()
+	}
 }
