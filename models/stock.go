@@ -1,6 +1,10 @@
 package models
 
-import "time"
+import (
+	"encoding/json"
+	"fmt"
+	"time"
+)
 
 // StockData 股票数据结构
 type StockData struct {
@@ -192,6 +196,58 @@ type EntryStrategyResult struct {
 	CoreReasons       []CoreReason  `json:"coreReasons"`       // 核心建仓理由
 	RiskRewardRatio   float64       `json:"riskRewardRatio"`   // 预估盈亏比
 	ActionPlan        string        `json:"actionPlan"`        // 具体操作步骤
+}
+
+func (r *EntryStrategyResult) UnmarshalJSON(data []byte) error {
+	type Alias EntryStrategyResult
+	aux := struct {
+		EntryPriceRange json.RawMessage `json:"entryPriceRange"`
+		InitialPosition json.RawMessage `json:"initialPosition"`
+		*Alias
+	}{
+		Alias: (*Alias)(r),
+	}
+
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+
+	// entryPriceRange: 兼容 string / [number, number] / number
+	if len(aux.EntryPriceRange) > 0 {
+		var s string
+		if err := json.Unmarshal(aux.EntryPriceRange, &s); err == nil {
+			r.EntryPriceRange = s
+		} else {
+			var arr []float64
+			if err := json.Unmarshal(aux.EntryPriceRange, &arr); err == nil && len(arr) > 0 {
+				if len(arr) == 1 {
+					r.EntryPriceRange = fmt.Sprintf("%.2f", arr[0])
+				} else {
+					r.EntryPriceRange = fmt.Sprintf("%.2f-%.2f", arr[0], arr[1])
+				}
+			} else {
+				var n float64
+				if err := json.Unmarshal(aux.EntryPriceRange, &n); err == nil {
+					r.EntryPriceRange = fmt.Sprintf("%.2f", n)
+				}
+			}
+		}
+	}
+
+	// initialPosition: 兼容 string / number（number 统一转成百分比字符串）
+	if len(aux.InitialPosition) > 0 {
+		var s string
+		if err := json.Unmarshal(aux.InitialPosition, &s); err == nil {
+			r.InitialPosition = s
+		} else {
+			var n float64
+			if err := json.Unmarshal(aux.InitialPosition, &n); err == nil {
+				r.InitialPosition = fmt.Sprintf("%.0f%%", n)
+			}
+		}
+	}
+
+	return nil
 }
 
 // CoreReason 核心建仓理由

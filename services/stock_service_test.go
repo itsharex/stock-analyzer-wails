@@ -2,6 +2,7 @@ package services
 
 import (
 	"net/http"
+	"os"
 	"reflect"
 	"stock-analyzer-wails/models"
 	"testing"
@@ -9,6 +10,10 @@ import (
 )
 
 func TestStockService_GetStockByCode(t *testing.T) {
+	if os.Getenv("RUN_INTEGRATION_TESTS") != "1" {
+		t.Skip("跳过需要外部网络的数据服务测试：设置 RUN_INTEGRATION_TESTS=1 可启用")
+	}
+
 	type fields struct {
 		baseURL string
 		client  *http.Client
@@ -38,10 +43,8 @@ func TestStockService_GetStockByCode(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			s := &StockService{
-				//baseURL: tt.fields.baseURL,
-				client: tt.fields.client,
-			}
+			s := NewStockService()
+			s.client = tt.fields.client
 			got, err := s.GetStockByCode(tt.args.code)
 			if (err != nil) != tt.wantErr {
 				t.Errorf("GetStockByCode() error = %v, wantErr %v", err, tt.wantErr)

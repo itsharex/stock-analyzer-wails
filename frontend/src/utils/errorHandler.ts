@@ -20,6 +20,69 @@ export interface ErrorHandlingResult {
 // 解析错误信息并返回友好的中文提示
 export function parseError(error: any): ErrorHandlingResult {
   const errorMessage = error?.message || error?.toString() || '未知错误'
+
+  // 建仓分析（ENTRY_*）错误码优先解析，避免被下面的通用规则误判
+  const codeMatch = errorMessage.match(/code=([A-Z0-9_]+)/)
+  if (codeMatch) {
+    const code = codeMatch[1]
+    if (code.startsWith('ENTRY_')) {
+      const traceMatch = errorMessage.match(/traceId=([a-zA-Z0-9]+)/)
+      const traceId = traceMatch ? traceMatch[1] : ''
+      const withTrace = (msg: string) => traceId ? `${msg}（traceId=${traceId}）` : msg
+
+      switch (code) {
+        case 'ENTRY_AI_NOT_READY':
+          return {
+            type: ErrorType.SERVICE_UNAVAILABLE,
+            message: withTrace('AI 服务未就绪，无法进行建仓分析'),
+            suggestion: '请先在设置中配置 API Key/模型，然后重试',
+            canRetry: false
+          }
+        case 'ENTRY_INPUT_INVALID':
+          return {
+            type: ErrorType.VALIDATION,
+            message: withTrace('输入参数无效（股票代码为空或格式不正确）'),
+            suggestion: '请检查股票代码后重试',
+            canRetry: false
+          }
+        case 'ENTRY_KLINE_INSUFFICIENT':
+          return {
+            type: ErrorType.SERVICE_UNAVAILABLE,
+            message: withTrace('K 线数据不足，暂无法生成建仓方案'),
+            suggestion: '可稍后再试，或更换股票/检查数据源是否正常',
+            canRetry: true
+          }
+        case 'ENTRY_AI_TIMEOUT':
+          return {
+            type: ErrorType.NETWORK,
+            message: withTrace('AI 分析超时'),
+            suggestion: '请稍后重试，或检查网络/AI 配置是否可用',
+            canRetry: true
+          }
+        case 'ENTRY_AI_INVALID_JSON':
+          return {
+            type: ErrorType.SERVICE_UNAVAILABLE,
+            message: withTrace('AI 返回内容无法解析（格式异常）'),
+            suggestion: '请稍后重试；如频繁出现可切换模型或查看日志定位',
+            canRetry: true
+          }
+        case 'ENTRY_PANIC':
+          return {
+            type: ErrorType.UNKNOWN,
+            message: withTrace('后端发生异常，建仓分析中断'),
+            suggestion: '请在日志中搜索 traceId 定位原因，然后重试',
+            canRetry: true
+          }
+        default:
+          return {
+            type: ErrorType.UNKNOWN,
+            message: withTrace(`建仓分析失败（${code}）`),
+            suggestion: '请稍后重试；如持续失败请查看日志',
+            canRetry: true
+          }
+      }
+    }
+  }
   
   // 网络相关错误
   if (errorMessage.includes('fetch') || 

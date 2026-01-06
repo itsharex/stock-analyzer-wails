@@ -2,16 +2,20 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
+	"runtime/debug"
 	"stock-analyzer-wails/models"
 	"stock-analyzer-wails/services"
+	"strings"
 	"sync"
 	"time"
 
 	"stock-analyzer-wails/internal/logger"
 
-	"go.uber.org/zap"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
+	"go.uber.org/zap"
 )
 
 // App 应用程序结构
@@ -473,33 +477,144 @@ func (a *App) RemovePosition(code string) error {
 	return a.positionStorage.RemovePosition(code)
 }
 
+func newTraceID() string {
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		return fmt.Sprintf("%d", time.Now().UnixNano())
+	}
+	return hex.EncodeToString(b)
+}
+
 // AnalyzeEntryStrategy 获取 AI 智能建仓方案
-func (a *App) AnalyzeEntryStrategy(code string) (*models.EntryStrategyResult, error) {
+func (a *App) AnalyzeEntryStrategy(code string) (res *models.EntryStrategyResult, err error) {
+	start := time.Now()
+	traceId := newTraceID()
+	code = strings.TrimSpace(code)
+
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Error("建仓分析发生 panic",
+				zap.String("module", "app.entry_strategy"),
+				zap.String("op", "AnalyzeEntryStrategy"),
+				zap.String("step", "panic"),
+				zap.String("stock_code", code),
+				zap.String("traceId", traceId),
+				zap.Any("panic", r),
+				zap.ByteString("stack", debug.Stack()),
+				zap.Int64("duration_ms", time.Since(start).Milliseconds()),
+			)
+			res = nil
+			err = fmt.Errorf("建仓分析失败(step=panic, code=ENTRY_PANIC, traceId=%s): 后端发生异常，请查看日志", traceId)
+		}
+	}()
+
+	logger.Info("开始建仓分析（入口）",
+		zap.String("module", "app.entry_strategy"),
+		zap.String("op", "AnalyzeEntryStrategy"),
+		zap.String("stock_code", code),
+		zap.String("traceId", traceId),
+	)
+
+	if code == "" {
+		return nil, fmt.Errorf("建仓分析失败(step=input, code=ENTRY_INPUT_INVALID, traceId=%s): 股票代码不能为空", traceId)
+	}
 	if a.aiService == nil {
-		return nil, fmt.Errorf("AI服务未就绪")
-	}
-	
-	stock, err := a.stockService.GetStockByCode(code)
-	if err != nil {
-		return nil, err
-	}
-
-	klines, err := a.stockService.GetKLineData(code, 100, "daily")
-	if err != nil {
-		return nil, err
-	}
-
-	moneyFlow, err := a.stockService.GetMoneyFlowData(code)
-	if err != nil {
-		return nil, err
+		logger.Warn("建仓分析失败：AI 服务未就绪",
+			zap.String("module", "app.entry_strategy"),
+			zap.String("op", "AnalyzeEntryStrategy"),
+			zap.String("step", "init"),
+			zap.String("stock_code", code),
+			zap.String("traceId", traceId),
+			zap.Error(a.aiInitErr),
+			zap.Int64("duration_ms", time.Since(start).Milliseconds()),
+		)
+		return nil, fmt.Errorf("建仓分析失败(step=init, code=ENTRY_AI_NOT_READY, traceId=%s): AI服务未就绪", traceId)
 	}
 
-	health, err := a.stockService.GetStockHealthCheck(code)
-	if err != nil {
-		return nil, err
+	stepStart := time.Now()
+	stock, e := a.stockService.GetStockByCode(code)
+	if e != nil {
+		logger.Error("建仓分析失败：获取股票数据失败",
+			zap.String("module", "app.entry_strategy"),
+			zap.String("op", "AnalyzeEntryStrategy"),
+			zap.String("step", "stock_get"),
+			zap.String("stock_code", code),
+			zap.String("traceId", traceId),
+			zap.Error(e),
+			zap.Int64("duration_ms", time.Since(stepStart).Milliseconds()),
+		)
+		return nil, fmt.Errorf("建仓分析失败(step=stock_get, code=ENTRY_STOCK_FETCH_FAILED, traceId=%s): %w", traceId, e)
 	}
 
-	return a.aiService.AnalyzeEntryStrategy(stock, klines, moneyFlow, health)
+	stepStart = time.Now()
+	klines, e := a.stockService.GetKLineData(code, 100, "daily")
+	if e != nil {
+		logger.Error("建仓分析失败：获取K线数据失败",
+			zap.String("module", "app.entry_strategy"),
+			zap.String("op", "AnalyzeEntryStrategy"),
+			zap.String("step", "kline_get"),
+			zap.String("stock_code", code),
+			zap.String("traceId", traceId),
+			zap.Error(e),
+			zap.Int64("duration_ms", time.Since(stepStart).Milliseconds()),
+		)
+		return nil, fmt.Errorf("建仓分析失败(step=kline_get, code=ENTRY_KLINE_FETCH_FAILED, traceId=%s): %w", traceId, e)
+	}
+
+	stepStart = time.Now()
+	moneyFlow, e := a.stockService.GetMoneyFlowData(code)
+	if e != nil {
+		logger.Error("建仓分析失败：获取资金流向失败",
+			zap.String("module", "app.entry_strategy"),
+			zap.String("op", "AnalyzeEntryStrategy"),
+			zap.String("step", "moneyflow_get"),
+			zap.String("stock_code", code),
+			zap.String("traceId", traceId),
+			zap.Error(e),
+			zap.Int64("duration_ms", time.Since(stepStart).Milliseconds()),
+		)
+		return nil, fmt.Errorf("建仓分析失败(step=moneyflow_get, code=ENTRY_MONEYFLOW_FETCH_FAILED, traceId=%s): %w", traceId, e)
+	}
+
+	stepStart = time.Now()
+	health, e := a.stockService.GetStockHealthCheck(code)
+	if e != nil {
+		logger.Error("建仓分析失败：获取体检报告失败",
+			zap.String("module", "app.entry_strategy"),
+			zap.String("op", "AnalyzeEntryStrategy"),
+			zap.String("step", "health_get"),
+			zap.String("stock_code", code),
+			zap.String("traceId", traceId),
+			zap.Error(e),
+			zap.Int64("duration_ms", time.Since(stepStart).Milliseconds()),
+		)
+		return nil, fmt.Errorf("建仓分析失败(step=health_get, code=ENTRY_HEALTH_FETCH_FAILED, traceId=%s): %w", traceId, e)
+	}
+
+	stepStart = time.Now()
+	res, e = a.aiService.AnalyzeEntryStrategy(stock, klines, moneyFlow, health)
+	if e != nil {
+		logger.Error("建仓分析失败：AI 分析失败",
+			zap.String("module", "app.entry_strategy"),
+			zap.String("op", "AnalyzeEntryStrategy"),
+			zap.String("step", "ai_analyze"),
+			zap.String("stock_code", code),
+			zap.String("traceId", traceId),
+			zap.Error(e),
+			zap.Int64("duration_ms", time.Since(stepStart).Milliseconds()),
+		)
+		// 不覆盖底层错误码（ENTRY_*），仅附加 traceId 方便排查
+		return nil, fmt.Errorf("traceId=%s: %w", traceId, e)
+	}
+
+	logger.Info("建仓分析成功（入口）",
+		zap.String("module", "app.entry_strategy"),
+		zap.String("op", "AnalyzeEntryStrategy"),
+		zap.String("stock_code", code),
+		zap.String("traceId", traceId),
+		zap.Int64("duration_ms", time.Since(start).Milliseconds()),
+	)
+	return res, nil
 }
 
 // BatchAnalyzeStocks 批量分析股票
@@ -563,5 +678,5 @@ func (a *App) AnalyzeTechnical(code string, period string, role string) (*models
 	if err != nil {
 		return nil, err
 	}
-	return a.aiService.AnalyzeTechnical(stock, klines, period)
+	return a.aiService.AnalyzeTechnical(stock, klines, period, role)
 }

@@ -3,8 +3,10 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"regexp"
+	"stock-analyzer-wails/internal/logger"
 	"stock-analyzer-wails/models"
 	"strings"
 	"time"
@@ -12,6 +14,7 @@ import (
 	"github.com/cloudwego/eino-ext/components/model/openai"
 	"github.com/cloudwego/eino/components/model"
 	"github.com/cloudwego/eino/schema"
+	"go.uber.org/zap"
 )
 
 type AIService struct {
@@ -154,12 +157,51 @@ func (s *AIService) AnalyzeEntryStrategy(stock *models.StockData, klines []*mode
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 
+	start := time.Now()
+	stockCode := ""
+	stockName := ""
+	if stock != nil {
+		stockCode = stock.Code
+		stockName = stock.Name
+	}
+
+	logger.Info("开始建仓分析（AI）",
+		zap.String("module", "services.ai"),
+		zap.String("op", "AnalyzeEntryStrategy"),
+		zap.String("stock_code", stockCode),
+		zap.String("stock_name", stockName),
+		zap.String("provider", string(s.config.Provider)),
+		zap.String("model", s.config.Model),
+	)
+
+	if stock == nil || strings.TrimSpace(stock.Code) == "" {
+		return nil, fmt.Errorf("建仓分析失败(step=input, code=ENTRY_INPUT_INVALID): 股票数据为空或股票代码为空")
+	}
+	if moneyFlow == nil {
+		return nil, fmt.Errorf("建仓分析失败(step=input, code=ENTRY_INPUT_MISSING): 资金流向数据缺失")
+	}
+	if health == nil {
+		return nil, fmt.Errorf("建仓分析失败(step=input, code=ENTRY_INPUT_MISSING): 体检数据缺失")
+	}
+
 	// 构建 K 线摘要
+	if len(klines) < 2 {
+		return nil, fmt.Errorf("建仓分析失败(step=kline_summary, code=ENTRY_KLINE_INSUFFICIENT): K线数据不足（len=%d）", len(klines))
+	}
+
 	klineSummary := ""
-	for i, k := range klines {
-		if i > len(klines)-10 { // 只取最近10天
-			klineSummary += fmt.Sprintf("日期:%s,收盘:%.2f,涨跌:%.2f%%; ", k.Time, k.Close, (k.Close-klines[i-1].Close)/klines[i-1].Close*100)
+	startIdx := len(klines) - 10
+	if startIdx < 1 {
+		startIdx = 1 // 需要访问 i-1
+	}
+	for i := startIdx; i < len(klines); i++ {
+		k := klines[i]
+		prev := klines[i-1]
+		pct := 0.0
+		if prev != nil && prev.Close != 0 {
+			pct = (k.Close - prev.Close) / prev.Close * 100
 		}
+		klineSummary += fmt.Sprintf("日期:%s,收盘:%.2f,涨跌:%.2f%%; ", k.Time, k.Close, pct)
 	}
 
 	systemPrompt := `你是一位资深的量化交易员和风险管理专家。你的任务是根据提供的股票数据，为用户生成一份极具实战价值的“智能建仓方案”。
@@ -168,8 +210,8 @@ func (s *AIService) AnalyzeEntryStrategy(stock *models.StockData, klines []*mode
 请按以下 JSON 格式输出：
 {
   "recommendation": "建议类型(立即建仓/分批建仓/等待回调/暂时观望)",
-  "entryPriceRange": "建议买入价格区间",
-  "initialPosition": "建议首仓比例(如20%)",
+  "entryPriceRange": "建议买入价格区间（必须是字符串，如\"21.50-22.20\"，不要输出数组）",
+  "initialPosition": "建议首仓比例（必须是字符串，如\"20%\"）",
   "stopLossPrice": 止损价(数字),
   "takeProfitPrice": 目标止盈价(数字),
   "coreReasons": [
@@ -196,20 +238,53 @@ func (s *AIService) AnalyzeEntryStrategy(stock *models.StockData, klines []*mode
 
 	resp, err := s.chatModel.Generate(ctx, messages)
 	if err != nil {
-		return nil, err
+		logger.Error("建仓分析 AI 调用失败",
+			zap.String("module", "services.ai"),
+			zap.String("op", "AnalyzeEntryStrategy"),
+			zap.String("step", "ai_generate"),
+			zap.String("stock_code", stock.Code),
+			zap.Error(err),
+			zap.Int64("duration_ms", time.Since(start).Milliseconds()),
+		)
+		if errors.Is(err, context.DeadlineExceeded) {
+			return nil, fmt.Errorf("建仓分析失败(step=ai_generate, code=ENTRY_AI_TIMEOUT): AI 调用超时")
+		}
+		return nil, fmt.Errorf("建仓分析失败(step=ai_generate, code=ENTRY_AI_REQUEST_FAILED): %v", err)
 	}
 
 	// 解析 JSON
 	cleanJSON := s.extractJSON(resp.Content)
 	var result models.EntryStrategyResult
 	if err := json.Unmarshal([]byte(cleanJSON), &result); err != nil {
-		return nil, fmt.Errorf("解析建仓方案失败: %w, content: %s", err, cleanJSON)
+		logger.Error("建仓分析解析失败（JSON）",
+			zap.String("module", "services.ai"),
+			zap.String("op", "AnalyzeEntryStrategy"),
+			zap.String("step", "json_unmarshal"),
+			zap.String("stock_code", stock.Code),
+			zap.Error(err),
+			zap.String("clean_json_preview", truncateString(cleanJSON, 2048)),
+			zap.String("resp_preview", truncateString(resp.Content, 2048)),
+			zap.Int64("duration_ms", time.Since(start).Milliseconds()),
+		)
+		return nil, fmt.Errorf("建仓分析失败(step=json_unmarshal, code=ENTRY_AI_INVALID_JSON): 解析失败: %w", err)
 	}
 
+	logger.Info("建仓分析（AI）成功",
+		zap.String("module", "services.ai"),
+		zap.String("op", "AnalyzeEntryStrategy"),
+		zap.String("stock_code", stock.Code),
+		zap.Int64("duration_ms", time.Since(start).Milliseconds()),
+	)
 	return &result, nil
 }
 
 func (s *AIService) extractJSON(content string) string {
+	// 优先提取 fenced code block（```json ... ``` 或 ``` ... ```）
+	reFence := regexp.MustCompile("(?s)```(?:json)?\\s*(\\{.*?\\})\\s*```")
+	if m := reFence.FindStringSubmatch(content); len(m) == 2 {
+		return strings.TrimSpace(m[1])
+	}
+
 	start := strings.Index(content, "{")
 	end := strings.LastIndex(content, "}")
 	if start != -1 && end != -1 && end > start {
@@ -218,11 +293,20 @@ func (s *AIService) extractJSON(content string) string {
 	return content
 }
 
-func (s *AIService) AnalyzeTechnical(stock *models.StockData, klines []*models.KLineData, role string) (*models.TechnicalAnalysisResult, error) {
+func truncateString(s string, max int) string {
+	if max <= 0 {
+		return ""
+	}
+	if len(s) <= max {
+		return s
+	}
+	return s[:max] + "...(truncated)"
+}
+
+func (s *AIService) AnalyzeTechnical(stock *models.StockData, klines []*models.KLineData, period string, role string) (*models.TechnicalAnalysisResult, error) {
 	// 1. 尝试从缓存获取
-	period := "daily" // 默认周期，实际可从外部传入
-	if len(klines) > 0 {
-		// 简单逻辑：根据K线间隔判断周期，这里简化处理
+	if strings.TrimSpace(period) == "" {
+		period = "daily"
 	}
 	
 	if s.cacheService != nil {
@@ -277,7 +361,7 @@ func (s *AIService) AnalyzeTechnical(stock *models.StockData, klines []*models.K
 			if k.Open != 0 {
 				change = (k.Close - k.Open) / k.Open * 100
 			}
-			klineSummary = append(klineSummary, fmt.Sprintf("T-%d(%s): O:%.2f, C:%.2f, H:%.2f, L:%.2f, Vol:%d, Chg:%.2f%%", len(klines)-1-i, k.Time, k.Close, k.High, k.Low, k.Volume, change))
+			klineSummary = append(klineSummary, fmt.Sprintf("T-%d(%s): O:%.2f, C:%.2f, H:%.2f, L:%.2f, Vol:%d, Chg:%.2f%%", len(klines)-1-i, k.Time, k.Open, k.Close, k.High, k.Low, k.Volume, change))
 		}
 	}
 
@@ -484,8 +568,14 @@ func extractSectionImpl(text, startMarker, endMarker string) string {
 	}
 	if endRel != -1 {
 		if startIdx < endRel {
-			return text[startIdx:endRel]
+			// 兼容 Markdown 标题：如 endMarker 位于 "## xxx" 中，截取段落末尾可能残留 "## "。
+			return strings.TrimRight(text[startIdx:endRel], " \t#")
 		}
+		return ""
+	}
+
+	// 若 endMarker 仅出现在 startMarker 之前，认为段落不完整，返回空（避免误把后续全部当作内容）
+	if endMarker != "" && startIdx > 0 && strings.Contains(text[:startIdx], endMarker) {
 		return ""
 	}
 

@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"stock-analyzer-wails/internal/logger"
@@ -108,6 +109,17 @@ func LoadAIConfig() (AIResolvedConfig, error) {
 		yaml.Unmarshal(raw, &cfg)
 	}
 
+	// 兼容性修复：规范化 DashScope BaseURL（避免用户手动配置错误导致请求失败）
+	if normalized, changed := normalizeDashscopeBaseURL(cfg.AI.BaseURL); changed {
+		logger.Warn("检测到 DashScope BaseURL 需要修正，已自动规范化",
+			zap.String("module", "services.config"),
+			zap.String("op", "normalize_base_url"),
+			zap.String("before", cfg.AI.BaseURL),
+			zap.String("after", normalized),
+		)
+		cfg.AI.BaseURL = normalized
+	}
+
 	logger.Info("AI 配置加载完成",
 		zap.String("module", "services.config"),
 		zap.String("path", path),
@@ -130,7 +142,7 @@ func SaveAIConfig(config AIResolvedConfig) error {
 		AI: AIConfigYAML{
 			Provider: config.Provider,
 			APIKey:   config.APIKey,
-			BaseURL:  config.BaseURL,
+			BaseURL:  func() string { s, _ := normalizeDashscopeBaseURL(config.BaseURL); return s }(),
 			Model:    config.Model,
 		},
 	}
@@ -141,4 +153,27 @@ func SaveAIConfig(config AIResolvedConfig) error {
 	}
 
 	return os.WriteFile(path, data, 0644)
+}
+
+func normalizeDashscopeBaseURL(in string) (string, bool) {
+	orig := in
+	s := strings.TrimSpace(in)
+	if s == "" {
+		return s, strings.TrimSpace(orig) != ""
+	}
+
+	// 移除末尾 /
+	s = strings.TrimRight(s, "/")
+
+	// 修复常见 typo
+	s = strings.ReplaceAll(s, "/compatible-moe/", "/compatible-mode/")
+	s = strings.ReplaceAll(s, "/compatible-moe", "/compatible-mode")
+	s = strings.ReplaceAll(s, "/dv1", "/v1")
+
+	// 仅 compatible-mode 未带版本时，补全 /v1
+	if strings.HasSuffix(s, "/compatible-mode") {
+		s = s + "/v1"
+	}
+
+	return s, s != strings.TrimSpace(orig)
 }

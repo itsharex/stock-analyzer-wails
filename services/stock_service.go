@@ -547,7 +547,7 @@ func (s *StockService) BatchAnalyzeStocks(ctx context.Context, codes []string, r
 				if err != nil {
 					continue
 				}
-				_, _ = aiSvc.AnalyzeTechnical(stock, klines, role)
+				_, _ = aiSvc.AnalyzeTechnical(stock, klines, "daily", role)
 				newCompleted := atomic.AddInt32(&completed, 1)
 				runtime.EventsEmit(ctx, "batch_analyze_progress", map[string]interface{}{
 					"code":      code,

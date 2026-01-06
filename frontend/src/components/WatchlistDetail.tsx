@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { StockData, KLineData, TechnicalAnalysisResult, IntradayData, MoneyFlowResponse, HealthCheckResult, EntryStrategyResult, TrailingStopConfig } from '../types'
+import { parseError } from '../utils/errorHandler'
 import { useWailsAPI } from '../hooks/useWailsAPI'
 import KLineChart from './KLineChart'
 import IntradayChart from './IntradayChart'
@@ -136,6 +137,14 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
     }
   }
 
+  const handleDeepAnalyzeClick = async () => {
+    // 深度分析更适合在 K 线视图下展示（可看到 AI 绘图）
+    if (chartType !== 'kline') {
+      setChartType('kline')
+    }
+    return handleAnalyze(role)
+  }
+
   const handleEntryAnalyze = async () => {
     // 数据完整性检查
     if (!intradayData || intradayData.length === 0) {
@@ -172,10 +181,11 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
       setEntryStrategy(result)
       setEntryAnalysisStatus('idle')
     } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : '未知错误'
+      const parsed = parseError(error)
+      const errorMsg = parsed.suggestion ? `${parsed.message}，建议：${parsed.suggestion}` : parsed.message
       console.error('建仓分析失败:', error)
       setEntryAnalysisStatus('error')
-      setEntryAnalysisError(`分析失败: ${errorMsg}`)
+      setEntryAnalysisError(`分析失败：${errorMsg}`)
       setTimeout(() => {
         setEntryAnalysisStatus('idle')
         setEntryAnalysisError('')
@@ -413,23 +423,43 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
                 </div>
               </div>
               <div className="flex-1">
-                <button 
-                  onClick={handleEntryAnalyze}
-                  disabled={entryLoading}
-                  className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-indigo-100 disabled:opacity-50"
-                >
-                  {entryLoading ? (
-                    <>
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                      <span>正在分析...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Target className="w-3 h-3" />
-                      <span>建仓分析</span>
-                    </>
-                  )}
-                </button>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    onClick={handleDeepAnalyzeClick}
+                    disabled={analysisLoading || entryLoading}
+                    className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-blue-100 disabled:opacity-50"
+                    title={chartType !== 'kline' ? '将自动切换到K线视图以展示AI绘图' : ''}
+                  >
+                    {analysisLoading ? (
+                      <>
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        <span>深度分析中...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Cpu className="w-3 h-3" />
+                        <span>深度分析</span>
+                      </>
+                    )}
+                  </button>
+                  <button
+                    onClick={handleEntryAnalyze}
+                    disabled={entryLoading || analysisLoading}
+                    className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-indigo-100 disabled:opacity-50"
+                  >
+                    {entryLoading ? (
+                      <>
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                        <span>建仓分析中...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Target className="w-3 h-3" />
+                        <span>建仓分析</span>
+                      </>
+                    )}
+                  </button>
+                </div>
                 {/* 状态提示文字 */}
                 {entryAnalysisStatus !== 'idle' && (
                   <div className={`mt-2 text-xs text-center font-medium px-2 py-1 rounded-lg transition-all ${
