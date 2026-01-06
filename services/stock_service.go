@@ -16,7 +16,7 @@ import (
 	"stock-analyzer-wails/internal/logger"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
-	"go.uber.org/zap"
+		"go.uber.org/zap"
 )
 
 // StockService 股票数据服务
@@ -26,6 +26,153 @@ type StockService struct {
 	klineURL string
 	client   *http.Client
 }
+
+// GetStockDetail 获取个股详情页所需的所有数据
+func (s *StockService) GetStockDetail(code string) (*models.StockDetail, error) {
+	// 1. 获取基础行情数据 (包含 PE/PB)
+	baseStock, err := s.GetStockByCode(code)
+	if err != nil {
+		return nil, err
+	}
+
+	detail := &models.StockDetail{
+		StockData: *baseStock,
+	}
+
+	// 2. 获取实时盘口数据 (五档)
+	orderBook, err := s.getOrderBook(code)
+	if err == nil {
+		detail.OrderBook = *orderBook
+	} else {
+		logger.Error("获取盘口数据失败", zap.Error(err))
+	}
+
+	// 3. 获取财务数据 (ROE, 净利润增长率等)
+	financial, err := s.getFinancialSummary(code)
+	if err == nil {
+		detail.Financial = *financial
+	} else {
+		logger.Error("获取财务数据失败", zap.Error(err))
+	}
+
+	// 4. 获取行业数据
+	industry, err := s.getIndustryInfo(code)
+	if err == nil {
+		detail.Industry = *industry
+	} else {
+		logger.Error("获取行业数据失败", zap.Error(err))
+	}
+
+	return detail, nil
+}
+
+// getOrderBook 获取五档盘口数据
+func (s *StockService) getOrderBook(code string) (*models.OrderBook, error) {
+	secid := s.getSecID(code)
+	if secid == "" {
+		return nil, fmt.Errorf("无效的股票代码")
+	}
+
+	// 东方财富 qt/stock/get 接口的 fields 字段中包含盘口数据
+	// 盘口字段: f68-f85 (买卖五档)
+	fields := "f68,f69,f70,f71,f72,f73,f74,f75,f76,f77,f78,f79,f80,f81,f82,f83,f84,f85"
+	fullURL := fmt.Sprintf("%s?secid=%s&fields=%s", s.exactURL, secid, fields)
+
+	req, _ := http.NewRequest("GET", fullURL, nil)
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+	
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("请求盘口数据失败: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	var result struct {
+		Data map[string]interface{} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("解析盘口响应失败: %w", err)
+	}
+
+	if result.Data == nil {
+		return nil, fmt.Errorf("未找到盘口数据: %s", code)
+	}
+
+	data := result.Data
+	
+	orderBook := &models.OrderBook{
+		Buy5: make([]models.OrderBookEntry, 5),
+		Sell5: make([]models.OrderBookEntry, 5),
+	}
+
+	// 卖盘 (Sell1-Sell5: f73-f82)
+	// f73: 卖一价, f74: 卖一量, f75: 卖二价, f76: 卖二量, ..., f81: 卖五价, f82: 卖五量
+	// 注意：东方财富返回的价格是整数，需要除以 100
+	for i := 0; i < 5; i++ {
+		priceField := fmt.Sprintf("f%d", 73 + i*2)
+		volumeField := fmt.Sprintf("f%d", 74 + i*2)
+		orderBook.Sell5[i] = models.OrderBookEntry{
+			Price: getFloat(data[priceField]) / 100,
+			Volume: getInt64(data[volumeField]),
+		}
+	}
+
+	// 买盘 (Buy1-Buy5: f68-f77)
+	// f68: 买一价, f69: 买一量, f70: 买二价, f71: 买二量, ..., f77: 买五价, f78: 买五量
+	for i := 0; i < 5; i++ {
+		priceField := fmt.Sprintf("f%d", 68 + i*2)
+		volumeField := fmt.Sprintf("f%d", 69 + i*2)
+		orderBook.Buy5[i] = models.OrderBookEntry{
+			Price: getFloat(data[priceField]) / 100,
+			Volume: getInt64(data[volumeField]),
+		}
+	}
+
+	return orderBook, nil
+}
+
+// getFinancialSummary 获取核心财务数据 (Mock 数据)
+func (s *StockService) getFinancialSummary(code string) (*models.FinancialSummary, error) {
+	// TODO: 后续可在此处集成真实的财务数据 API。
+	// 建议使用如东方财富数据中心 (datacenter-web.eastmoney.com) 的 API，
+	// 需找到正确的 reportName (例如 RPT_F10_MAIN_INDICATOR_DATA 或类似名称)
+	// 并解析返回的 JSON 数据。
+	// 
+	// 示例 API 结构 (需要自行调研):
+	// url := "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_FINANCE_MAIN_INDICATOR&columns=REPORT_DATE,ROE,NETPROFIT_GROWTH_RATE,GROSS_PROFIT_MARGIN,TOTAL_MARKET_VALUE,CIRCULATING_MARKET_VALUE,DIVIDEND_YIELD&filter=(SECURITY_CODE=\"" + code + "\")&pageNumber=1&pageSize=1"
+
+	// 使用 Mock 数据
+	return &models.FinancialSummary{
+		ROE: 15.8,
+		NetProfitGrowthRate: 22.5,
+		GrossProfitMargin: 45.1,
+		TotalMarketValue: 12000.5, // 亿元
+		CirculatingMarketValue: 8000.2, // 亿元
+		DividendYield: 1.5,
+		ReportDate: time.Now().AddDate(0, -3, 0),
+	}, nil
+}
+
+// getIndustryInfo 获取行业与宏观信息 (Mock 数据)
+func (s *StockService) getIndustryInfo(code string) (*models.IndustryInfo, error) {
+	// TODO: 后续可在此处集成真实的行业和概念板块 API。
+	// 建议使用如东方财富数据中心 (datacenter-web.eastmoney.com) 的 API，
+	// 需找到正确的 reportName (例如 RPT_F10_CONCEPT 或类似名称)
+	// 并解析返回的 JSON 数据。
+	// 
+	// 示例 API 结构 (需要自行调研):
+	// url := "https://datacenter-web.eastmoney.com/api/data/v1/get?reportName=RPT_F10_CONCEPT&columns=CONCEPT_NAME,CONCEPT_CODE&filter=(SECURITY_CODE=\"" + code + "\")&pageNumber=1&pageSize=50"
+
+	// 使用 Mock 数据
+	return &models.IndustryInfo{
+		IndustryName: "软件开发",
+		ConceptNames: []string{"人工智能", "云计算", "数字经济"},
+		IndustryPE: 45.8,
+	}, nil
+}
+
+
 
 // NewStockService 创建股票数据服务实例
 func NewStockService() *StockService {
@@ -52,7 +199,8 @@ func (s *StockService) GetStockByCode(code string) (*models.StockData, error) {
 		return nil, fmt.Errorf("无法识别的股票代码格式: %s", code)
 	}
 
-	fields := "f58,f43,f169,f170,f47,f48,f44,f45,f46,f60,f171,f168,f162,f167,f116,f117,f12,f14"
+	// 增加盘口相关字段 f19(委比), f20(量比)
+	fields := "f58,f43,f169,f170,f47,f48,f44,f45,f46,f60,f171,f168,f162,f167,f116,f117,f12,f14,f19,f20"
 	fullURL := fmt.Sprintf("%s?secid=%s&fields=%s", s.exactURL, secid, fields)
 
 	req, _ := http.NewRequest("GET", fullURL, nil)
@@ -100,11 +248,15 @@ func (s *StockService) GetStockByCode(code string) (*models.StockData, error) {
 		PB:         getFloat(data["f167"]) / 100,
 		TotalMV:    getFloat(data["f116"]),
 		CircMV:     getFloat(data["f117"]),
+		// 新增实时行情指标
+		VolumeRatio: getFloat(data["f20"]) / 100,
+		WarrantRatio: getFloat(data["f19"]) / 100,
 	}
 
 	logger.Info("精确获取股票数据成功", zap.String("code", code), zap.Int64("ms", time.Since(start).Milliseconds()))
 	return stock, nil
 }
+
 
 // GetKLineData 获取历史K线数据并计算技术指标，支持周期选择
 func (s *StockService) GetKLineData(code string, limit int, period string) ([]*models.KLineData, error) {
