@@ -1,170 +1,63 @@
 package services
 
 import (
-	"database/sql"
 
-	"fmt"
-	"stock-analyzer-wails/internal/logger"
 	"stock-analyzer-wails/models"
-	"time"
-
-	"go.uber.org/zap"
+	"stock-analyzer-wails/repositories"
 )
 
-// AlertStorage 负责价格预警的持久化
-type AlertStorage struct {
-	db *sql.DB
+// AlertService 业务逻辑层，负责预警的业务处理
+type AlertService struct {
+	repo repositories.AlertRepository
 }
 
-// NewAlertStorage 构造函数，接受 DBService
-func NewAlertStorage(dbSvc *DBService) *AlertStorage {
-	return &AlertStorage{db: dbSvc.GetDB()}
+// NewAlertService 构造函数
+func NewAlertService(repo repositories.AlertRepository) *AlertService {
+	return &AlertService{repo: repo}
 }
 
-// SaveAlert 保存告警记录到 alert_history 表
-func (s *AlertStorage) SaveAlert(alert *models.PriceAlert, message string) error {
-	query := `
-		INSERT INTO alert_history (stock_code, stock_name, triggered_price, message)
-		VALUES (?, ?, ?, ?)
-	`
-	_, err := s.db.Exec(query, alert.StockCode, alert.StockName, alert.Price, message)
-	if err != nil {
-		logger.Error("保存告警历史失败", zap.Error(err))
-		return fmt.Errorf("保存告警历史失败: %w", err)
-	}
-	return nil
+// SaveAlert 负责将触发的告警记录到历史，并进行业务处理（如发送通知）
+func (s *AlertService) SaveAlert(alert *models.PriceAlert, message string) error {
+	// 业务逻辑：这里可以添加如“发送邮件/微信通知”等业务规则
+	return s.repo.SaveAlertHistory(alert, message)
 }
 
-// SaveActiveAlerts 保存当前活跃的预警订阅到 alerts 表
-func (s *AlertStorage) SaveActiveAlerts(alerts []*models.PriceAlert) error {
-	tx, err := s.db.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
-	// 1. 清空 alerts 表
-	if _, err := tx.Exec("DELETE FROM alerts"); err != nil {
-		return fmt.Errorf("清空 alerts 表失败: %w", err)
-	}
-
-	// 2. 批量插入新的活跃预警
-	stmt, err := tx.Prepare(`
-		INSERT INTO alerts (stock_code, stock_name, price, type, is_active, last_triggered)
-		VALUES (?, ?, ?, ?, ?, ?)
-	`)
-	if err != nil {
-		return fmt.Errorf("准备插入语句失败: %w", err)
-	}
-	defer stmt.Close()
-
-	for _, alert := range alerts {
-		_, err := stmt.Exec(
-			alert.StockCode,
-			alert.StockName,
-			alert.Price,
-			alert.Type,
-			alert.IsActive,
-			alert.LastTriggered,
-		)
-		if err != nil {
-			return fmt.Errorf("插入预警失败 (%s): %w", alert.StockCode, err)
-		}
-	}
-
-	return tx.Commit()
+// SaveActiveAlerts 保存当前活跃的预警订阅
+func (s *AlertService) SaveActiveAlerts(alerts []*models.PriceAlert) error {
+	// 业务逻辑：这里可以添加如“预警数量限制”等业务规则
+	return s.repo.SaveActiveAlerts(alerts)
 }
 
 // LoadActiveAlerts 加载保存的活跃预警订阅
-func (s *AlertStorage) LoadActiveAlerts() ([]*models.PriceAlert, error) {
-	rows, err := s.db.Query(`
-		SELECT stock_code, stock_name, price, type, is_active, last_triggered
-		FROM alerts
-		WHERE is_active = TRUE
-	`)
-	if err != nil {
-		return nil, fmt.Errorf("查询活跃预警失败: %w", err)
-	}
-	defer rows.Close()
-
-	var alerts []*models.PriceAlert
-	for rows.Next() {
-		alert := &models.PriceAlert{}
-		var lastTriggered time.Time
-		
-		err := rows.Scan(
-			&alert.StockCode,
-			&alert.StockName,
-			&alert.Price,
-			&alert.Type,
-			&alert.IsActive,
-			&lastTriggered,
-		)
-		if err != nil {
-			logger.Error("扫描活跃预警数据失败", zap.Error(err))
-			continue
-		}
-		alert.LastTriggered = lastTriggered
-		alerts = append(alerts, alert)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("遍历活跃预警结果集失败: %w", err)
-	}
-
-	return alerts, nil
+func (s *AlertService) LoadActiveAlerts() ([]*models.PriceAlert, error) {
+	return s.repo.LoadActiveAlerts()
 }
 
-// GetAlertHistory 获取告警历史，支持分页和股票代码筛选
-func (s *AlertStorage) GetAlertHistory(stockCode string, limit int) ([]map[string]interface{}, error) {
-	query := `
-		SELECT stock_code, stock_name, triggered_price, message, triggered_at
-		FROM alert_history
-	`
-	args := []interface{}{}
-	whereClauses := []string{}
+// GetAlertHistory 获取告警历史
+func (s *AlertService) GetAlertHistory(stockCode string, limit int) ([]map[string]interface{}, error) {
+	return s.repo.GetAlertHistory(stockCode, limit)
+}
 
-	if stockCode != "" {
-		whereClauses = append(whereClauses, "stock_code = ?")
-		args = append(args, stockCode)
-	}
+// GetAlertsForWails 是一个临时方法，用于兼容 app.go 中对 AlertStorage 的调用
+// TODO: 在 app.go 中移除对 AlertStorage 的直接引用
+func (s *AlertService) GetAlertsForWails() ([]*models.PriceAlert, error) {
+	return s.repo.LoadActiveAlerts()
+}
 
-	if len(whereClauses) > 0 {
-		query += " WHERE " + whereClauses[0]
-	}
+// SaveAlertsForWails 是一个临时方法，用于兼容 app.go 中对 AlertStorage 的调用
+// TODO: 在 app.go 中移除对 AlertStorage 的直接引用
+func (s *AlertService) SaveAlertsForWails(alerts []*models.PriceAlert) error {
+	return s.repo.SaveActiveAlerts(alerts)
+}
 
-	query += " ORDER BY triggered_at DESC LIMIT ?"
-	args = append(args, limit)
+// GetAlertHistoryForWails 是一个临时方法，用于兼容 app.go 中对 AlertStorage 的调用
+// TODO: 在 app.go 中移除对 AlertStorage 的直接引用
+func (s *AlertService) GetAlertHistoryForWails(stockCode string, limit int) ([]map[string]interface{}, error) {
+	return s.repo.GetAlertHistory(stockCode, limit)
+}
 
-	rows, err := s.db.Query(query, args...)
-	if err != nil {
-		return nil, fmt.Errorf("查询告警历史失败: %w", err)
-	}
-	defer rows.Close()
-
-	var history []map[string]interface{}
-	for rows.Next() {
-		var code, name, message string
-		var price float64
-		var triggeredAt time.Time
-
-		if err := rows.Scan(&code, &name, &price, &message, &triggeredAt); err != nil {
-			logger.Error("扫描告警历史数据失败", zap.Error(err))
-			continue
-		}
-
-		history = append(history, map[string]interface{}{
-			"stockCode": code,
-			"stockName": name,
-			"triggeredPrice": price,
-			"message": message,
-			"triggeredAt": triggeredAt.Format(time.RFC3339),
-		})
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("遍历告警历史结果集失败: %w", err)
-	}
-
-	return history, nil
+// NewAlertStorage 兼容旧的命名，但返回新的 AlertService
+func NewAlertStorage(dbSvc *DBService) *AlertService {
+	repo := repositories.NewSQLiteAlertRepository(dbSvc.GetDB())
+	return NewAlertService(repo)
 }

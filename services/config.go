@@ -1,7 +1,7 @@
 package services
 
 import (
-	"database/sql"
+
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"stock-analyzer-wails/internal/logger"
+	"stock-analyzer-wails/repositories"
 
 	"go.uber.org/zap"
 	"gopkg.in/yaml.v3"
@@ -145,37 +146,22 @@ func GetAppDataDir() string {
 
 // ConfigService 负责全局配置的读取和写入
 type ConfigService struct {
-	db *sql.DB
+	repo repositories.ConfigRepository
 }
 
 // NewConfigService 构造函数
-func NewConfigService(dbSvc *DBService) *ConfigService {
-	return &ConfigService{db: dbSvc.GetDB()}
+func NewConfigService(repo repositories.ConfigRepository) *ConfigService {
+	return &ConfigService{repo: repo}
 }
 
 // getConfigValue 从数据库中读取配置值
 func (s *ConfigService) getConfigValue(key string) (string, error) {
-	var value string
-	err := s.db.QueryRow("SELECT value FROM config WHERE key = ?", key).Scan(&value)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return "", nil // 配置项不存在
-		}
-		return "", fmt.Errorf("查询配置项 %s 失败: %w", key, err)
-	}
-	return value, nil
+	return s.repo.GetConfigValue(key)
 }
 
 // setConfigValue 向数据库中写入配置值
 func (s *ConfigService) setConfigValue(key string, value string) error {
-	query := `
-		INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)
-	`
-	_, err := s.db.Exec(query, key, value)
-	if err != nil {
-		return fmt.Errorf("保存配置项 %s 失败: %w", key, err)
-	}
-	return nil
+	return s.repo.SetConfigValue(key, value)
 }
 
 // LoadAIConfig 从 SQLite 加载 AI 配置

@@ -2,9 +2,12 @@ package models
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 )
+
+var ErrInvalidInput = errors.New("输入参数无效")
 
 // StockData 股票数据结构
 type StockData struct {
