@@ -6,6 +6,11 @@ interface SettingsProps {
   onConfigSaved?: () => void
 }
 
+interface StrategyConfig {
+  trailingStopActivation: number
+  trailingStopCallback: number
+}
+
 function Settings({ onConfigSaved }: SettingsProps) {
   const [config, setConfig] = useState<AppConfig>({
     provider: 'Qwen',
@@ -17,11 +22,17 @@ function Settings({ onConfigSaved }: SettingsProps) {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState({ type: '', text: '' })
+  const [strategyConfig, setStrategyConfig] = useState<StrategyConfig>({
+    trailingStopActivation: 0.05,
+    trailingStopCallback: 0.03
+  })
+  // const [strategyLoading, setStrategyLoading] = useState(true)
   
   const { getConfig, saveConfig } = useWailsAPI()
 
   useEffect(() => {
     loadConfig()
+    loadStrategyConfig()
   }, [])
 
   const loadConfig = async () => {
@@ -32,6 +43,32 @@ function Settings({ onConfigSaved }: SettingsProps) {
       setMessage({ type: 'error', text: '加载配置失败' })
     } finally {
       setLoading(false)
+    }
+  }
+
+  const loadStrategyConfig = async () => {
+    try {
+      const result = await (window as any).runtime?.Call?.('app.GetGlobalStrategyConfig')
+      if (result) {
+        setStrategyConfig(result)
+      }
+    } catch (err) {
+      console.error('加载策略配置失败:', err)
+    } finally {
+      // setStrategyLoading(false)
+    }
+  }
+
+  const handleSaveStrategy = async () => {
+    setSaving(true)
+    setMessage({ type: '', text: '' })
+    try {
+      await (window as any).runtime?.Call?.('app.UpdateGlobalStrategyConfig', strategyConfig)
+      setMessage({ type: 'success', text: '交易策略配置已保存' })
+    } catch (err: any) {
+      setMessage({ text: `保存失败: ${err.message || err}`, type: 'error' })
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -165,6 +202,89 @@ function Settings({ onConfigSaved }: SettingsProps) {
           >
             {saving ? '正在保存...' : '保存配置'}
           </button>
+        </div>
+      </div>
+
+      <div className="mt-8 border-t pt-8">
+        <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center">
+          <span className="mr-2">📈</span> 交易策略默认配置
+        </h2>
+
+        <div className="space-y-6">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              移动止损启动阈值 (%)
+              <span className="text-xs text-gray-500 ml-2">当盈利达到此比例时启动移动止损</span>
+            </label>
+            <div className="flex items-center gap-4">
+              <input
+                type="range"
+                min="0"
+                max="0.20"
+                step="0.01"
+                value={strategyConfig.trailingStopActivation}
+                onChange={(e) => setStrategyConfig({ ...strategyConfig, trailingStopActivation: parseFloat(e.target.value) })}
+                className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+              />
+              <input
+                type="number"
+                min="0"
+                max="0.20"
+                step="0.01"
+                value={strategyConfig.trailingStopActivation}
+                onChange={(e) => setStrategyConfig({ ...strategyConfig, trailingStopActivation: parseFloat(e.target.value) })}
+                className="w-20 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+              />
+              <span className="text-sm text-gray-600 w-12 text-right">{(strategyConfig.trailingStopActivation * 100).toFixed(1)}%</span>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              移动止损回撤比例 (%)
+              <span className="text-xs text-gray-500 ml-2">价格回撤此比例时触发止盈</span>
+            </label>
+            <div className="flex items-center gap-4">
+              <input
+                type="range"
+                min="0"
+                max="0.20"
+                step="0.01"
+                value={strategyConfig.trailingStopCallback}
+                onChange={(e) => setStrategyConfig({ ...strategyConfig, trailingStopCallback: parseFloat(e.target.value) })}
+                className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+              />
+              <input
+                type="number"
+                min="0"
+                max="0.20"
+                step="0.01"
+                value={strategyConfig.trailingStopCallback}
+                onChange={(e) => setStrategyConfig({ ...strategyConfig, trailingStopCallback: parseFloat(e.target.value) })}
+                className="w-20 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+              />
+              <span className="text-sm text-gray-600 w-12 text-right">{(strategyConfig.trailingStopCallback * 100).toFixed(1)}%</span>
+            </div>
+          </div>
+
+          <div className="pt-4">
+            <button
+              onClick={handleSaveStrategy}
+              disabled={saving}
+              className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-6 rounded-lg transition shadow-md disabled:opacity-50"
+            >
+              {saving ? '正在保存...' : '保存交易策略配置'}
+            </button>
+          </div>
+        </div>
+
+        <div className="mt-6 p-4 bg-green-50 rounded-lg border border-green-100">
+          <h3 className="text-sm font-semibold text-green-800 mb-2">💡 提示</h3>
+          <ul className="text-xs text-green-700 space-y-1 list-disc pl-4">
+            <li>这些参数将作为建仓时的默认值，用户仍可在建仓时手动调整。</li>
+            <li>启动阈值：建议 3% - 10%，表示盈利多少后启动移动止损。</li>
+            <li>回撤比例：建议 2% - 5%，表示从最高点回撤多少后止盈。</li>
+          </ul>
         </div>
       </div>
 

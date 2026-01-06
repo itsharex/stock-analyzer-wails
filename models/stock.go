@@ -188,15 +188,16 @@ type AlertHistory struct {
 
 // EntryStrategyResult 智能建仓方案结构
 type EntryStrategyResult struct {
-	Recommendation    string        `json:"recommendation"`    // 总体建议
-	EntryPriceRange   string        `json:"entryPriceRange"`   // 建议买入价格区间
-	InitialPosition   string        `json:"initialPosition"`   // 建议首仓比例
-	StopLossPrice     float64       `json:"stopLossPrice"`     // 止损价
-	TakeProfitPrice   float64       `json:"takeProfitPrice"`   // 目标止盈价
-	CoreReasons       []CoreReason  `json:"coreReasons"`       // 核心建仓理由
-	RiskRewardRatio   float64       `json:"riskRewardRatio"`   // 预估盈亏比
-	ActionPlan        string        `json:"actionPlan"`        // 具体操作步骤
-}
+		Recommendation    string        `json:"recommendation"`    // 总体建议
+		EntryPriceRange   string        `json:"entryPriceRange"`   // 建议买入价格区间
+		InitialPosition   string        `json:"initialPosition"`   // 建议首仓比例
+		StopLossPrice     float64       `json:"stopLossPrice"`     // 止损价
+		TakeProfitPrice   float64       `json:"takeProfitPrice"`   // 目标止盈价
+		CoreReasons       []CoreReason  `json:"coreReasons"`       // 核心建仓理由
+		RiskRewardRatio   float64       `json:"riskRewardRatio"`   // 预估盈亏比
+		ActionPlan        string        `json:"actionPlan"`        // 具体操作步骤
+		TrailingStopConfig *TrailingStopConfig `json:"trailingStopConfig,omitempty"` // 移动止损配置
+	}
 
 func (r *EntryStrategyResult) UnmarshalJSON(data []byte) error {
 	type Alias EntryStrategyResult

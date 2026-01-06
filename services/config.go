@@ -1,9 +1,12 @@
 package services
 
 import (
+	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -41,6 +44,7 @@ var ProviderModels = map[Provider][]string{
 	ProviderQianfan:   {"ernie-4.0-8k", "ernie-3.5-8k"},
 }
 
+// AIConfigYAML 保持不变，用于兼容旧的 YAML 配置
 type AIConfigYAML struct {
 	Provider Provider `yaml:"provider"`
 	APIKey   string   `yaml:"api_key"`
@@ -58,6 +62,12 @@ type AIResolvedConfig struct {
 	BaseURL        string                `json:"baseUrl"`
 	Model          string                `json:"model"`
 	ProviderModels map[Provider][]string `json:"providerModels"`
+}
+
+// GlobalStrategyConfig 全局策略配置
+type GlobalStrategyConfig struct {
+	TrailingStopActivation float64 `json:"trailingStopActivation"` // 移动止损启动阈值 (0.05 = 5%)
+	TrailingStopCallback   float64 `json:"trailingStopCallback"`   // 移动止损回撤比例 (0.03 = 3%)
 }
 
 // GetAppDataDir 获取跨平台的应用数据目录
@@ -83,6 +93,42 @@ func GetAppDataDir() string {
 	return appDir
 }
 
+// ConfigService 负责全局配置的读取和写入
+type ConfigService struct {
+	db *sql.DB
+}
+
+// NewConfigService 构造函数
+func NewConfigService(dbSvc *DBService) *ConfigService {
+	return &ConfigService{db: dbSvc.GetDB()}
+}
+
+// getConfigValue 从数据库中读取配置值
+func (s *ConfigService) getConfigValue(key string) (string, error) {
+	var value string
+	err := s.db.QueryRow("SELECT value FROM config WHERE key = ?", key).Scan(&value)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", nil // 配置项不存在
+		}
+		return "", fmt.Errorf("查询配置项 %s 失败: %w", key, err)
+	}
+	return value, nil
+}
+
+// setConfigValue 向数据库中写入配置值
+func (s *ConfigService) setConfigValue(key string, value string) error {
+	query := `
+		INSERT OR REPLACE INTO config (key, value) VALUES (?, ?)
+	`
+	_, err := s.db.Exec(query, key, value)
+	if err != nil {
+		return fmt.Errorf("保存配置项 %s 失败: %w", key, err)
+	}
+	return nil
+}
+
+// LoadAIConfig 从 YAML 文件加载 AI 配置 (保持兼容性)
 func LoadAIConfig() (AIResolvedConfig, error) {
 	start := time.Now()
 	var cfg appYAML
@@ -109,7 +155,7 @@ func LoadAIConfig() (AIResolvedConfig, error) {
 		yaml.Unmarshal(raw, &cfg)
 	}
 
-	// 兼容性修复：规范化 DashScope BaseURL（避免用户手动配置错误导致请求失败）
+	// 兼容性修复：规范化 DashScope BaseURL
 	if normalized, changed := normalizeDashscopeBaseURL(cfg.AI.BaseURL); changed {
 		logger.Warn("检测到 DashScope BaseURL 需要修正，已自动规范化",
 			zap.String("module", "services.config"),
@@ -135,6 +181,7 @@ func LoadAIConfig() (AIResolvedConfig, error) {
 	}, nil
 }
 
+// SaveAIConfig 保存 AI 配置到 YAML 文件 (保持兼容性)
 func SaveAIConfig(config AIResolvedConfig) error {
 	path := filepath.Join(GetAppDataDir(), "config.yaml")
 
@@ -153,6 +200,50 @@ func SaveAIConfig(config AIResolvedConfig) error {
 	}
 
 	return os.WriteFile(path, data, 0644)
+}
+
+// GetGlobalStrategyConfig 从 SQLite 获取全局策略配置
+func (s *ConfigService) GetGlobalStrategyConfig() (GlobalStrategyConfig, error) {
+	var config GlobalStrategyConfig
+	
+	// 默认值 (与 db_service.go 中保持一致)
+	config.TrailingStopActivation = 0.05
+	config.TrailingStopCallback = 0.03
+
+	// 读取启动阈值
+	activationStr, err := s.getConfigValue("trailing_stop_default_activation")
+	if err != nil {
+		return config, err
+	}
+	if activationStr != "" {
+		if val, err := strconv.ParseFloat(activationStr, 64); err == nil {
+			config.TrailingStopActivation = val
+		}
+	}
+
+	// 读取回撤比例
+	callbackStr, err := s.getConfigValue("trailing_stop_default_callback")
+	if err != nil {
+		return config, err
+	}
+	if callbackStr != "" {
+		if val, err := strconv.ParseFloat(callbackStr, 64); err == nil {
+			config.TrailingStopCallback = val
+		}
+	}
+
+	return config, nil
+}
+
+// UpdateGlobalStrategyConfig 更新全局策略配置到 SQLite
+func (s *ConfigService) UpdateGlobalStrategyConfig(config GlobalStrategyConfig) error {
+	if err := s.setConfigValue("trailing_stop_default_activation", fmt.Sprintf("%f", config.TrailingStopActivation)); err != nil {
+		return err
+	}
+	if err := s.setConfigValue("trailing_stop_default_callback", fmt.Sprintf("%f", config.TrailingStopCallback)); err != nil {
+		return err
+	}
+	return nil
 }
 
 func normalizeDashscopeBaseURL(in string) (string, bool) {

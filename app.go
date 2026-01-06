@@ -621,6 +621,30 @@ func (a *App) AnalyzeEntryStrategy(code string) (res *models.EntryStrategyResult
 		return nil, fmt.Errorf("traceId=%s: %w", traceId, e)
 	}
 
+	// 注入全局默认配置
+	if res != nil && a.dbService != nil {
+		configSvc := services.NewConfigService(a.dbService)
+		globalConfig, err := configSvc.GetGlobalStrategyConfig()
+		if err == nil {
+			// 将全局配置注入到结果中
+			if res.TrailingStopConfig == nil {
+				res.TrailingStopConfig = &models.TrailingStopConfig{}
+			}
+			// 如果用户没有手动指定，使用全局默认值
+			if res.TrailingStopConfig.ActivationThreshold == 0 {
+				res.TrailingStopConfig.ActivationThreshold = globalConfig.TrailingStopActivation
+			}
+			if res.TrailingStopConfig.CallbackRate == 0 {
+				res.TrailingStopConfig.CallbackRate = globalConfig.TrailingStopCallback
+			}
+			logger.Debug("已注入全局默认配置",
+				zap.String("module", "app.entry_strategy"),
+				zap.Float64("activation_threshold", res.TrailingStopConfig.ActivationThreshold),
+				zap.Float64("callback_rate", res.TrailingStopConfig.CallbackRate),
+			)
+		}
+	}
+
 	logger.Info("建仓分析成功（入口）",
 		zap.String("module", "app.entry_strategy"),
 		zap.String("op", "AnalyzeEntryStrategy"),
@@ -695,6 +719,30 @@ func (a *App) AnalyzeTechnical(code string, period string, role string) (*models
 	return a.aiService.AnalyzeTechnical(stock, klines, period, role)
 }
 
+// GetGlobalStrategyConfig 获取全局交易策略配置
+func (a *App) GetGlobalStrategyConfig() (*services.GlobalStrategyConfig, error) {
+	if a.dbService == nil {
+		return nil, fmt.Errorf("数据库服务未就绪")
+	}
+	configSvc := services.NewConfigService(a.dbService)
+	config, err := configSvc.GetGlobalStrategyConfig()
+	if err != nil {
+		return nil, err
+	}
+	return &config, nil
+}
+
+// UpdateGlobalStrategyConfig 更新全局交易策略配置
+func (a *App) UpdateGlobalStrategyConfig(config *services.GlobalStrategyConfig) error {
+	if a.dbService == nil {
+		return fmt.Errorf("数据库服务未就绪")
+	}
+	if config == nil {
+		return fmt.Errorf("配置不能为空")
+	}
+	configSvc := services.NewConfigService(a.dbService)
+	return configSvc.UpdateGlobalStrategyConfig(*config)
+}
 
 // shutdown 在应用程序退出时调用
 func (a *App) shutdown(ctx context.Context) {

@@ -56,6 +56,7 @@ func NewDBService() (*DBService, error) {
 // initTables 初始化数据库表结构
 func (s *DBService) initTables() error {
 	// 开启事务
+	// 开启事务
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
@@ -147,8 +148,13 @@ func (s *DBService) initTables() error {
 		return fmt.Errorf("创建 config 表失败: %w", err)
 	}
 
-	// 提交事务
-	return tx.Commit()
+		// 提交事务
+		if err := tx.Commit(); err != nil {
+			return err
+		}
+
+		// 插入默认配置
+		return s.insertDefaultConfigs()
 }
 
 // GetDB 返回数据库连接对象
@@ -162,4 +168,24 @@ func (s *DBService) Close() {
 		s.db.Close()
 		logger.Info("数据库连接已关闭")
 	}
+}
+
+// insertDefaultConfigs 插入默认配置项
+func (s *DBService) insertDefaultConfigs() error {
+	// 默认配置值
+	defaults := map[string]string{
+		"trailing_stop_default_activation": "0.05", // 默认盈利 5% 启动
+		"trailing_stop_default_callback":   "0.03", // 默认回撤 3% 止盈
+	}
+
+	for key, value := range defaults {
+		_, err := s.db.Exec(`
+			INSERT OR IGNORE INTO config (key, value) VALUES (?, ?)
+		`, key, value)
+		if err != nil {
+			return fmt.Errorf("插入默认配置 (%s) 失败: %w", key, err)
+		}
+	}
+	logger.Info("默认配置项插入完成")
+	return nil
 }
