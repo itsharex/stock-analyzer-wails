@@ -28,6 +28,8 @@ type StockData struct {
 	PB        float64 `json:"pb"`        // 市净率
 	TotalMV   float64 `json:"totalMV"`   // 总市值
 	CircMV    float64 `json:"circMV"`    // 流通市值
+	VolumeRatio float64 `json:"volumeRatio"` // 量比
+	WarrantRatio float64 `json:"warrantRatio"` // 委比
 }
 
 // KLineData K线数据点

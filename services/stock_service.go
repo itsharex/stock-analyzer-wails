@@ -248,10 +248,9 @@ func (s *StockService) GetStockByCode(code string) (*models.StockData, error) {
 		PB:         getFloat(data["f167"]) / 100,
 		TotalMV:    getFloat(data["f116"]),
 		CircMV:     getFloat(data["f117"]),
-		// 新增实时行情指标
-		VolumeRatio: getFloat(data["f20"]) / 100,
-		WarrantRatio: getFloat(data["f19"]) / 100,
-	}
+			VolumeRatio: getFloat(data["f20"]) / 100,
+			WarrantRatio: getFloat(data["f19"]) / 100,
+		}
 
 	logger.Info("精确获取股票数据成功", zap.String("code", code), zap.Int64("ms", time.Since(start).Milliseconds()))
 	return stock, nil
