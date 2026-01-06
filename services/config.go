@@ -1,7 +1,6 @@
 package services
 
 import (
-
 	"fmt"
 	"os"
 	"path/filepath"
@@ -60,7 +59,7 @@ type appYAML struct {
 // MigrateAIConfigFromYAML 负责将旧的 config.yaml 迁移到 SQLite
 func (s *ConfigService) MigrateAIConfigFromYAML() error {
 	path := filepath.Join(GetAppDataDir(), "config.yaml")
-	
+
 	// 检查文件是否存在
 	_, err := os.Stat(path)
 	if os.IsNotExist(err) {
@@ -172,7 +171,7 @@ func (s *ConfigService) LoadAIConfig() (AIResolvedConfig, error) {
 		// 迁移失败不影响后续加载，继续执行
 	}
 	start := time.Now()
-	
+
 	// 默认值
 	cfg := AIResolvedConfig{
 		Provider:       ProviderQwen,
@@ -228,7 +227,7 @@ func (s *ConfigService) SaveAIConfig(config AIResolvedConfig) error {
 	if err := s.setConfigValue("ai_api_key", config.APIKey); err != nil {
 		return err
 	}
-	
+
 	// 规范化 BaseURL 后保存
 	normalizedBaseURL, _ := normalizeDashscopeBaseURL(config.BaseURL)
 	if err := s.setConfigValue("ai_base_url", normalizedBaseURL); err != nil {
@@ -243,7 +242,7 @@ func (s *ConfigService) SaveAIConfig(config AIResolvedConfig) error {
 // GetGlobalStrategyConfig 从 SQLite 获取全局策略配置
 func (s *ConfigService) GetGlobalStrategyConfig() (GlobalStrategyConfig, error) {
 	var config GlobalStrategyConfig
-	
+
 	// 默认值 (与 db_service.go 中保持一致)
 	config.TrailingStopActivation = 0.05
 	config.TrailingStopCallback = 0.03
@@ -305,4 +304,18 @@ func normalizeDashscopeBaseURL(in string) (string, bool) {
 	}
 
 	return s, s != strings.TrimSpace(orig)
+}
+
+// LoadAIConfig is a backward-compatible helper used by older code/tests.
+// It builds a minimal ConfigService using the SQLite-backed repository and returns the resolved config.
+func LoadAIConfig() (AIResolvedConfig, error) {
+	dbSvc, err := NewDBService()
+	if err != nil {
+		return AIResolvedConfig{}, err
+	}
+	defer dbSvc.Close()
+
+	repo := repositories.NewSQLiteConfigRepository(dbSvc.GetDB())
+	svc := NewConfigService(repo)
+	return svc.LoadAIConfig()
 }

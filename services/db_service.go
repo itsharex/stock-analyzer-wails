@@ -9,8 +9,8 @@ import (
 
 	"stock-analyzer-wails/internal/logger"
 
-	_ "github.com/mattn/go-sqlite3"
 	"go.uber.org/zap"
+	_ "modernc.org/sqlite"
 )
 
 // DBService 数据库服务
@@ -21,13 +21,18 @@ type DBService struct {
 // NewDBService 初始化数据库连接并创建表
 func NewDBService() (*DBService, error) {
 	dbPath := filepath.Join(GetAppDataDir(), "stock_analyzer.db")
-	
+
+	// 确保目录存在（GetAppDataDir 通常已创建，但这里做一次兜底）
+	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
+		return nil, fmt.Errorf("创建数据库目录失败: %w", err)
+	}
+
 	// 检查数据库文件是否存在，如果不存在则创建
 	_, err := os.Stat(dbPath)
 	isNewDB := os.IsNotExist(err)
 
 	// 连接数据库
-	db, err := sql.Open("sqlite3", dbPath)
+	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("无法连接到数据库: %w", err)
 	}
@@ -37,12 +42,18 @@ func NewDBService() (*DBService, error) {
 	db.SetMaxIdleConns(1)
 	db.SetConnMaxLifetime(time.Hour)
 
+	// 立即验证连接可用性（避免延迟到首次 Query/Exec 才报错）
+	if err := db.Ping(); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("数据库连接不可用: %w", err)
+	}
+
 	svc := &DBService{db: db}
 
 	if isNewDB {
 		logger.Info("数据库文件不存在，开始初始化表结构", zap.String("path", dbPath))
 		if err := svc.initTables(); err != nil {
-			db.Close()
+			_ = db.Close()
 			return nil, fmt.Errorf("初始化数据库表失败: %w", err)
 		}
 		logger.Info("数据库表结构初始化完成")
@@ -56,14 +67,13 @@ func NewDBService() (*DBService, error) {
 // initTables 初始化数据库表结构
 func (s *DBService) initTables() error {
 	// 开启事务
-	// 开启事务
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			tx.Rollback()
+			_ = tx.Rollback()
 			panic(r)
 		}
 	}()
@@ -78,7 +88,7 @@ func (s *DBService) initTables() error {
 		);
 	`)
 	if err != nil {
-		tx.Rollback()
+		_ = tx.Rollback()
 		return fmt.Errorf("创建 watchlist 表失败: %w", err)
 	}
 
@@ -97,7 +107,7 @@ func (s *DBService) initTables() error {
 		);
 	`)
 	if err != nil {
-		tx.Rollback()
+		_ = tx.Rollback()
 		return fmt.Errorf("创建 alerts 表失败: %w", err)
 	}
 
@@ -113,7 +123,7 @@ func (s *DBService) initTables() error {
 		);
 	`)
 	if err != nil {
-		tx.Rollback()
+		_ = tx.Rollback()
 		return fmt.Errorf("创建 alert_history 表失败: %w", err)
 	}
 
@@ -132,7 +142,7 @@ func (s *DBService) initTables() error {
 		);
 	`)
 	if err != nil {
-		tx.Rollback()
+		_ = tx.Rollback()
 		return fmt.Errorf("创建 positions 表失败: %w", err)
 	}
 
@@ -144,17 +154,17 @@ func (s *DBService) initTables() error {
 		);
 	`)
 	if err != nil {
-		tx.Rollback()
+		_ = tx.Rollback()
 		return fmt.Errorf("创建 config 表失败: %w", err)
 	}
 
-		// 提交事务
-		if err := tx.Commit(); err != nil {
-			return err
-		}
+	// 提交事务
+	if err := tx.Commit(); err != nil {
+		return err
+	}
 
-		// 插入默认配置
-		return s.insertDefaultConfigs()
+	// 插入默认配置
+	return s.insertDefaultConfigs()
 }
 
 // GetDB 返回数据库连接对象
@@ -165,7 +175,7 @@ func (s *DBService) GetDB() *sql.DB {
 // Close 关闭数据库连接
 func (s *DBService) Close() {
 	if s.db != nil {
-		s.db.Close()
+		_ = s.db.Close()
 		logger.Info("数据库连接已关闭")
 	}
 }
