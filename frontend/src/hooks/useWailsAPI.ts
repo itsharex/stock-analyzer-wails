@@ -17,10 +17,15 @@ const getIntradayData = useCallback(async (code: string): Promise<IntradayRespon
     return window.go.main.App.GetIntradayData(code)
   }, [])
 
-  const getMoneyFlowData = useCallback(async (code: string): Promise<MoneyFlowResponse> => {
-    // @ts-ignore
-    return window.go.main.App.GetMoneyFlowData(code)
-  }, [])
+	const getMoneyFlowData = useCallback(async (code: string): Promise<MoneyFlowResponse> => {
+	    // @ts-ignore
+	    return window.go.main.App.GetMoneyFlowData(code)
+	  }, [])
+	
+	  const streamIntradayData = useCallback(async (code: string): Promise<void> => {
+	    // @ts-ignore
+	    return window.go.main.App.StreamIntradayData(code)
+	  }, [])
 
   const getStockDetail = useCallback(async (code: string): Promise<StockDetail> => {
     // @ts-ignore
@@ -123,11 +128,12 @@ const getIntradayData = useCallback(async (code: string): Promise<IntradayRespon
     return window.go.main.App.RemovePosition(code)
   }, [])
 
-	return {
-	    getStockData,
-	    getIntradayData,
-	    getMoneyFlowData,
-	    getStockDetail,
+		return {
+		    getStockData,
+		    getIntradayData,
+		    getMoneyFlowData,
+		    streamIntradayData,
+		    getStockDetail,
 	    getStockHealthCheck,
     batchAnalyzeStocks,
     getKLineData,

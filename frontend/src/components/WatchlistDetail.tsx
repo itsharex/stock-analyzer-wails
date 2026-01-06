@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { StockData, KLineData, TechnicalAnalysisResult, IntradayData, MoneyFlowResponse, HealthCheckResult, EntryStrategyResult, TrailingStopConfig, StockDetail } from '../types'
+import { EventsOn, EventsOff } from '../../wailsjs/runtime'
 import { parseError } from '../utils/errorHandler'
 import { useWailsAPI } from '../hooks/useWailsAPI'
 import KLineChart from './KLineChart'
@@ -42,10 +43,11 @@ interface WatchlistDetailProps {
 }
 
 function WatchlistDetail({ stock }: WatchlistDetailProps) {
-  const { getKLineData, analyzeTechnical, getStockDetail, getIntradayData, getMoneyFlowData, getStockHealthCheck, analyzeEntryStrategy, addPosition } = useWailsAPI()
+  const { getKLineData, analyzeTechnical, getStockDetail, getIntradayData, getMoneyFlowData, getStockHealthCheck, analyzeEntryStrategy, addPosition, streamIntradayData } = useWailsAPI()
   const [klineData, setKlineData] = useState<KLineData[]>([])
   const [stockDetail, setStockDetail] = useState<StockDetail | null>(null)
   const [intradayData, setIntradayData] = useState<IntradayData[]>([])
+  const intradayDataRef = useRef<IntradayData[]>([])
   const [moneyFlowResponse, setMoneyFlowResponse] = useState<MoneyFlowResponse | null>(null)
   const [healthCheck, setHealthCheck] = useState<HealthCheckResult | null>(null)
   const [preClose, setPreClose] = useState<number>(0)
@@ -88,6 +90,7 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
   const loadIntradayData = useCallback(async () => {
     setLoading(true)
     try {
+      // 1. 获取初始数据 (非实时部分)
       const [detailResp, intraResp, flowResp, healthResp] = await Promise.all([
         getStockDetail(stock.code),
         getIntradayData(stock.code),
@@ -96,6 +99,7 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
       ])
       setStockDetail(detailResp)
       setIntradayData(intraResp.data)
+      intradayDataRef.current = intraResp.data // 更新 ref
       setPreClose(intraResp.preClose)
       setMoneyFlowResponse(flowResp)
       setHealthCheck(healthResp)
@@ -122,13 +126,63 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
     }
   }, [chartType, loadKLineData, loadIntradayData])
 
+  // SSE 实时数据监听
   useEffect(() => {
     if (chartType !== 'intraday') return
-    const timer = setInterval(() => {
-      loadIntradayData()
-    }, 30000)
-    return () => clearInterval(timer)
-  }, [chartType, loadIntradayData])
+
+    const eventName = `intradayDataUpdate:${stock.code}`
+    
+    // 1. 启动 SSE 代理
+    streamIntradayData(stock.code)
+
+    // 2. 监听 Wails 事件
+    const handler = (newTrends: string[]) => {
+      // newTrends 是一个包含最新分时数据的字符串数组，例如 ["14:59,10.00,10.01,1000,1000000,100,10.00,10.00"]
+      if (newTrends.length === 0) return
+
+      // 简化处理：只取最新的一个点
+      const latestTrend = newTrends[newTrends.length - 1]
+      const parts = latestTrend.split(',')
+      if (parts.length < 8) return
+
+      const newPoint: IntradayData = {
+        time: parts[0],
+        price: parseFloat(parts[2]),
+        avgPrice: parseFloat(parts[7]),
+        volume: parseInt(parts[5]),
+        preClose: preClose, // 沿用初始的 preClose
+      }
+
+      // 检查最新点是否已存在 (以时间为准)
+      const currentData = intradayDataRef.current
+      const lastPoint = currentData[currentData.length - 1]
+
+      if (lastPoint && lastPoint.time === newPoint.time) {
+        // 时间相同，更新最后一个点
+        const updatedData = [...currentData.slice(0, -1), newPoint]
+        intradayDataRef.current = updatedData
+        setIntradayData(updatedData)
+      } else if (lastPoint && newPoint.time > lastPoint.time) {
+        // 时间更新，添加新点
+        const updatedData = [...currentData, newPoint]
+        intradayDataRef.current = updatedData
+        setIntradayData(updatedData)
+      } else if (!lastPoint) {
+        // 初始数据为空，直接设置
+        intradayDataRef.current = [newPoint]
+        setIntradayData([newPoint])
+      }
+    }
+
+    EventsOn(eventName, handler)
+
+    return () => {
+      // 3. 清理监听器
+      EventsOff(eventName)
+      // 4. 停止 SSE 流 (通过 Wails Context 取消 Go 协程)
+      // Wails 会在组件卸载时自动取消 Go 协程的 Context，无需显式调用停止函数
+    }
+  }, [chartType, stock.code, preClose, streamIntradayData])
 
   const handleAnalyze = async (selectedRole = role) => {
     setAnalysisLoading(true)
