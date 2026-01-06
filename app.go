@@ -102,6 +102,9 @@ type App struct {
 	func (a *App) startup(ctx context.Context) {
 		a.ctx = ctx
 		
+		// 注册需要上下文的服务的 Startup 方法
+		a.stockService.Startup(ctx)
+		
 		// 迁移旧的 AI 配置
 		if err := a.configService.MigrateAIConfigFromYAML(); err != nil {
 			logger.Error("执行 YAML 配置迁移失败", zap.Error(err))
@@ -441,6 +444,14 @@ func (a *App) GetStockData(code string) (*models.StockData, error) {
 		return nil, fmt.Errorf("股票代码不能为空")
 	}
 	return a.stockService.GetStockByCode(code)
+}
+
+// GetStockDetail 获取个股详情页所需的所有数据
+func (a *App) GetStockDetail(code string) (*models.StockDetail, error) {
+	if code == "" {
+		return nil, fmt.Errorf("股票代码不能为空")
+	}
+	return a.stockService.GetStockDetail(code)
 }
 
 // GetIntradayData 获取分时数据
