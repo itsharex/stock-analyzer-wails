@@ -319,7 +319,61 @@ func (a *App) checkAlerts() {
 	}
 }
 
-// AddAlert, GetActiveAlerts, RemoveAlert, GetAlertHistory, UpdateAlertConfig, GetAlertConfig, SetAlertsFromAI 已迁移到 AlertController
+// --- Alert 转发器 ---
+// AddAlert 添加新的价格预警
+func (a *App) AddAlert(alert models.PriceAlert) error {
+	// 这是一个复杂逻辑，需要先获取所有预警，添加新的，再保存
+	// 考虑到 AlertController 已经有 SaveAlerts 方法，我们直接调用它
+	alerts, err := a.AlertController.GetAlerts()
+	if err != nil {
+		return err
+	}
+	alerts = append(alerts, &alert)
+	return a.AlertController.SaveAlerts(alerts)
+}
+
+// GetActiveAlerts 获取所有激活的预警
+func (a *App) GetActiveAlerts() ([]*models.PriceAlert, error) {
+	return a.AlertController.GetAlerts()
+}
+
+// RemoveAlert 移除预警
+func (a *App) RemoveAlert(stockCode string, alertType string, price float64) error {
+	// 这是一个复杂逻辑，需要先获取所有预警，移除匹配的，再保存
+	alerts, err := a.AlertController.GetAlerts()
+	if err != nil {
+		return err
+	}
+	
+	newAlerts := make([]*models.PriceAlert, 0)
+	for _, alert := range alerts {
+		if alert.StockCode != stockCode || alert.Type != alertType || alert.Price != price {
+			newAlerts = append(newAlerts, alert)
+		}
+	}
+	return a.AlertController.SaveAlerts(newAlerts)
+}
+
+// GetAlertHistory 获取告警历史
+func (a *App) GetAlertHistory(stockCode string, limit int) ([]map[string]interface{}, error) {
+	return a.AlertController.GetAlertHistory(stockCode, limit)
+}
+
+// UpdateAlertConfig 更新告警全局配置
+func (a *App) UpdateAlertConfig(config models.AlertConfig) error {
+	return a.AlertController.UpdateAlertConfig(config)
+}
+
+// GetAlertConfig 获取告警全局配置
+func (a *App) GetAlertConfig() (models.AlertConfig, error) {
+	return a.AlertController.GetAlertConfig()
+}
+
+// SetAlertsFromAI 接收 AI 识别的支撑位和压力位并自动设置预警
+func (a *App) SetAlertsFromAI(code string, name string, drawings []models.TechnicalDrawing) {
+	a.AlertController.SetAlertsFromAI(code, name, drawings)
+}
+// --- Alert 转发器 结束 ---
 
 // MathAbs 辅助函数
 func MathAbs(v float64) float64 {
@@ -413,7 +467,22 @@ func (a *App) GetStockHealthCheck(code string) (*models.HealthCheckResult, error
 	return a.stockService.GetStockHealthCheck(code)
 }
 
-// AddPosition, GetPositions, RemovePosition 已迁移到 PositionController
+// --- Position 转发器 ---
+// AddPosition 添加持仓记录
+func (a *App) AddPosition(pos models.Position) error {
+	return a.PositionController.AddPosition(pos)
+}
+
+// GetPositions 获取所有活跃持仓
+func (a *App) GetPositions() (map[string]*models.Position, error) {
+	return a.PositionController.GetPositions()
+}
+
+// RemovePosition 移除持仓记录
+func (a *App) RemovePosition(code string) error {
+	return a.PositionController.RemovePosition(code)
+}
+// --- Position 转发器 结束 ---
 
 func newTraceID() string {
 	b := make([]byte, 8)
@@ -595,7 +664,22 @@ func (a *App) GetKLineData(code string, limit int, period string) ([]*models.KLi
 	return a.stockService.GetKLineData(code, limit, period)
 }
 
-// AddToWatchlist, RemoveFromWatchlist, GetWatchlist 已迁移到 WatchlistController
+// --- Watchlist 转发器 ---
+// AddToWatchlist 添加到自选股
+func (a *App) AddToWatchlist(stock models.StockData) error {
+	return a.WatchlistController.AddToWatchlist(stock)
+}
+
+// RemoveFromWatchlist 从自选股移除
+func (a *App) RemoveFromWatchlist(code string) error {
+	return a.WatchlistController.RemoveFromWatchlist(code)
+}
+
+// GetWatchlist 获取自选股列表
+func (a *App) GetWatchlist() ([]*models.StockData, error) {
+	return a.WatchlistController.GetWatchlist()
+}
+// --- Watchlist 转发器 结束 ---
 
 // SearchStock 搜索股票
 func (a *App) SearchStock(keyword string) ([]*models.StockData, error) {
@@ -630,7 +714,27 @@ func (a *App) AnalyzeTechnical(code string, period string, role string) (*models
 	return a.aiService.AnalyzeTechnical(stock, klines, period, role)
 }
 
-// GetGlobalStrategyConfig, UpdateGlobalStrategyConfig 已迁移到 ConfigController
+// --- Config 转发器 ---
+// GetConfig 获取 AI 配置
+func (a *App) GetConfig() (services.AIResolvedConfig, error) {
+	return a.ConfigController.GetAIConfig()
+}
+
+// SaveConfig 保存 AI 配置
+func (a *App) SaveConfig(config services.AIResolvedConfig) error {
+	return a.ConfigController.SaveAIConfig(config)
+}
+
+// GetGlobalStrategyConfig 获取全局交易策略配置
+func (a *App) GetGlobalStrategyConfig() (services.GlobalStrategyConfig, error) {
+	return a.ConfigController.GetGlobalStrategyConfig()
+}
+
+// UpdateGlobalStrategyConfig 更新全局交易策略配置
+func (a *App) UpdateGlobalStrategyConfig(config services.GlobalStrategyConfig) error {
+	return a.ConfigController.UpdateGlobalStrategyConfig(config)
+}
+// --- Config 转发器 结束 ---
 
 // shutdown 在应用程序退出时调用
 func (a *App) shutdown(ctx context.Context) {
