@@ -56,6 +56,56 @@ type appYAML struct {
 	AI AIConfigYAML `yaml:"ai"`
 }
 
+// MigrateAIConfigFromYAML 负责将旧的 config.yaml 迁移到 SQLite
+func (s *ConfigService) MigrateAIConfigFromYAML() error {
+	path := filepath.Join(GetAppDataDir(), "config.yaml")
+	
+	// 检查文件是否存在
+	_, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		return nil // 文件不存在，无需迁移
+	}
+	if err != nil {
+		return fmt.Errorf("检查 config.yaml 状态失败: %w", err)
+	}
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("读取 config.yaml 失败: %w", err)
+	}
+
+	var cfg appYAML
+	if len(raw) > 0 {
+		if err := yaml.Unmarshal(raw, &cfg); err != nil {
+			return fmt.Errorf("解析 config.yaml 失败: %w", err)
+		}
+	}
+
+	// 转换为新的配置结构
+	newConfig := AIResolvedConfig{
+		Provider: cfg.AI.Provider,
+		APIKey:   cfg.AI.APIKey,
+		BaseURL:  cfg.AI.BaseURL,
+		Model:    cfg.AI.Model,
+	}
+
+	// 保存到 SQLite
+	if err := s.SaveAIConfig(newConfig); err != nil {
+		return fmt.Errorf("保存 AI 配置到 SQLite 失败: %w", err)
+	}
+
+	// 迁移成功，重命名旧文件
+	backupPath := path + ".bak." + time.Now().Format("20060102150405")
+	if err := os.Rename(path, backupPath); err != nil {
+		logger.Error("重命名旧 config.yaml 文件失败", zap.Error(err))
+		// 即使重命名失败，也认为迁移成功，只是下次启动会再次尝试迁移
+	} else {
+		logger.Info("成功将 config.yaml 迁移到 SQLite", zap.String("backup_path", backupPath))
+	}
+
+	return nil
+}
+
 type AIResolvedConfig struct {
 	Provider       Provider              `json:"provider"`
 	APIKey         string                `json:"apiKey"`
@@ -128,78 +178,80 @@ func (s *ConfigService) setConfigValue(key string, value string) error {
 	return nil
 }
 
-// LoadAIConfig 从 YAML 文件加载 AI 配置 (保持兼容性)
-func LoadAIConfig() (AIResolvedConfig, error) {
+// LoadAIConfig 从 SQLite 加载 AI 配置
+func (s *ConfigService) LoadAIConfig() (AIResolvedConfig, error) {
+	// 确保在加载前执行迁移
+	if err := s.MigrateAIConfigFromYAML(); err != nil {
+		logger.Error("执行 YAML 配置迁移失败", zap.Error(err))
+		// 迁移失败不影响后续加载，继续执行
+	}
 	start := time.Now()
-	var cfg appYAML
-
+	
 	// 默认值
-	cfg.AI.Provider = ProviderQwen
-	cfg.AI.Model = "qwen-plus"
-	cfg.AI.BaseURL = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-
-	path := filepath.Join(GetAppDataDir(), "config.yaml")
-
-	// 尝试从新位置读取
-	raw, err := os.ReadFile(path)
-	if err != nil {
-		// 如果新位置没有，尝试从当前目录读取（兼容旧版本）
-		if oldRaw, oldErr := os.ReadFile("config.yaml"); oldErr == nil {
-			raw = oldRaw
-			// 迁移到新位置
-			os.WriteFile(path, oldRaw, 0644)
-		}
+	cfg := AIResolvedConfig{
+		Provider:       ProviderQwen,
+		Model:          "qwen-plus",
+		BaseURL:        "https://dashscope.aliyuncs.com/compatible-mode/v1",
+		ProviderModels: ProviderModels,
 	}
 
-	if len(raw) > 0 {
-		yaml.Unmarshal(raw, &cfg)
+	// 从数据库读取配置
+	providerStr, _ := s.getConfigValue("ai_provider")
+	apiKey, _ := s.getConfigValue("ai_api_key")
+	baseURL, _ := s.getConfigValue("ai_base_url")
+	model, _ := s.getConfigValue("ai_model")
+
+	if providerStr != "" {
+		cfg.Provider = Provider(providerStr)
+	}
+	if apiKey != "" {
+		cfg.APIKey = apiKey
+	}
+	if baseURL != "" {
+		cfg.BaseURL = baseURL
+	}
+	if model != "" {
+		cfg.Model = model
 	}
 
-	// 兼容性修复：规范化 DashScope BaseURL
-	if normalized, changed := normalizeDashscopeBaseURL(cfg.AI.BaseURL); changed {
-		logger.Warn("检测到 DashScope BaseURL 需要修正，已自动规范化",
+	// 兼容性修复：规范化 BaseURL
+	if normalized, changed := normalizeDashscopeBaseURL(cfg.BaseURL); changed {
+		logger.Warn("检测到 BaseURL 需要修正，已自动规范化",
 			zap.String("module", "services.config"),
 			zap.String("op", "normalize_base_url"),
-			zap.String("before", cfg.AI.BaseURL),
+			zap.String("before", cfg.BaseURL),
 			zap.String("after", normalized),
 		)
-		cfg.AI.BaseURL = normalized
+		cfg.BaseURL = normalized
 	}
 
 	logger.Info("AI 配置加载完成",
 		zap.String("module", "services.config"),
-		zap.String("path", path),
+		zap.String("provider", string(cfg.Provider)),
 		zap.Int64("duration_ms", time.Since(start).Milliseconds()),
 	)
 
-	return AIResolvedConfig{
-		Provider:       cfg.AI.Provider,
-		APIKey:         cfg.AI.APIKey,
-		BaseURL:        cfg.AI.BaseURL,
-		Model:          cfg.AI.Model,
-		ProviderModels: ProviderModels,
-	}, nil
+	return cfg, nil
 }
 
-// SaveAIConfig 保存 AI 配置到 YAML 文件 (保持兼容性)
-func SaveAIConfig(config AIResolvedConfig) error {
-	path := filepath.Join(GetAppDataDir(), "config.yaml")
-
-	cfg := appYAML{
-		AI: AIConfigYAML{
-			Provider: config.Provider,
-			APIKey:   config.APIKey,
-			BaseURL:  func() string { s, _ := normalizeDashscopeBaseURL(config.BaseURL); return s }(),
-			Model:    config.Model,
-		},
-	}
-
-	data, err := yaml.Marshal(&cfg)
-	if err != nil {
+// SaveAIConfig 保存 AI 配置到 SQLite
+func (s *ConfigService) SaveAIConfig(config AIResolvedConfig) error {
+	if err := s.setConfigValue("ai_provider", string(config.Provider)); err != nil {
 		return err
 	}
-
-	return os.WriteFile(path, data, 0644)
+	if err := s.setConfigValue("ai_api_key", config.APIKey); err != nil {
+		return err
+	}
+	
+	// 规范化 BaseURL 后保存
+	normalizedBaseURL, _ := normalizeDashscopeBaseURL(config.BaseURL)
+	if err := s.setConfigValue("ai_base_url", normalizedBaseURL); err != nil {
+		return err
+	}
+	if err := s.setConfigValue("ai_model", config.Model); err != nil {
+		return err
+	}
+	return nil
 }
 
 // GetGlobalStrategyConfig 从 SQLite 获取全局策略配置

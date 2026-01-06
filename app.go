@@ -400,8 +400,14 @@ func MathAbs(v float64) float64 {
 
 // initAIService 初始化或重新初始化 AI 服务
 func (a *App) initAIService() error {
+	if a.dbService == nil {
+		a.aiInitErr = fmt.Errorf("数据库服务未就绪，无法加载 AI 配置")
+		return a.aiInitErr
+	}
+	
 	start := time.Now()
-	cfg, err := services.LoadAIConfig()
+	configSvc := services.NewConfigService(a.dbService)
+	cfg, err := configSvc.LoadAIConfig()
 	if err != nil {
 		a.aiInitErr = err
 		return err
@@ -432,12 +438,20 @@ func (a *App) initAIService() error {
 
 // GetConfig 获取当前配置
 func (a *App) GetConfig() (services.AIResolvedConfig, error) {
-	return services.LoadAIConfig()
+	if a.dbService == nil {
+		return services.AIResolvedConfig{}, fmt.Errorf("数据库服务未就绪")
+	}
+	configSvc := services.NewConfigService(a.dbService)
+	return configSvc.LoadAIConfig()
 }
 
 // SaveConfig 保存配置并重置 AI 服务
 func (a *App) SaveConfig(config services.AIResolvedConfig) error {
-	err := services.SaveAIConfig(config)
+	if a.dbService == nil {
+		return fmt.Errorf("数据库服务未就绪")
+	}
+	configSvc := services.NewConfigService(a.dbService)
+	err := configSvc.SaveAIConfig(config)
 	if err != nil {
 		return err
 	}
