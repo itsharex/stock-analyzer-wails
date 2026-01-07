@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { parseError } from '../utils/errorHandler';
-import { Download, Trash2, RefreshCw, CheckCircle, AlertCircle } from 'lucide-react';
+import { Download, Trash2, RefreshCw, CheckCircle, AlertCircle, Clock } from 'lucide-react';
 
 interface SyncResult {
   stock_code: string;
@@ -11,8 +11,18 @@ interface SyncResult {
   error_message?: string;
 }
 
-const DataSyncPage: React.FC = () => {
+interface SyncProgress {
+  stock_code: string;
+  status: 'syncing' | 'completed' | 'failed';
+  current_index: number;
+  total_count: number;
+  progress: number;
+  records_added?: number;
+  message?: string;
+  error_message?: string;
+}
 
+const DataSyncPage: React.FC = () => {
   const [stockCodes, setStockCodes] = useState<string>('600519,000858');
   const [startDate, setStartDate] = useState<string>('2023-01-01');
   const [endDate, setEndDate] = useState<string>('2024-12-31');
@@ -21,9 +31,38 @@ const DataSyncPage: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedStock, setSelectedStock] = useState<string>('');
+  const [syncProgress, setSyncProgress] = useState<SyncProgress | null>(null);
+  const [syncLog, setSyncLog] = useState<string[]>([]);
 
   useEffect(() => {
     loadSyncStats();
+
+    // 监听同步进度事件
+    const EventsOn = (window as any).EventsOn;
+    if (!EventsOn) return;
+
+    const unsubscribeBatchStart = EventsOn('dataSyncBatchStart', (data: any) => {
+      setSyncLog([`开始批量同步，总共 ${data.total_count} 个股票`]);
+      setSyncProgress(null);
+    });
+
+    const unsubscribeProgress = EventsOn('dataSyncProgress', (data: any) => {
+      setSyncProgress(data);
+      const logMessage = `[${data.current_index}/${data.total_count}] ${data.stock_code}: ${data.status} (${data.progress.toFixed(1)}%)`;
+      setSyncLog((prev) => [...prev, logMessage]);
+    });
+
+    const unsubscribeBatchComplete = EventsOn('dataSyncBatchComplete', () => {
+      setSyncLog((prev) => [...prev, '批量同步完成']);
+      setSyncProgress(null);
+      loadSyncStats();
+    });
+
+    return () => {
+      if (unsubscribeBatchStart) unsubscribeBatchStart();
+      if (unsubscribeProgress) unsubscribeProgress();
+      if (unsubscribeBatchComplete) unsubscribeBatchComplete();
+    };
   }, []);
 
   const loadSyncStats = async () => {
@@ -45,15 +84,18 @@ const DataSyncPage: React.FC = () => {
     setLoading(true);
     setError(null);
     setSyncResults([]);
+    setSyncLog([`开始同步 ${selectedStock}`]);
 
     try {
       // @ts-ignore
       const result = await window.go.main.App.SyncStockData(selectedStock.trim(), startDate, endDate);
       setSyncResults([result]);
+      setSyncLog((prev) => [...prev, `${selectedStock} 同步完成: ${result.message}`]);
       await loadSyncStats();
     } catch (err) {
       const errorResult = parseError(err);
       setError(errorResult.message);
+      setSyncLog((prev) => [...prev, `错误: ${errorResult.message}`]);
     } finally {
       setLoading(false);
     }
@@ -152,6 +194,34 @@ const DataSyncPage: React.FC = () => {
           </div>
         )}
 
+        {/* 实时进度显示 */}
+        {syncProgress && (
+          <div className="bg-gray-800 rounded-lg shadow-lg p-6 mb-6">
+            <h2 className="text-xl font-bold mb-4">同步进度</h2>
+            <div className="space-y-4">
+              <div>
+                <div className="flex justify-between mb-2">
+                  <span className="text-sm font-medium text-gray-300">
+                    {syncProgress.stock_code}
+                  </span>
+                  <span className="text-sm font-medium text-gray-300">
+                    {syncProgress.current_index}/{syncProgress.total_count}
+                  </span>
+                </div>
+                <div className="w-full bg-gray-700 rounded-full h-2">
+                  <div
+                    className="bg-blue-500 h-2 rounded-full transition-all duration-300"
+                    style={{ width: `${syncProgress.progress}%` }}
+                  ></div>
+                </div>
+                <p className="text-xs text-gray-400 mt-2">
+                  {syncProgress.progress.toFixed(1)}% - {syncProgress.status}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* 单个同步面板 */}
         <div className="bg-gray-800 rounded-lg shadow-lg p-6 mb-6">
           <h2 className="text-xl font-bold mb-4">单个股票同步</h2>
@@ -232,6 +302,23 @@ const DataSyncPage: React.FC = () => {
           </button>
         </div>
 
+        {/* 同步日志 */}
+        {syncLog.length > 0 && (
+          <div className="bg-gray-800 rounded-lg shadow-lg p-6 mb-6">
+            <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+              <Clock className="w-5 h-5" />
+              同步日志
+            </h2>
+            <div className="bg-gray-900 rounded-md p-4 max-h-64 overflow-y-auto font-mono text-sm text-gray-300 space-y-1">
+              {syncLog.map((log, index) => (
+                <div key={index} className="text-gray-400">
+                  {log}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* 错误提示 */}
         {error && (
           <div className="mb-6 bg-red-900/30 border border-red-600 rounded-lg p-4 flex items-start gap-3">
@@ -248,47 +335,41 @@ const DataSyncPage: React.FC = () => {
           <div className="bg-gray-800 rounded-lg shadow-lg p-6">
             <h2 className="text-xl font-bold mb-4">同步结果</h2>
             <div className="space-y-3">
-              {syncResults.map((result, index) => (
+              {syncResults.map((result) => (
                 <div
-                  key={index}
-                  className={`p-4 rounded-lg border ${
-                    result.success
-                      ? 'bg-green-900/20 border-green-600'
-                      : 'bg-red-900/20 border-red-600'
+                  key={result.stock_code}
+                  className={`flex items-start gap-4 p-4 rounded-lg ${
+                    result.success ? 'bg-green-900/20 border border-green-600' : 'bg-red-900/20 border border-red-600'
                   }`}
                 >
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-start gap-3">
-                      {result.success ? (
-                        <CheckCircle className="w-5 h-5 text-green-400 flex-shrink-0 mt-0.5" />
-                      ) : (
-                        <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
-                      )}
-                      <div>
-                        <p className={`font-medium ${result.success ? 'text-green-400' : 'text-red-400'}`}>
-                          {result.stock_code}
-                        </p>
-                        <p className="text-sm text-gray-300 mt-1">{result.message}</p>
-                        {result.success && (
-                          <p className="text-sm text-gray-400 mt-1">
-                            新增: {result.records_added} 条 | 更新: {result.records_updated} 条
-                          </p>
-                        )}
-                        {result.error_message && (
-                          <p className="text-sm text-red-300 mt-1">{result.error_message}</p>
-                        )}
-                      </div>
-                    </div>
+                  {result.success ? (
+                    <CheckCircle className="w-5 h-5 text-green-400 flex-shrink-0 mt-0.5" />
+                  ) : (
+                    <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+                  )}
+                  <div className="flex-1">
+                    <p className={`font-medium ${result.success ? 'text-green-400' : 'text-red-400'}`}>
+                      {result.stock_code}
+                    </p>
+                    <p className="text-sm text-gray-300">{result.message}</p>
                     {result.success && (
-                      <button
-                        onClick={() => handleClearCache(result.stock_code)}
-                        className="px-3 py-1 text-sm bg-red-600 hover:bg-red-700 text-white rounded transition-colors flex items-center gap-1"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                        清除
-                      </button>
+                      <p className="text-xs text-gray-400 mt-1">
+                        新增: {result.records_added} | 更新: {result.records_updated}
+                      </p>
+                    )}
+                    {result.error_message && (
+                      <p className="text-xs text-red-300 mt-1">{result.error_message}</p>
                     )}
                   </div>
+                  {result.success && (
+                    <button
+                      onClick={() => handleClearCache(result.stock_code)}
+                      className="px-3 py-1 bg-gray-700 hover:bg-gray-600 text-gray-300 text-sm rounded transition-colors flex items-center gap-1 flex-shrink-0"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      清除
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
