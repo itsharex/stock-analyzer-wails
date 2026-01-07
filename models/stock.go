@@ -375,3 +375,49 @@ type BacktestResult struct {
 	EquityCurve     []float64     `json:"equityCurve"`     // 净值曲线 (每日资产总值)
 	EquityDates     []string      `json:"equityDates"`     // 净值曲线对应的日期
 }
+
+
+// KLineCacheRecord 用于存储到 SQLite 的 K 线缓存记录
+type KLineCacheRecord struct {
+	ID        int64   `db:"id" json:"id"`
+	StockCode string  `db:"stock_code" json:"stock_code"`
+	Date      string  `db:"date" json:"date"` // YYYY-MM-DD
+	Open      float64 `db:"open" json:"open"`
+	High      float64 `db:"high" json:"high"`
+	Low       float64 `db:"low" json:"low"`
+	Close     float64 `db:"close" json:"close"`
+	Volume    int64   `db:"volume" json:"volume"`
+	CreatedAt string  `db:"created_at" json:"created_at"`
+	UpdatedAt string  `db:"updated_at" json:"updated_at"`
+}
+
+// SyncProgress 数据同步进度信息
+type SyncProgress struct {
+	StockCode      string `json:"stock_code"`
+	Status         string `json:"status"` // "pending", "syncing", "completed", "failed"
+	TotalRecords   int    `json:"total_records"`
+	SyncedRecords  int    `json:"synced_records"`
+	Message        string `json:"message"`
+	StartDate      string `json:"start_date"`
+	EndDate        string `json:"end_date"`
+	ErrorMessage   string `json:"error_message,omitempty"`
+}
+
+// SyncResult 数据同步结果
+type SyncResult struct {
+	StockCode     string `json:"stock_code"`
+	Success       bool   `json:"success"`
+	RecordsAdded  int    `json:"records_added"`
+	RecordsUpdated int   `json:"records_updated"`
+	Message       string `json:"message"`
+	ErrorMessage  string `json:"error_message,omitempty"`
+}
+
+// DataSyncStats 数据同步统计信息
+type DataSyncStats struct {
+	TotalStocks    int      `json:"total_stocks"`
+	SyncedStocks   int      `json:"synced_stocks"`
+	TotalRecords   int64    `json:"total_records"`
+	StockList      []string `json:"stock_list"`
+	LastSyncTime   string   `json:"last_sync_time"`
+}

@@ -763,3 +763,28 @@ func (a *App) shutdown(ctx context.Context) {
 		a.dbService.Close()
 	}
 }
+
+
+// --- 数据同步功能 开始 ---
+
+// SyncStockData 同步单个股票的历史数据到本地 SQLite
+func (a *App) SyncStockData(code string, startDate string, endDate string) (*models.SyncResult, error) {
+	return a.stockService.SyncStockData(code, startDate, endDate)
+}
+
+// GetDataSyncStats 获取数据同步统计信息
+func (a *App) GetDataSyncStats() (*models.DataSyncStats, error) {
+	return a.stockService.GetDataSyncStats()
+}
+
+// BatchSyncStockData 批量同步多个股票的历史数据
+func (a *App) BatchSyncStockData(codes []string, startDate string, endDate string) error {
+	return a.stockService.BatchSyncStockData(codes, startDate, endDate)
+}
+
+// ClearStockCache 清除指定股票的本地缓存数据
+func (a *App) ClearStockCache(code string) error {
+	return a.stockService.ClearStockCache(code)
+}
+
+// --- 数据同步功能 结束 ---

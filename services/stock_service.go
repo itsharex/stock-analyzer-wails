@@ -957,3 +957,88 @@ func (s *StockService) SearchStockLegacy(keyword string) ([]*models.StockData, e
 	}
 	return results, nil
 }
+
+
+// SyncStockData 同步单个股票的历史数据到本地 SQLite
+// 该方法会为每个股票创建一个独立的表（如 kline_600519），并存储历史 K 线数据
+func (s *StockService) SyncStockData(code string, startDate string, endDate string) (*models.SyncResult, error) {
+	result := &models.SyncResult{
+		StockCode: code,
+		Success:   false,
+	}
+
+	// TODO: 实现数据同步逻辑
+	// 1. 获取股票的历史 K 线数据（调用 GetKLineData）
+	// 2. 创建或检查数据库表 (kline_{code})
+	// 3. 检查表中已有的最新数据日期，实现增量同步
+	// 4. 将新数据插入或更新到表中
+	// 5. 返回同步结果（添加的记录数、更新的记录数等）
+
+	// 当前返回 Mock 数据，便于前端测试
+	result.Success = true
+	result.RecordsAdded = 100
+	result.RecordsUpdated = 0
+	result.Message = fmt.Sprintf("成功同步 %s 的历史数据，新增 100 条记录", code)
+
+	return result, nil
+}
+
+// GetDataSyncStats 获取数据同步统计信息
+// 返回已同步的股票列表、总记录数等信息
+func (s *StockService) GetDataSyncStats() (*models.DataSyncStats, error) {
+	stats := &models.DataSyncStats{
+		TotalStocks:  0,
+		SyncedStocks: 0,
+		TotalRecords: 0,
+		StockList:    []string{},
+		LastSyncTime: time.Now().Format("2006-01-02 15:04:05"),
+	}
+
+	// TODO: 实现统计逻辑
+	// 1. 查询数据库中所有 kline_* 表
+	// 2. 统计每个表的记录数
+	// 3. 获取最后一次同步的时间戳
+
+	// 当前返回 Mock 数据
+	stats.TotalStocks = 2
+	stats.SyncedStocks = 2
+	stats.TotalRecords = 500
+	stats.StockList = []string{"600519", "000858"}
+
+	return stats, nil
+}
+
+// GetKLineFromCache 从本地缓存获取 K 线数据
+// 优先从 SQLite 读取，如果数据不足则从 API 补充
+func (s *StockService) GetKLineFromCache(code string, limit int) ([]*models.KLineData, error) {
+	// TODO: 实现缓存读取逻辑
+	// 1. 从数据库表 kline_{code} 中读取最新的 limit 条记录
+	// 2. 如果记录数不足，从 API 获取补充数据
+	// 3. 将补充的数据存储到数据库
+	// 4. 返回合并后的 K 线数据
+
+	// 当前直接调用 API（后续优化为缓存优先）
+	return s.GetKLineData(code, limit, "daily")
+}
+
+// ClearStockCache 清除指定股票的本地缓存数据
+func (s *StockService) ClearStockCache(code string) error {
+	// TODO: 实现缓存清除逻辑
+	// 1. 删除数据库表 kline_{code}
+	// 2. 返回删除结果
+
+	return nil
+}
+
+// BatchSyncStockData 批量同步多个股票的历史数据
+// 该方法会为每个股票创建独立的表，并通过 Wails 事件发送同步进度
+func (s *StockService) BatchSyncStockData(codes []string, startDate string, endDate string) error {
+	// TODO: 实现批量同步逻辑
+	// 1. 遍历 codes 列表
+	// 2. 对每个 code 调用 SyncStockData
+	// 3. 通过 runtime.EventsEmit 发送进度事件 (eventName: "dataSyncProgress")
+	// 4. 处理错误并继续下一个
+
+	// 当前返回 nil，表示成功
+	return nil
+}
