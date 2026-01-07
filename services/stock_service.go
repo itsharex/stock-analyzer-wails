@@ -32,10 +32,9 @@ type StockService struct {
 
 	streamMu sync.Mutex
 	streams  map[string]context.CancelFunc
-
 	emitIntraday func(ctx context.Context, code string, trends []string)
+	dbService *DBService // 数据库服务
 }
-
 // NewStockService 创建股票数据服务实例
 func NewStockService() *StockService {
 	s := &StockService{
@@ -967,18 +966,64 @@ func (s *StockService) SyncStockData(code string, startDate string, endDate stri
 		Success:   false,
 	}
 
-	// TODO: 实现数据同步逻辑
-	// 1. 获取股票的历史 K 线数据（调用 GetKLineData）
-	// 2. 创建或检查数据库表 (kline_{code})
-	// 3. 检查表中已有的最新数据日期，实现增量同步
-	// 4. 将新数据插入或更新到表中
-	// 5. 返回同步结果（添加的记录数、更新的记录数等）
+	// 获取数据库服务实例
+	db := s.dbService
+	if db == nil {
+		result.ErrorMessage = "数据库服务未初始化"
+		return result, fmt.Errorf("数据库服务未初始化")
+	}
 
-	// 当前返回 Mock 数据，便于前端测试
+	// 1. 获取股票的历史 K 线数据
+	klines, err := s.GetKLineData(code, 5000, "daily")
+	if err != nil {
+		result.ErrorMessage = fmt.Sprintf("获取 K 线数据失败: %v", err)
+		return result, err
+	}
+
+	if len(klines) == 0 {
+		result.ErrorMessage = "未获取到 K 线数据"
+		return result, fmt.Errorf("未获取到 K 线数据")
+	}
+
+	// 2. 创建数据库表
+	if err := db.CreateKLineCacheTable(code); err != nil {
+		result.ErrorMessage = fmt.Sprintf("创建数据表失败: %v", err)
+		return result, err
+	}
+
+	// 3. 转换 K 线数据格式并过滤日期范围
+	var klineRecords []map[string]interface{}
+	for _, kline := range klines {
+		// 过滤日期范围
+		if kline.Time >= startDate && kline.Time <= endDate {
+			klineRecords = append(klineRecords, map[string]interface{}{
+				"date":   kline.Time,
+				"open":   kline.Open,
+				"high":   kline.High,
+				"low":    kline.Low,
+				"close":  kline.Close,
+				"volume": kline.Volume,
+			})
+		}
+	}
+
+	if len(klineRecords) == 0 {
+		result.ErrorMessage = "指定日期范围内没有数据"
+		return result, fmt.Errorf("指定日期范围内没有数据")
+	}
+
+	// 4. 批量插入或更新数据
+	addedCount, updatedCount, err := db.InsertOrUpdateKLineData(code, klineRecords)
+	if err != nil {
+		result.ErrorMessage = fmt.Sprintf("插入数据失败: %v", err)
+		return result, err
+	}
+
+	// 5. 返回成功结果
 	result.Success = true
-	result.RecordsAdded = 100
-	result.RecordsUpdated = 0
-	result.Message = fmt.Sprintf("成功同步 %s 的历史数据，新增 100 条记录", code)
+	result.RecordsAdded = int(addedCount)
+	result.RecordsUpdated = int(updatedCount)
+	result.Message = fmt.Sprintf("成功同步 %s 的历史数据，新增 %d 条记录，更新 %d 条记录", code, addedCount, updatedCount)
 
 	return result, nil
 }
@@ -994,16 +1039,32 @@ func (s *StockService) GetDataSyncStats() (*models.DataSyncStats, error) {
 		LastSyncTime: time.Now().Format("2006-01-02 15:04:05"),
 	}
 
-	// TODO: 实现统计逻辑
-	// 1. 查询数据库中所有 kline_* 表
-	// 2. 统计每个表的记录数
-	// 3. 获取最后一次同步的时间戳
+	// 获取数据库服务实例
+	db := s.dbService
+	if db == nil {
+		return stats, nil
+	}
 
-	// 当前返回 Mock 数据
-	stats.TotalStocks = 2
-	stats.SyncedStocks = 2
-	stats.TotalRecords = 500
-	stats.StockList = []string{"600519", "000858"}
+	// 1. 查询所有已同步的股票
+	stocks, err := db.GetAllSyncedStocks()
+	if err != nil {
+		return stats, err
+	}
+
+	stats.StockList = stocks
+	stats.SyncedStocks = len(stocks)
+	stats.TotalStocks = len(stocks)
+
+	// 2. 统计总记录数
+	var totalRecords int64
+	for _, code := range stocks {
+		count, err := db.GetKLineCountByCode(code)
+		if err == nil {
+			totalRecords += int64(count)
+		}
+	}
+
+	stats.TotalRecords = totalRecords
 
 	return stats, nil
 }
