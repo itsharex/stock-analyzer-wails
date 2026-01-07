@@ -6,12 +6,13 @@ import Settings from './components/Settings'
 import Watchlist from './components/Watchlist'
 import WatchlistDetail from './components/WatchlistDetail'
 import BacktestPage from './pages/BacktestPage'
+import DataSyncPage from './pages/DataSyncPage'
 import { AlertToast } from './components/AlertToast'
 import { AlertCenter } from './components/AlertCenter'
 import { useWailsAPI } from './hooks/useWailsAPI'
 import type { StockData, AnalysisReport as AnalysisReportType, AppConfig } from './types'
 
-type NavItem = 'analysis' | 'watchlist' | 'alerts' | 'settings' | 'backtest'
+type NavItem = 'analysis' | 'watchlist' | 'alerts' | 'settings' | 'backtest' | 'datasync'
 
 function App() {
   const [activeTab, setActiveTab] = useState<NavItem>('analysis')
@@ -139,6 +140,18 @@ function App() {
           </button>
 
           <button
+            onClick={() => setActiveTab('datasync')}
+            className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${
+              activeTab === 'datasync' 
+                ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' 
+                : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+            }`}
+          >
+            <span className="text-xl">💾</span>
+            <span className="font-medium">数据同步</span>
+          </button>
+
+          <button
             onClick={() => setActiveTab('settings')}
             className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${
               activeTab === 'settings' 
@@ -164,7 +177,7 @@ function App() {
         {/* 顶部状态栏 */}
         <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-8 z-10">
           <h2 className="text-lg font-semibold text-gray-800">
-            {activeTab === 'analysis' ? '股票分析工作台' : activeTab === 'watchlist' ? '自选行情中心' : activeTab === 'alerts' ? '智能预警中心' : activeTab === 'backtest' ? '策略回测中心' : '系统参数配置'}
+            {activeTab === 'analysis' ? '股票分析工作台' : activeTab === 'watchlist' ? '自选行情中心' : activeTab === 'alerts' ? '智能预警中心' : activeTab === 'backtest' ? '策略回测中心' : activeTab === 'datasync' ? '数据同步中心' : '系统参数配置'}
           </h2>
           <div className="flex items-center space-x-6 text-sm">
             {currentConfig && (
@@ -258,6 +271,8 @@ function App() {
             <AlertCenter />
           ) : activeTab === 'backtest' ? (
             <BacktestPage />
+          ) : activeTab === 'datasync' ? (
+            <DataSyncPage />
           ) : (
             <Settings onConfigSaved={handleConfigSaved} />
           )}

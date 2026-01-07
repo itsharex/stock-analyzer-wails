@@ -133,6 +133,26 @@ const getIntradayData = useCallback(async (code: string): Promise<IntradayRespon
     return window.go.main.App.BacktestSimpleMA(code, shortPeriod, longPeriod, initialCapital, startDate, endDate)
   }, [])
 
+  const SyncStockData = useCallback(async (code: string, startDate: string, endDate: string): Promise<any> => {
+    // @ts-ignore
+    return window.go.main.App.SyncStockData(code, startDate, endDate)
+  }, [])
+
+  const GetDataSyncStats = useCallback(async (): Promise<any> => {
+    // @ts-ignore
+    return window.go.main.App.GetDataSyncStats()
+  }, [])
+
+  const BatchSyncStockData = useCallback(async (codes: string[], startDate: string, endDate: string): Promise<void> => {
+    // @ts-ignore
+    return window.go.main.App.BatchSyncStockData(codes, startDate, endDate)
+  }, [])
+
+  const ClearStockCache = useCallback(async (code: string): Promise<void> => {
+    // @ts-ignore
+    return window.go.main.App.ClearStockCache(code)
+  }, [])
+
 		return {
 		    getStockData,
 		    getIntradayData,
@@ -160,6 +180,10 @@ const getIntradayData = useCallback(async (code: string): Promise<IntradayRespon
 	    getPositions,
     removePosition,
     BacktestSimpleMA,
+    SyncStockData,
+    GetDataSyncStats,
+    BatchSyncStockData,
+    ClearStockCache,
   }
 }
 
