@@ -254,8 +254,8 @@ export interface StockDetail {
   // 这里做兼容，避免运行时字段缺失导致白屏
   stockData?: StockData
   orderBook?: OrderBook
-  financial_summary?: FinancialSummary
-  industry_info?: IndustryInfo
+  financial?: FinancialSummary
+  industry?: IndustryInfo
   // 允许扁平行情字段存在
   code?: string
   name?: string
@@ -287,4 +287,33 @@ export interface Position {
   trailingConfig: TrailingStopConfig
   currentStatus: 'holding' | 'closed'
   logicStatus: 'valid' | 'violated' | 'warning'
+}
+
+
+export interface TradeRecord {
+  time: string;
+  type: "BUY" | "SELL";
+  price: number;
+  volume: number;
+  amount: number;
+  commission: number;
+  tax: number;
+  profit: number;
+}
+
+export interface BacktestResult {
+  strategyName: string;
+  stockCode: string;
+  startDate: string;
+  endDate: string;
+  initialCapital: number;
+  finalCapital: number;
+  totalReturn: number;
+  annualizedReturn: number;
+  maxDrawdown: number;
+  winRate: number;
+  tradeCount: number;
+  trades: TradeRecord[];
+  equityCurve: number[];
+  equityDates: string[];
 }

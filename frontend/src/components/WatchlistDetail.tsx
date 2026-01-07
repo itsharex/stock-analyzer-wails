@@ -338,8 +338,8 @@ function WatchlistDetail({ stock }: WatchlistDetailProps) {
 	        <div className="flex-1 flex flex-col p-2 lg:p-4 overflow-y-auto">
 	          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
 	            <OrderBookPanel orderBook={stockDetail?.orderBook} />
-	            <FinancialPanel financialSummary={stockDetail?.financial_summary} />
-	            <IndustryPanel industryInfo={stockDetail?.industry_info} />
+            <FinancialPanel financialSummary={stockDetail?.financial} />
+            <IndustryPanel industryInfo={stockDetail?.industry} />
 	          </div>
 		          <div className="flex-1 min-h-[400px] bg-white rounded-lg shadow-md p-4 mb-4">	            <div className="flex items-center justify-between mb-4">
 	              <div className="flex items-center space-x-2">

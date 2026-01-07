@@ -1,5 +1,5 @@
 import { useCallback } from 'react'
-import type { StockData, AnalysisReport, AppConfig, KLineData, TechnicalAnalysisResult, IntradayResponse, MoneyFlowResponse, HealthCheckResult, EntryStrategyResult, StockDetail } from '../types'
+import type { StockData, AnalysisReport, AppConfig, KLineData, TechnicalAnalysisResult, IntradayResponse, MoneyFlowResponse, HealthCheckResult, EntryStrategyResult, StockDetail, BacktestResult } from '../types'
 import { StreamIntradayData } from '../../wailsjs/go/main/App'
 
 export const useWailsAPI = () => {
@@ -128,6 +128,11 @@ const getIntradayData = useCallback(async (code: string): Promise<IntradayRespon
     return window.go.main.App.RemovePosition(code)
   }, [])
 
+  const BacktestSimpleMA = useCallback(async (code: string, shortPeriod: number, longPeriod: number, initialCapital: number, startDate: string, endDate: string): Promise<BacktestResult> => {
+    // @ts-ignore
+    return window.go.main.App.BacktestSimpleMA(code, shortPeriod, longPeriod, initialCapital, startDate, endDate)
+  }, [])
+
 		return {
 		    getStockData,
 		    getIntradayData,
@@ -153,8 +158,9 @@ const getIntradayData = useCallback(async (code: string): Promise<IntradayRespon
 	    analyzeEntryStrategy,
 	    addPosition,
 	    getPositions,
-	    removePosition,
-	  }
+    removePosition,
+    BacktestSimpleMA,
+  }
 }
 
 export default useWailsAPI
