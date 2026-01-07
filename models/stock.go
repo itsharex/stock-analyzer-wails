@@ -344,3 +344,34 @@ func (sd *StockDiff) ToStockData() *StockData {
 		CircMV:     sd.F21,
 	}
 }
+
+
+// TradeRecord 单笔交易记录
+type TradeRecord struct {
+	Time      string  `json:"time"`      // 交易时间
+	Type      string  `json:"type"`      // 交易类型: "BUY" 或 "SELL"
+	Price     float64 `json:"price"`     // 交易价格
+	Volume    int64   `json:"volume"`    // 交易数量
+	Amount    float64 `json:"amount"`    // 交易金额
+	Commission float64 `json:"commission"` // 佣金
+	Tax       float64 `json:"tax"`       // 印花税 (仅卖出)
+	Profit    float64 `json:"profit"`    // 单笔交易盈亏
+}
+
+// BacktestResult 回测结果结构
+type BacktestResult struct {
+	StrategyName    string        `json:"strategyName"`    // 策略名称
+	StockCode       string        `json:"stockCode"`       // 股票代码
+	StartDate       string        `json:"startDate"`       // 回测开始日期
+	EndDate         string        `json:"endDate"`         // 回测结束日期
+	InitialCapital  float64       `json:"initialCapital"`  // 初始资金
+	FinalCapital    float64       `json:"finalCapital"`    // 最终资金
+	TotalReturn     float64       `json:"totalReturn"`     // 总收益率
+	AnnualizedReturn float64       `json:"annualizedReturn"` // 年化收益率
+	MaxDrawdown     float64       `json:"maxDrawdown"`     // 最大回撤
+	WinRate         float64       `json:"winRate"`         // 胜率
+	TradeCount      int           `json:"tradeCount"`      // 交易次数
+	Trades          []TradeRecord `json:"trades"`          // 交易记录
+	EquityCurve     []float64     `json:"equityCurve"`     // 净值曲线 (每日资产总值)
+	EquityDates     []string      `json:"equityDates"`     // 净值曲线对应的日期
+}
