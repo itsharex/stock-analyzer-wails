@@ -30,11 +30,21 @@ type StockService struct {
 	client    *http.Client
 	sseClient *http.Client
 
-	streamMu sync.Mutex
-	streams  map[string]context.CancelFunc
+	streamMu     sync.Mutex
+	streams      map[string]context.CancelFunc
 	emitIntraday func(ctx context.Context, code string, trends []string)
-	dbService *DBService // 数据库服务
+	dbService    *DBService // 数据库服务
 }
+
+// SetDBService 注入数据库服务。
+//
+// 为什么需要：StockService 的“历史数据同步/本地缓存”等功能依赖 SQLite。
+// 如果不注入 dbService，会导致 SyncStockData/GetDataSyncStats 直接报“数据库服务未初始化”，
+// 前端通常会把这类错误汇总展示为“自选股功能暂不可用”。
+func (s *StockService) SetDBService(db *DBService) {
+	s.dbService = db
+}
+
 // NewStockService 创建股票数据服务实例
 func NewStockService() *StockService {
 	s := &StockService{
@@ -957,7 +967,6 @@ func (s *StockService) SearchStockLegacy(keyword string) ([]*models.StockData, e
 	return results, nil
 }
 
-
 // SyncStockData 同步单个股票的历史数据到本地 SQLite
 // 该方法会为每个股票创建一个独立的表（如 kline_600519），并存储历史 K 线数据
 func (s *StockService) SyncStockData(code string, startDate string, endDate string) (*models.SyncResult, error) {
@@ -969,8 +978,18 @@ func (s *StockService) SyncStockData(code string, startDate string, endDate stri
 	// 获取数据库服务实例
 	db := s.dbService
 	if db == nil {
-		result.ErrorMessage = "数据库服务未初始化"
-		return result, fmt.Errorf("数据库服务未初始化")
+		// 这里必须打日志：否则用户只看到“自选股暂不可用”，不知道实际原因是 dbService 未注入。
+		err := fmt.Errorf("数据库服务未初始化")
+		result.ErrorMessage = err.Error()
+		logger.Error("同步历史数据失败：数据库服务未初始化（可能未注入或初始化失败）",
+			zap.String("module", "services.stock"),
+			zap.String("op", "SyncStockData"),
+			zap.String("code", code),
+			zap.String("startDate", startDate),
+			zap.String("endDate", endDate),
+			zap.Error(err),
+		)
+		return result, err
 	}
 
 	// 1. 获取股票的历史 K 线数据
@@ -1042,6 +1061,11 @@ func (s *StockService) GetDataSyncStats() (*models.DataSyncStats, error) {
 	// 获取数据库服务实例
 	db := s.dbService
 	if db == nil {
+		// 统计接口更适合降级：返回空数据，但保留 warn 日志用于排查。
+		logger.Warn("获取同步统计失败：数据库服务未初始化（返回空统计）",
+			zap.String("module", "services.stock"),
+			zap.String("op", "GetDataSyncStats"),
+		)
 		return stats, nil
 	}
 

@@ -22,11 +22,21 @@ interface SyncProgress {
   error_message?: string;
 }
 
+// DataSyncStats 与后端 models.DataSyncStats 对齐（snake_case）。
+// 注意：后端在“数据库未初始化”降级时可能返回空结构或字段为 null，前端必须兜底防止白屏。
+interface DataSyncStats {
+  total_stocks?: number;
+  synced_stocks?: number;
+  total_records?: number;
+  stock_list?: string[] | null;
+  last_sync_time?: string;
+}
+
 const DataSyncPage: React.FC = () => {
   const [stockCodes, setStockCodes] = useState<string>('600519,000858');
   const [startDate, setStartDate] = useState<string>('2023-01-01');
   const [endDate, setEndDate] = useState<string>('2024-12-31');
-  const [syncStats, setSyncStats] = useState<any>(null);
+  const [syncStats, setSyncStats] = useState<DataSyncStats | null>(null);
   const [syncResults, setSyncResults] = useState<SyncResult[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -69,9 +79,27 @@ const DataSyncPage: React.FC = () => {
     try {
       // @ts-ignore
       const stats = await window.go.main.App.GetDataSyncStats();
-      setSyncStats(stats);
+
+      // 兜底：保证 syncStats 至少是一个可渲染的结构，避免 stock_list 为 null 时 join 崩溃。
+      const safeStats: DataSyncStats = {
+        total_stocks: stats?.total_stocks ?? 0,
+        synced_stocks: stats?.synced_stocks ?? 0,
+        total_records: stats?.total_records ?? 0,
+        stock_list: Array.isArray(stats?.stock_list) ? stats.stock_list : [],
+        last_sync_time: stats?.last_sync_time ?? '',
+      };
+
+      setSyncStats(safeStats);
     } catch (err) {
       console.error('加载同步统计失败:', err);
+      // 如果统计加载失败，也不要让页面崩溃；显示空统计即可。
+      setSyncStats({
+        total_stocks: 0,
+        synced_stocks: 0,
+        total_records: 0,
+        stock_list: [],
+        last_sync_time: '',
+      });
     }
   };
 
@@ -177,19 +205,19 @@ const DataSyncPage: React.FC = () => {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
             <div className="bg-gray-800 p-4 rounded-lg shadow-lg">
               <p className="text-sm text-gray-400">已同步股票数</p>
-              <p className="text-2xl font-bold text-blue-400">{syncStats.synced_stocks}</p>
+              <p className="text-2xl font-bold text-blue-400">{syncStats.synced_stocks ?? 0}</p>
             </div>
             <div className="bg-gray-800 p-4 rounded-lg shadow-lg">
               <p className="text-sm text-gray-400">总数据记录数</p>
-              <p className="text-2xl font-bold text-green-400">{syncStats.total_records}</p>
+              <p className="text-2xl font-bold text-green-400">{syncStats.total_records ?? 0}</p>
             </div>
             <div className="bg-gray-800 p-4 rounded-lg shadow-lg">
               <p className="text-sm text-gray-400">最后同步时间</p>
-              <p className="text-sm font-mono text-gray-300">{syncStats.last_sync_time}</p>
+              <p className="text-sm font-mono text-gray-300">{syncStats.last_sync_time || '-'}</p>
             </div>
             <div className="bg-gray-800 p-4 rounded-lg shadow-lg">
               <p className="text-sm text-gray-400">已同步股票列表</p>
-              <p className="text-sm font-mono text-gray-300">{syncStats.stock_list.join(', ')}</p>
+              <p className="text-sm font-mono text-gray-300">{(syncStats.stock_list ?? []).join(', ')}</p>
             </div>
           </div>
         )}

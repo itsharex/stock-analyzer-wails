@@ -5,11 +5,12 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"math"
 	"runtime/debug"
+	"stock-analyzer-wails/controllers"
 	"stock-analyzer-wails/models"
-		"stock-analyzer-wails/services"
-		"stock-analyzer-wails/repositories"
-		"stock-analyzer-wails/controllers"
+	"stock-analyzer-wails/repositories"
+	"stock-analyzer-wails/services"
 	"strings"
 	"sync"
 	"time"
@@ -22,96 +23,123 @@ import (
 
 // App 应用程序结构
 type App struct {
-	ctx              context.Context
-	stockService     *services.StockService
-	aiService        *services.AIService
-		alertStorage     *services.AlertService
-		positionStorage  *services.PositionService
-		configService    *services.ConfigService // 新增 ConfigService
-		dbService        *services.DBService // 新增 DBService
-		aiInitErr        error
-	alerts           []*models.PriceAlert
-	alertMutex       sync.Mutex
-	alertConfig      models.AlertConfig
-	
+	ctx             context.Context
+	stockService    *services.StockService
+	aiService       *services.AIService
+	alertStorage    *services.AlertService
+	positionStorage *services.PositionService
+	configService   *services.ConfigService // 新增 ConfigService
+	dbService       *services.DBService     // 新增 DBService
+	aiInitErr       error
+	alerts          []*models.PriceAlert
+	alertMutex      sync.Mutex
+	alertConfig     models.AlertConfig
+
 	// Controllers (Wails Bindings)
-		WatchlistController *controllers.WatchlistController
-		AlertController     *controllers.AlertController
-		PositionController  *controllers.PositionController
-		ConfigController    *controllers.ConfigController
-		
-		// Services (for internal use)
-		watchlistService *services.WatchlistService // 保持，用于内部逻辑调用
+	WatchlistController *controllers.WatchlistController
+	AlertController     *controllers.AlertController
+	PositionController  *controllers.PositionController
+	ConfigController    *controllers.ConfigController
+
+	// Services (for internal use)
+	watchlistService *services.WatchlistService // 保持，用于内部逻辑调用
 }
 
 // NewApp 创建新的App应用程序
-	func NewApp() *App {
-		// 初始化数据库服务
-		dbSvc, err := services.NewDBService()
-		if err != nil {
-			// 数据库初始化失败是致命错误，这里直接 panic 或返回 nil
-			// 但由于 NewApp 不返回 error，我们先记录错误并返回一个 App 实例
-			logger.Error("初始化数据库服务失败", zap.Error(err))
-		}
+func NewApp() *App {
+	// 初始化数据库服务
+	dbSvc, err := services.NewDBService()
+	if err != nil {
+		// 数据库初始化失败会直接导致：自选股/预警/持仓/配置等 SQLite 相关功能不可用。
+		// 这里不再继续使用 dbSvc.GetDB() 做 DI（否则 dbSvc 可能为 nil 导致 panic）。
+		logger.Error("初始化数据库服务失败（SQLite 功能将不可用）", zap.Error(err))
+		dbSvc = nil
+	}
 
-			// --- 依赖注入 (DI) ---
-		// --- 依赖注入 (DI) ---
-				// 1. Repository 层
-				watchlistRepo := repositories.NewSQLiteWatchlistRepository(dbSvc.GetDB())
-				alertRepo := repositories.NewSQLiteAlertRepository(dbSvc.GetDB())
-				positionRepo := repositories.NewSQLitePositionRepository(dbSvc.GetDB())
-				configRepo := repositories.NewSQLiteConfigRepository(dbSvc.GetDB())
-	
-				// 2. Service 层
-				watchlistSvc := services.NewWatchlistService(watchlistRepo)
-				alertSvc := services.NewAlertService(alertRepo)
-				positionSvc := services.NewPositionService(positionRepo)
-				configSvc := services.NewConfigService(configRepo)
-	
-				// 3. Controller 层 (Wails 绑定)
-				watchlistCtrl := controllers.NewWatchlistController(watchlistSvc)
-				alertCtrl := controllers.NewAlertController(alertSvc)
-				positionCtrl := controllers.NewPositionController(positionSvc)
-				configCtrl := controllers.NewConfigController(configSvc)
+	// StockService 一定要创建，并在有 DB 时注入（否则 SyncStockData 会报“数据库服务未初始化”）。
+	stockSvc := services.NewStockService()
+	if dbSvc != nil {
+		stockSvc.SetDBService(dbSvc)
+	}
 
-			return &App{
-				stockService:     services.NewStockService(),
-				aiService:        nil,
-				dbService:        dbSvc, // 存储 DBService
-				
-		// Controllers
-					WatchlistController: watchlistCtrl,
-					AlertController: alertCtrl,
-					PositionController: positionCtrl,
-					ConfigController: configCtrl,
-					
-					// Services (for internal use)
-					watchlistService: watchlistSvc,
-					alertStorage:     alertSvc,
-					positionStorage:  positionSvc,
-					configService: configSvc,
-				alertConfig: models.AlertConfig{
-				Sensitivity: 0.005, // 默认 0.5%
-				Cooldown:    1,     // 默认 1 小时
+	// 如果数据库不可用，相关 controller/service 置空，避免启动阶段 panic。
+	if dbSvc == nil {
+		return &App{
+			stockService: stockSvc,
+			aiService:    nil,
+			dbService:    nil,
+			alertConfig: models.AlertConfig{
+				Sensitivity: 0.005,
+				Cooldown:    1,
 				Enabled:     true,
 			},
 		}
+	}
+
+	// --- 依赖注入 (DI) ---
+	// 1. Repository 层
+	watchlistRepo := repositories.NewSQLiteWatchlistRepository(dbSvc.GetDB())
+	alertRepo := repositories.NewSQLiteAlertRepository(dbSvc.GetDB())
+	positionRepo := repositories.NewSQLitePositionRepository(dbSvc.GetDB())
+	configRepo := repositories.NewSQLiteConfigRepository(dbSvc.GetDB())
+
+	// 2. Service 层
+	watchlistSvc := services.NewWatchlistService(watchlistRepo)
+	alertSvc := services.NewAlertService(alertRepo)
+	positionSvc := services.NewPositionService(positionRepo)
+	configSvc := services.NewConfigService(configRepo)
+
+	// 3. Controller 层 (Wails 绑定)
+	watchlistCtrl := controllers.NewWatchlistController(watchlistSvc)
+	alertCtrl := controllers.NewAlertController(alertSvc)
+	positionCtrl := controllers.NewPositionController(positionSvc)
+	configCtrl := controllers.NewConfigController(configSvc)
+
+	return &App{
+		stockService: stockSvc,
+		aiService:    nil,
+		dbService:    dbSvc, // 存储 DBService
+
+		// Controllers
+		WatchlistController: watchlistCtrl,
+		AlertController:     alertCtrl,
+		PositionController:  positionCtrl,
+		ConfigController:    configCtrl,
+
+		// Services (for internal use)
+		watchlistService: watchlistSvc,
+		alertStorage:     alertSvc,
+		positionStorage:  positionSvc,
+		configService:    configSvc,
+		alertConfig: models.AlertConfig{
+			Sensitivity: 0.005, // 默认 0.5%
+			Cooldown:    1,     // 默认 1 小时
+			Enabled:     true,
+		},
+	}
 }
 
-	// startup 在应用程序启动时调用
-	func (a *App) startup(ctx context.Context) {
-		a.ctx = ctx
-		
-		// 注册需要上下文的服务的 Startup 方法
-		a.stockService.Startup(ctx)
-		
-		// 迁移旧的 AI 配置
+// startup 在应用程序启动时调用
+func (a *App) startup(ctx context.Context) {
+	a.ctx = ctx
+
+	// 注册需要上下文的服务的 Startup 方法
+	a.stockService.Startup(ctx)
+
+	// 迁移旧的 AI 配置（数据库不可用时 configService 为空，需要安全跳过）
+	if a.configService != nil {
 		if err := a.configService.MigrateAIConfigFromYAML(); err != nil {
 			logger.Error("执行 YAML 配置迁移失败", zap.Error(err))
 		}
-		
-		a.initAIService()
-	
+	} else {
+		logger.Warn("跳过 YAML 配置迁移：ConfigService 未初始化（可能数据库不可用）")
+	}
+
+	if err := a.initAIService(); err != nil {
+		// initAIService 内部会设置 a.aiInitErr，这里额外打日志方便定位
+		logger.Warn("AI 服务初始化未完成", zap.Error(err))
+	}
+
 	// 加载持久化的预警订阅
 	if a.alertStorage != nil {
 		alerts, err := a.alertStorage.LoadActiveAlerts()
@@ -122,9 +150,14 @@ type App struct {
 			logger.Info("成功加载持久化预警订阅", zap.Int("count", len(alerts)))
 		}
 	}
-	
-	go a.startAlertMonitor()
-	go a.startPositionMonitor()
+
+	// 数据库不可用时，这两个监控不启动（它们依赖 alertStorage/positionStorage）
+	if a.alertStorage != nil {
+		go a.startAlertMonitor()
+	}
+	if a.positionStorage != nil {
+		go a.startPositionMonitor()
+	}
 }
 
 // startPositionMonitor 启动持仓逻辑监控引擎
@@ -144,6 +177,9 @@ func (a *App) startPositionMonitor() {
 
 // checkPositionLogics 校验所有活跃持仓的建仓逻辑
 func (a *App) checkPositionLogics() {
+	if a.positionStorage == nil {
+		return
+	}
 	positions, err := a.positionStorage.GetPositions()
 	if err != nil || len(positions) == 0 {
 		return
@@ -169,7 +205,7 @@ func (a *App) checkPositionLogics() {
 		a.updateTrailingStop(pos, stock.Price)
 
 		violatedReasons := make([]string, 0)
-		
+
 		// 3. 校验止损位 (硬性逻辑)
 		if stock.Price < pos.Strategy.StopLossPrice {
 			violatedReasons = append(violatedReasons, fmt.Sprintf("股价(%.2f)已跌破止损位(%.2f)", stock.Price, pos.Strategy.StopLossPrice))
@@ -198,9 +234,9 @@ func (a *App) checkPositionLogics() {
 				"reasons": violatedReasons,
 				"price":   stock.Price,
 			})
-			
-			logger.Warn("持仓逻辑失效预警", 
-				zap.String("code", pos.StockCode), 
+
+			logger.Warn("持仓逻辑失效预警",
+				zap.String("code", pos.StockCode),
 				zap.Strings("reasons", violatedReasons))
 		}
 	}
@@ -216,10 +252,10 @@ func (a *App) updateTrailingStop(pos *models.Position, currentPrice float64) {
 
 	// 计算当前盈利比例
 	profitRate := (currentPrice - pos.EntryPrice) / pos.EntryPrice
-	
+
 	// 动态调整止损位 (参数化移动止损)
 	newStopLoss := pos.Strategy.StopLossPrice
-	
+
 	// 只有当盈利超过触发阈值时才启动
 	if profitRate > config.ActivationThreshold {
 		// 使用配置的回撤比例计算新止损位
@@ -244,10 +280,10 @@ func (a *App) updateTrailingStop(pos *models.Position, currentPrice float64) {
 			"newStop": newStopLoss,
 			"price":   currentPrice,
 		})
-		
-		logger.Info("移动止损位上移", 
-			zap.String("code", pos.StockCode), 
-			zap.Float64("old", oldStop), 
+
+		logger.Info("移动止损位上移",
+			zap.String("code", pos.StockCode),
+			zap.Float64("old", oldStop),
 			zap.Float64("new", newStopLoss))
 	}
 }
@@ -304,19 +340,19 @@ func (a *App) checkAlerts() {
 
 			// 触发告警
 			alert.LastTriggered = time.Now()
-			
+
 			// 发送 Wails 事件
 			runtime.EventsEmit(a.ctx, "price_alert", map[string]interface{}{
-				"code":  alert.StockCode,
-				"name":  alert.StockName,
-				"price": stock.Price,
-				"type":  alert.Type,
+				"code":   alert.StockCode,
+				"name":   alert.StockName,
+				"price":  stock.Price,
+				"type":   alert.Type,
 				"target": alert.Price,
 			})
 
 			// 记录到历史
 			if a.alertStorage != nil {
-				a.alertStorage.SaveAlert(alert, fmt.Sprintf("股价已%s预警位 %.2f", map[string]string{"above":"突破","below":"跌破"}[alert.Type], alert.Price))
+				a.alertStorage.SaveAlert(alert, fmt.Sprintf("股价已%s预警位 %.2f", map[string]string{"above": "突破", "below": "跌破"}[alert.Type], alert.Price))
 			}
 		}
 	}
@@ -347,7 +383,7 @@ func (a *App) RemoveAlert(stockCode string, alertType string, price float64) err
 	if err != nil {
 		return err
 	}
-	
+
 	newAlerts := make([]*models.PriceAlert, 0)
 	for _, alert := range alerts {
 		if alert.StockCode != stockCode || alert.Type != alertType || alert.Price != price {
@@ -376,6 +412,7 @@ func (a *App) GetAlertConfig() (models.AlertConfig, error) {
 func (a *App) SetAlertsFromAI(code string, name string, drawings []models.TechnicalDrawing) {
 	a.AlertController.SetAlertsFromAI(code, name, drawings)
 }
+
 // --- Alert 转发器 结束 ---
 
 // MathAbs 辅助函数
@@ -392,9 +429,9 @@ func (a *App) initAIService() error {
 		a.aiInitErr = fmt.Errorf("数据库服务未就绪，无法加载 AI 配置")
 		return a.aiInitErr
 	}
-	
+
 	start := time.Now()
-		configSvc := services.NewConfigService(repositories.NewSQLiteConfigRepository(a.dbService.GetDB()))
+	configSvc := services.NewConfigService(repositories.NewSQLiteConfigRepository(a.dbService.GetDB()))
 	cfg, err := configSvc.LoadAIConfig()
 	if err != nil {
 		a.aiInitErr = err
@@ -502,6 +539,7 @@ func (a *App) GetPositions() (map[string]*models.Position, error) {
 func (a *App) RemovePosition(code string) error {
 	return a.PositionController.RemovePosition(code)
 }
+
 // --- Position 转发器 结束 ---
 
 func newTraceID() string {
@@ -699,6 +737,7 @@ func (a *App) RemoveFromWatchlist(code string) error {
 func (a *App) GetWatchlist() ([]*models.StockData, error) {
 	return a.WatchlistController.GetWatchlist()
 }
+
 // --- Watchlist 转发器 结束 ---
 
 // SearchStock 搜索股票
@@ -754,6 +793,7 @@ func (a *App) GetGlobalStrategyConfig() (services.GlobalStrategyConfig, error) {
 func (a *App) UpdateGlobalStrategyConfig(config services.GlobalStrategyConfig) error {
 	return a.ConfigController.UpdateGlobalStrategyConfig(config)
 }
+
 // --- Config 转发器 结束 ---
 
 // shutdown 在应用程序退出时调用
@@ -763,7 +803,6 @@ func (a *App) shutdown(ctx context.Context) {
 		a.dbService.Close()
 	}
 }
-
 
 // --- 数据同步功能 开始 ---
 
@@ -788,3 +827,212 @@ func (a *App) ClearStockCache(code string) error {
 }
 
 // --- 数据同步功能 结束 ---
+
+// --- 回测功能 开始 ---
+// BacktestSimpleMA 使用简单双均线策略（SMA short/long 金叉做多，死叉清仓）进行回测
+// 参数：
+// - code: 股票代码（6位，或 SH/SZ 前缀均可，内部统一处理）
+// - shortPeriod: 短均线窗口，如 5/10
+// - longPeriod: 长均线窗口，如 20/60
+// - initialCapital: 初始资金
+// - startDate/endDate: 回测区间（YYYY-MM-DD），为空则不裁剪
+// 返回：BacktestResult，包含交易记录、净值曲线、收益指标等
+func (a *App) BacktestSimpleMA(code string, shortPeriod int, longPeriod int, initialCapital float64, startDate string, endDate string) (*models.BacktestResult, error) {
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return nil, fmt.Errorf("股票代码不能为空")
+	}
+	if shortPeriod <= 0 || longPeriod <= 0 || shortPeriod >= longPeriod {
+		return nil, fmt.Errorf("参数错误: shortPeriod 必须 > 0 且 < longPeriod")
+	}
+	if initialCapital <= 0 {
+		return nil, fmt.Errorf("初始资金必须大于 0")
+	}
+
+	// 获取尽量多的历史数据，后续按区间过滤
+	klines, err := a.stockService.GetKLineData(code, 5000, "daily")
+	if err != nil {
+		return nil, fmt.Errorf("获取K线失败: %w", err)
+	}
+	if len(klines) == 0 {
+		return nil, fmt.Errorf("无K线数据")
+	}
+
+	// 过滤区间
+	var dates []string
+	var closes []float64
+	for _, k := range klines {
+		if (startDate == "" || k.Time >= startDate) && (endDate == "" || k.Time <= endDate) {
+			dates = append(dates, k.Time)
+			closes = append(closes, k.Close)
+		}
+	}
+	if len(closes) == 0 {
+		return nil, fmt.Errorf("指定日期范围内没有数据")
+	}
+
+	// 计算 SMA
+	sma := func(src []float64, win int) []float64 {
+		res := make([]float64, len(src))
+		if win <= 0 {
+			return res
+		}
+		var sum float64
+		for i := 0; i < len(src); i++ {
+			sum += src[i]
+			if i >= win {
+				sum -= src[i-win]
+			}
+			if i >= win-1 {
+				res[i] = sum / float64(win)
+			} else {
+				res[i] = 0 // 还未形成
+			}
+		}
+		return res
+	}
+	shortMA := sma(closes, shortPeriod)
+	longMA := sma(closes, longPeriod)
+
+	// 回测循环
+	cash := initialCapital
+	units := 0.0
+	inPosition := false
+	entryPrice := 0.0
+	trades := make([]models.TradeRecord, 0)
+	equityCurve := make([]float64, 0, len(closes))
+
+	for i := 0; i < len(closes); i++ {
+		price := closes[i]
+		// 只有当两条均线都已形成后才能产生信号
+		if i > 0 && shortMA[i-1] > 0 && longMA[i-1] > 0 && shortMA[i] > 0 && longMA[i] > 0 {
+			prevCrossUp := shortMA[i-1] <= longMA[i-1] && shortMA[i] > longMA[i]
+			prevCrossDown := shortMA[i-1] >= longMA[i-1] && shortMA[i] < longMA[i]
+
+			if prevCrossUp && !inPosition {
+				// 全仓买入
+				if price > 0 {
+					units = cash / price
+					cash = 0
+					inPosition = true
+					entryPrice = price
+					trades = append(trades, models.TradeRecord{
+						Time: dates[i], Type: "BUY", Price: price, Volume: 0, Amount: units * price,
+					})
+				}
+			} else if prevCrossDown && inPosition {
+				// 全部卖出
+				cash = cash + units*price
+				profit := (price - entryPrice) * units
+				trades = append(trades, models.TradeRecord{
+					Time: dates[i], Type: "SELL", Price: price, Volume: 0, Amount: units * price, Profit: profit,
+				})
+				units = 0
+				inPosition = false
+			}
+		}
+
+		// 记录每日净值
+		equity := cash + units*price
+		equityCurve = append(equityCurve, equity)
+	}
+
+	// 如果最后仍持仓，按最后一天价格平仓
+	if inPosition {
+		lastPrice := closes[len(closes)-1]
+		cash = cash + units*lastPrice
+		profit := (lastPrice - entryPrice) * units
+		trades = append(trades, models.TradeRecord{
+			Time: dates[len(dates)-1], Type: "SELL", Price: lastPrice, Volume: 0, Amount: units * lastPrice, Profit: profit,
+		})
+		units = 0
+		inPosition = false
+	}
+
+	final := cash
+	ret := final/initialCapital - 1
+
+	// 年化收益（按交易日 252 估算）
+	annualized := 0.0
+	if len(equityCurve) > 0 {
+		days := len(equityCurve)
+		if days > 0 {
+			annualized = math.Pow(final/initialCapital, 252.0/float64(days)) - 1
+		}
+	}
+
+	// 最大回撤
+	peak := equityCurve[0]
+	maxDD := 0.0
+	for _, v := range equityCurve {
+		if v > peak {
+			peak = v
+		}
+		dd := 0.0
+		if peak > 0 {
+			dd = (peak - v) / peak
+		}
+		if dd > maxDD {
+			maxDD = dd
+		}
+	}
+
+	// 胜率
+	wins := 0
+	finishedTrades := 0
+	for _, t := range trades {
+		if t.Type == "SELL" {
+			finishedTrades++
+			if t.Profit > 0 {
+				wins++
+			}
+		}
+	}
+	winRate := 0.0
+	if finishedTrades > 0 {
+		winRate = float64(wins) / float64(finishedTrades)
+	}
+
+	res := &models.BacktestResult{
+		StrategyName: fmt.Sprintf("SMA(%d,%d)", shortPeriod, longPeriod),
+		StockCode:    code,
+		StartDate: func() string {
+			if len(dates) > 0 {
+				return dates[0]
+			}
+			return startDate
+		}(),
+		EndDate: func() string {
+			if len(dates) > 0 {
+				return dates[len(dates)-1]
+			}
+			return endDate
+		}(),
+		InitialCapital:   initialCapital,
+		FinalCapital:     final,
+		TotalReturn:      ret,
+		AnnualizedReturn: annualized,
+		MaxDrawdown:      maxDD,
+		WinRate:          winRate,
+		TradeCount:       finishedTrades,
+		Trades:           trades,
+		EquityCurve:      equityCurve,
+		EquityDates:      dates,
+	}
+
+	logger.Info("回测完成",
+		zap.String("module", "app.backtest"),
+		zap.String("code", code),
+		zap.Int("short", shortPeriod),
+		zap.Int("long", longPeriod),
+		zap.Float64("init", initialCapital),
+		zap.Float64("final", final),
+		zap.Float64("ret", ret),
+		zap.Float64("maxDD", maxDD),
+		zap.Float64("winRate", winRate),
+	)
+
+	return res, nil
+}
+
+// --- 回测功能 结束 ---

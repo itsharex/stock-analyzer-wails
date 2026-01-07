@@ -1,6 +1,9 @@
 package services
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
 
 func TestNormalizeDashscopeBaseURL(t *testing.T) {
 	t.Parallel()
@@ -55,4 +58,6 @@ func TestNormalizeDashscopeBaseURL(t *testing.T) {
 	}
 }
 
-
+func TestGetAppDataDir(t *testing.T) {
+	fmt.Println(GetAppDataDir())
+}
