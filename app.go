@@ -1469,3 +1469,29 @@ func (a *App) UpdateStrategyBacktestResult(id int64, backtestResult map[string]i
 	return a.StrategyController.UpdateStrategyBacktestResult(id, backtestResult)
 }
 
+// ============ 市场股票管理 API ============
+
+// SyncAllStocks 同步所有市场股票
+func (a *App) SyncAllStocks() (interface{}, error) {
+	if a.StockMarketController == nil {
+		return nil, fmt.Errorf("市场股票控制器未初始化")
+	}
+	return a.StockMarketController.SyncAllStocks()
+}
+
+// GetStocksList 获取股票列表
+func (a *App) GetStocksList(page int, pageSize int, search string) (interface{}, error) {
+	if a.StockMarketController == nil {
+		return nil, fmt.Errorf("市场股票控制器未初始化")
+	}
+	return a.StockMarketController.GetStocksList(page, pageSize, search)
+}
+
+// GetSyncStats 获取同步统计信息
+func (a *App) GetSyncStats() (interface{}, error) {
+	if a.StockMarketController == nil {
+		return nil, fmt.Errorf("市场股票控制器未初始化")
+	}
+	return a.StockMarketController.GetSyncStats()
+}
+
