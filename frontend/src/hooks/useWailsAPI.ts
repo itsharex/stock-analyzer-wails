@@ -189,8 +189,6 @@ const getIntradayData = useCallback(async (code: string): Promise<IntradayRespon
       console.log('result 的类型:', typeof result)
       console.log('result 是否为 null:', result === null)
       console.log('result 是否为 undefined:', result === undefined)
-      console.log('result 是否为数组:', Array.isArray(result))
-      console.log('result 的构造函数:', result?.constructor?.name)
 
       // 检查 result 是否为 null 或 undefined
       if (result == null) {
@@ -198,23 +196,18 @@ const getIntradayData = useCallback(async (code: string): Promise<IntradayRespon
         throw new Error('GetSyncedKLineData 返回了 null 或 undefined，请检查后端实现')
       }
 
-      // 验证返回值是否是数组
-      if (!Array.isArray(result)) {
-        console.error('GetSyncedKLineData 返回值不是数组:', result)
-        throw new Error('GetSyncedKLineData 返回数据格式错误，请检查后端实现')
-      }
+      // 新的返回格式是对象 { data: [...], total: number }
+      const data = result.data || []
+      const total = result.total || 0
 
-      // 解构返回值
-      const [data, total] = result
-
-      console.log('解构后的 data:', data)
-      console.log('解构后的 total:', total)
+      console.log('解析后的 data:', data)
+      console.log('解析后的 total:', total)
       console.log('data 的类型:', typeof data)
       console.log('data 是否为数组:', Array.isArray(data))
 
       // 验证数据有效性
       if (!Array.isArray(data)) {
-        console.error('返回的数据字段不是数组:', data)
+        console.error('返回的 data 字段不是数组:', data)
         throw new Error('返回的数据格式错误，data 字段应该是数组')
       }
 

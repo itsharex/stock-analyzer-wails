@@ -80,7 +80,7 @@ declare global {
           GetSyncHistoryCount(): Promise<number>;
           ClearAllSyncHistory(): Promise<void>;
           // 获取已同步的K线数据
-          GetSyncedKLineData(code: string, startDate: string, endDate: string, page: number, pageSize: number): Promise<[any[], number]>;
+          GetSyncedKLineData(code: string, startDate: string, endDate: string, page: number, pageSize: number): Promise<{ data: any[], total: number }>;
         };
       };
     };

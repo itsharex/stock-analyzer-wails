@@ -1111,8 +1111,14 @@ func (a *App) ClearAllSyncHistory() error {
 	return a.SyncHistoryController.ClearAllSyncHistory()
 }
 
+// GetSyncedKLineDataResponse GetSyncedKLineData 的响应结构
+type GetSyncedKLineDataResponse struct {
+	Data  []map[string]interface{} `json:"data"`
+	Total int                      `json:"total"`
+}
+
 // GetSyncedKLineData 获取指定股票已同步的K线数据（支持分页和日期筛选）
-func (a *App) GetSyncedKLineData(code string, startDate string, endDate string, page int, pageSize int) ([]map[string]interface{}, int, error) {
+func (a *App) GetSyncedKLineData(code string, startDate string, endDate string, page int, pageSize int) GetSyncedKLineDataResponse {
 	// 打印调用参数
 	logger.Info("GetSyncedKLineData 被调用",
 		zap.String("code", code),
@@ -1122,15 +1128,26 @@ func (a *App) GetSyncedKLineData(code string, startDate string, endDate string, 
 		zap.Int("pageSize", pageSize),
 	)
 
+	// 初始化返回值
+	response := GetSyncedKLineDataResponse{
+		Data:  []map[string]interface{}{},
+		Total: 0,
+	}
+
 	// 获取数据库服务实例
 	db := a.dbService
 	if db == nil {
 		logger.Error("数据库服务未初始化")
-		return nil, 0, fmt.Errorf("数据库服务未初始化")
+		return response
 	}
 
 	// 调用数据库服务查询K线数据
 	data, total, err := db.GetKLineDataWithPagination(code, startDate, endDate, page, pageSize)
+
+	if err != nil {
+		logger.Error("获取K线数据失败", zap.Error(err))
+		return response
+	}
 
 	// 确保 data 不是 nil
 	if data == nil {
@@ -1142,7 +1159,6 @@ func (a *App) GetSyncedKLineData(code string, startDate string, endDate string, 
 	logger.Info("GetSyncedKLineData 返回结果",
 		zap.Int("dataLength", len(data)),
 		zap.Int("total", total),
-		zap.Error(err),
 	)
 
 	// 如果有数据，打印第一条数据用于调试
@@ -1150,5 +1166,7 @@ func (a *App) GetSyncedKLineData(code string, startDate string, endDate string, 
 		logger.Debug("第一条K线数据", zap.Any("firstItem", data[0]))
 	}
 
-	return data, total, err
+	response.Data = data
+	response.Total = total
+	return response
 }
