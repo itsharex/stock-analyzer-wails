@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import BacktestPanel from '../components/BacktestPanel';
+import BacktestPanel from '../components/BacktestPanelEnhanced';
 import { Search } from 'lucide-react';
 
 const BacktestPage: React.FC = () => {
