@@ -868,45 +868,9 @@ func (a *App) GetDataSyncStats() (*models.DataSyncStats, error) {
 
 // BatchSyncStockData 批量同步多个股票的历史数据
 func (a *App) BatchSyncStockData(codes []string, startDate string, endDate string) error {
-	startTime := time.Now()
-
-	// 调用 stockService 批量同步
-	err := a.stockService.BatchSyncStockData(codes, startDate, endDate)
-
-	// 计算耗时
-	duration := int(time.Since(startTime).Seconds())
-
-	// 构建同步历史记录
-	history := models.SyncHistory{
-		StockCode:      "BATCH",
-		StockName:      fmt.Sprintf("批量同步(%d只股票)", len(codes)),
-		SyncType:       "batch",
-		StartDate:      startDate,
-		EndDate:        endDate,
-		Status:         "success",
-		RecordsAdded:   0, // 批量同步暂不统计
-		RecordsUpdated: 0, // 批量同步暂不统计
-		Duration:       duration,
-		CreatedAt:      time.Now(),
-	}
-
-	if err != nil {
-		history.Status = "failed"
-		history.ErrorMsg = err.Error()
-	}
-
-	// 异步保存历史记录
-	if a.syncHistoryCtrl != nil {
-		go func() {
-			if saveErr := a.syncHistoryCtrl.AddSyncHistory(history); saveErr != nil {
-				logger.Error("保存批量同步历史记录失败",
-					zap.Error(saveErr),
-				)
-			}
-		}()
-	}
-
-	return err
+	// 直接调用 stockService 批量同步
+	// 每个股票的同步历史记录会在 SyncStockData 中单独记录
+	return a.stockService.BatchSyncStockData(codes, startDate, endDate)
 }
 
 // ClearStockCache 清除指定股票的本地缓存数据
