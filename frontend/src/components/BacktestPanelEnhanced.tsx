@@ -421,17 +421,17 @@ const BacktestPanel: React.FC<BacktestPanelProps> = ({ stockCode }) => {
               </thead>
               <tbody className="bg-gray-700 divide-y divide-gray-600">
                 {backtestResult.trades.map((trade, index) => (
-                  <tr key={index} className={trade.type === 'buy' ? 'bg-green-900/20' : 'bg-red-900/20'}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">{trade.date}</td>
+                  <tr key={index} className={trade.type === 'BUY' ? 'bg-green-900/20' : 'bg-red-900/20'}>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">{trade.time}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
                       <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        trade.type === 'buy' ? 'bg-green-900/50 text-green-300' : 'bg-red-900/50 text-red-300'
+                        trade.type === 'BUY' ? 'bg-green-900/50 text-green-300' : 'bg-red-900/50 text-red-300'
                       }`}>
-                        {trade.type === 'buy' ? '买入' : '卖出'}
+                        {trade.type === 'BUY' ? '买入' : '卖出'}
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">{trade.price.toFixed(2)}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">{trade.quantity}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">{trade.volume}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">{trade.amount.toFixed(2)}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">{trade.commission.toFixed(2)}</td>
                   </tr>
