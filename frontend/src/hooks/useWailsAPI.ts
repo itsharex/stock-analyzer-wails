@@ -176,6 +176,10 @@ const getIntradayData = useCallback(async (code: string): Promise<IntradayRespon
 
   const getSyncedKLineData = useCallback(async (code: string, startDate: string, endDate: string, page: number, pageSize: number): Promise<{ data: any[], total: number }> => {
     // @ts-ignore
+    if (!window.go?.main?.App?.GetSyncedKLineData) {
+      throw new Error('GetSyncedKLineData 方法不可用，请确保已运行 wails dev 重新生成绑定文件')
+    }
+    // @ts-ignore
     const [data, total] = await window.go.main.App.GetSyncedKLineData(code, startDate, endDate, page, pageSize)
     return { data, total }
   }, [])
