@@ -66,10 +66,10 @@ type StockDataForAlert struct {
 	PreClosePrice      float64 `json:"preClosePrice"`
 	PriceChangePercent float64 `json:"priceChangePercent"` // 涨跌幅百分比
 	Volume             int64   `json:"volume"`
-	VolumeRatio        float64 `json:"volumeRatio"` // 量比
-	MA5                float64 `json:"ma5"`         // 5日均线
-	MA10               float64 `json:"ma10"`        // 10日均线
-	MA20               float64 `json:"ma20"`        // 20日均线
+	VolumeRatio        float64 `json:"volumeRatio"`    // 量比
+	MA5                float64 `json:"ma5"`            // 5日均线
+	MA10               float64 `json:"ma10"`           // 10日均线
+	MA20               float64 `json:"ma20"`           // 20日均线
 	HistoricalHigh     float64 `json:"historicalHigh"` // 历史最高价
 	HistoricalLow      float64 `json:"historicalLow"`  // 历史最低价
 }
@@ -294,7 +294,7 @@ func (s *PriceAlertService) evaluateConditions(conditions *repositories.PriceAle
 		return false, ""
 	} else {
 		// AND逻辑（默认）：所有条件都必须满足
-		for i, result := range results {
+		for _, result := range results {
 			if !result {
 				return false, ""
 			}
@@ -409,6 +409,7 @@ func (s *PriceAlertService) buildTriggerMessage(conditions *repositories.PriceAl
 	default:
 		return "预警条件已触发"
 	}
+	return ""
 }
 
 // TriggerAlert 触发预警
@@ -466,7 +467,7 @@ func (s *PriceAlertService) TriggerAlert(alert *repositories.PriceThresholdAlert
 			zap.Int64("alert_id", alert.ID),
 			zap.String("stock_code", alert.StockCode),
 		)
-	// "continue" 不做任何操作，预警继续监控
+		// "continue" 不做任何操作，预警继续监控
 	}
 
 	logger.Info("价格预警已触发",

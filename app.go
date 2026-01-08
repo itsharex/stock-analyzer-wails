@@ -23,33 +23,34 @@ import (
 
 // App 应用程序结构
 type App struct {
-	ctx             context.Context
-	stockService    *services.StockService
-	aiService       *services.AIService
-	alertStorage    *services.AlertService
-	positionStorage *services.PositionService
-	configService   *services.ConfigService // 新增 ConfigService
-	dbService       *services.DBService     // 新增 DBService
-	syncHistoryCtrl *controllers.SyncHistoryController // 同步历史控制器
-	aiInitErr       error
-	alerts          []*models.PriceAlert
-	alertMutex      sync.Mutex
-	alertConfig     models.AlertConfig
-	klineSyncService *services.KLineSyncService // K线同步服务
-	priceAlertMonitor *services.AlertMonitor // 价格预警监控引擎
+	ctx               context.Context
+	stockService      *services.StockService
+	aiService         *services.AIService
+	alertStorage      *services.AlertService
+	positionStorage   *services.PositionService
+	configService     *services.ConfigService            // 新增 ConfigService
+	dbService         *services.DBService                // 新增 DBService
+	syncHistoryCtrl   *controllers.SyncHistoryController // 同步历史控制器
+	aiInitErr         error
+	alerts            []*models.PriceAlert
+	alertMutex        sync.Mutex
+	alertConfigMutex  sync.RWMutex
+	alertConfig       models.AlertConfig
+	klineSyncService  *services.KLineSyncService // K线同步服务
+	priceAlertMonitor *services.AlertMonitor     // 价格预警监控引擎
 
 	// Controllers (Wails Bindings)
-	WatchlistController      *controllers.WatchlistController
-	AlertController          *controllers.AlertController
-	PositionController       *controllers.PositionController
-	ConfigController         *controllers.ConfigController
-	SyncHistoryController    *controllers.SyncHistoryController
-	StrategyController       *controllers.StrategyController // 策略控制器
-	StockMarketController    *controllers.StockMarketController // 市场股票控制器
-	PriceAlertController     *controllers.PriceAlertController // 价格预警控制器
+	WatchlistController   *controllers.WatchlistController
+	AlertController       *controllers.AlertController
+	PositionController    *controllers.PositionController
+	ConfigController      *controllers.ConfigController
+	SyncHistoryController *controllers.SyncHistoryController
+	StrategyController    *controllers.StrategyController    // 策略控制器
+	StockMarketController *controllers.StockMarketController // 市场股票控制器
+	PriceAlertController  *controllers.PriceAlertController  // 价格预警控制器
 
 	// Services (for internal use)
-	watchlistService *services.WatchlistService // 保持，用于内部逻辑调用
+	watchlistService  *services.WatchlistService  // 保持，用于内部逻辑调用
 	priceAlertService *services.PriceAlertService // 价格预警服务（内部使用）
 }
 
@@ -60,7 +61,11 @@ func NewApp() *App {
 	if err != nil {
 		// 数据库初始化失败会直接导致：自选股/预警/持仓/配置等 SQLite 相关功能不可用。
 		// 这里不再继续使用 dbSvc.GetDB() 做 DI（否则 dbSvc 可能为 nil 导致 panic）。
-		logger.Error("初始化数据库服务失败（SQLite 功能将不可用）", zap.Error(err))
+		logger.Error("初始化数据库服务失败（SQLite 功能将不可用）",
+			zap.String("module", "app"),
+			zap.String("op", "NewApp"),
+			zap.Error(err),
+		)
 		dbSvc = nil
 	}
 
@@ -72,6 +77,10 @@ func NewApp() *App {
 
 	// 如果数据库不可用，相关 controller/service 置空，避免启动阶段 panic。
 	if dbSvc == nil {
+		logger.Warn("SQLite 功能已降级：依赖数据库的模块将不可用（包括价格预警/自选股/配置/策略等）",
+			zap.String("module", "app"),
+			zap.String("op", "NewApp"),
+		)
 		return &App{
 			stockService: stockSvc,
 			aiService:    nil,
@@ -99,7 +108,7 @@ func NewApp() *App {
 	alertSvc := services.NewAlertService(alertRepo)
 	positionSvc := services.NewPositionService(positionRepo)
 	configSvc := services.NewConfigService(configRepo)
-	strategySvc := services.NewStrategyService(strategySvc)
+	strategySvc := services.NewStrategyService(strategyRepo)
 	stockMarketSvc := services.NewStockMarketService(dbSvc)
 	priceAlertSvc := services.NewPriceAlertService(priceAlertRepo)
 
@@ -118,15 +127,25 @@ func NewApp() *App {
 	stockMarketCtrl := controllers.NewStockMarketController(stockMarketSvc)
 	priceAlertCtrl := controllers.NewPriceAlertController(priceAlertSvc)
 
+	logger.Info("SQLite 初始化成功，已创建控制器绑定",
+		zap.String("module", "app"),
+		zap.String("op", "NewApp"),
+		zap.String("dbPath", dbSvc.GetDBPath()),
+		zap.Bool("hasPriceAlertController", priceAlertCtrl != nil),
+		zap.Bool("hasAlertController", alertCtrl != nil),
+		zap.Bool("hasWatchlistController", watchlistCtrl != nil),
+		zap.Bool("hasConfigController", configCtrl != nil),
+	)
+
 	// 创建价格预警监控引擎（在 startup 中启动）
-	var alertMonitor *services.AlertMonitor
+	//var alertMonitor *services.AlertMonitor
 	// 注意：AlertMonitor 需要传入 context，所以在 startup 中创建
 
 	return &App{
-		stockService:       stockSvc,
-		aiService:          nil,
-		dbService:          dbSvc, // 存储 DBService
-		klineSyncService:   klineSyncSvc, // K线同步服务
+		stockService:     stockSvc,
+		aiService:        nil,
+		dbService:        dbSvc,        // 存储 DBService
+		klineSyncService: klineSyncSvc, // K线同步服务
 
 		// Controllers
 		WatchlistController:   watchlistCtrl,
@@ -136,15 +155,15 @@ func NewApp() *App {
 		SyncHistoryController: syncHistoryCtrl,
 		StrategyController:    strategyCtrl,
 		StockMarketController: stockMarketCtrl, // 市场股票控制器
-		PriceAlertController:  priceAlertCtrl,   // 价格预警控制器
+		PriceAlertController:  priceAlertCtrl,  // 价格预警控制器
 
 		// Services (for internal use)
-		watchlistService:   watchlistSvc,
-		alertStorage:       alertSvc,
-		positionStorage:    positionSvc,
-		configService:      configSvc,
-		syncHistoryCtrl:    syncHistoryCtrl,   // 内部引用
-		priceAlertService:  priceAlertSvc,    // 价格预警服务
+		watchlistService:  watchlistSvc,
+		alertStorage:      alertSvc,
+		positionStorage:   positionSvc,
+		configService:     configSvc,
+		syncHistoryCtrl:   syncHistoryCtrl, // 内部引用
+		priceAlertService: priceAlertSvc,   // 价格预警服务
 		alertConfig: models.AlertConfig{
 			Sensitivity: 0.005, // 默认 0.5%
 			Cooldown:    1,     // 默认 1 小时
@@ -354,6 +373,14 @@ func (a *App) startAlertMonitor() {
 
 // checkAlerts 检查所有激活的预警
 func (a *App) checkAlerts() {
+	// 全局预警关闭时直接跳过，避免无意义轮询/触发
+	a.alertConfigMutex.RLock()
+	cfg := a.alertConfig
+	a.alertConfigMutex.RUnlock()
+	if !cfg.Enabled {
+		return
+	}
+
 	a.alertMutex.Lock()
 	activeAlerts := make([]*models.PriceAlert, 0)
 	for _, alert := range a.alerts {
@@ -383,7 +410,7 @@ func (a *App) checkAlerts() {
 
 		if triggered {
 			// 检查冷却时间
-			if time.Since(alert.LastTriggered) < time.Duration(a.alertConfig.Cooldown)*time.Hour {
+			if time.Since(alert.LastTriggered) < time.Duration(cfg.Cooldown)*time.Hour {
 				continue
 			}
 
@@ -449,12 +476,35 @@ func (a *App) GetAlertHistory(stockCode string, limit int) ([]map[string]interfa
 
 // UpdateAlertConfig 更新告警全局配置
 func (a *App) UpdateAlertConfig(config models.AlertConfig) error {
-	return a.AlertController.UpdateAlertConfig(config)
+	// 即使数据库不可用/AlertController 未初始化，也应允许更新全局配置（内存态）
+	a.alertConfigMutex.Lock()
+	a.alertConfig = config
+	a.alertConfigMutex.Unlock()
+
+	// 如果控制器可用，顺带同步到 service（未来可扩展为持久化）
+	if a.AlertController != nil {
+		return a.AlertController.UpdateAlertConfig(config)
+	}
+	return nil
 }
 
 // GetAlertConfig 获取告警全局配置
 func (a *App) GetAlertConfig() (models.AlertConfig, error) {
-	return a.AlertController.GetAlertConfig()
+	// 优先走 controller（若未来做了持久化），失败则回退到内存配置
+	if a.AlertController != nil {
+		cfg, err := a.AlertController.GetAlertConfig()
+		if err == nil {
+			a.alertConfigMutex.Lock()
+			a.alertConfig = cfg
+			a.alertConfigMutex.Unlock()
+			return cfg, nil
+		}
+	}
+
+	a.alertConfigMutex.RLock()
+	cfg := a.alertConfig
+	a.alertConfigMutex.RUnlock()
+	return cfg, nil
 }
 
 // SetAlertsFromAI 接收 AI 识别的支撑位和压力位并自动设置预警
@@ -463,6 +513,82 @@ func (a *App) SetAlertsFromAI(code string, name string, drawings []models.Techni
 }
 
 // --- Alert 转发器 结束 ---
+
+// --- PriceAlertController 转发器 ---
+// 注意：Wails 只会绑定传入 Bind 列表的结构体“方法”，不会把 App 的字段（如 PriceAlertController 指针）自动暴露给前端。
+// 因此前端应调用这些转发方法：window.go.main.App.PriceAlertGetAllAlerts() 等。
+
+func (a *App) PriceAlertGetAllAlerts() *controllers.GetAlertsResponse {
+	if a.PriceAlertController == nil {
+		return &controllers.GetAlertsResponse{Success: false, Message: "价格预警模块未初始化（PriceAlertController=nil）", Alerts: nil}
+	}
+	return a.PriceAlertController.GetAllAlerts()
+}
+
+func (a *App) PriceAlertGetActiveAlerts() *controllers.GetAlertsResponse {
+	if a.PriceAlertController == nil {
+		return &controllers.GetAlertsResponse{Success: false, Message: "价格预警模块未初始化（PriceAlertController=nil）", Alerts: nil}
+	}
+	return a.PriceAlertController.GetActiveAlerts()
+}
+
+func (a *App) PriceAlertGetAlertsByStockCode(stockCode string) *controllers.GetAlertsResponse {
+	if a.PriceAlertController == nil {
+		return &controllers.GetAlertsResponse{Success: false, Message: "价格预警模块未初始化（PriceAlertController=nil）", Alerts: nil}
+	}
+	return a.PriceAlertController.GetAlertsByStockCode(stockCode)
+}
+
+func (a *App) PriceAlertGetTriggerHistory(stockCode string, limit int) *controllers.GetTriggerHistoryResponse {
+	if a.PriceAlertController == nil {
+		return &controllers.GetTriggerHistoryResponse{Success: false, Message: "价格预警模块未初始化（PriceAlertController=nil）", Histories: nil}
+	}
+	return a.PriceAlertController.GetTriggerHistory(stockCode, limit)
+}
+
+func (a *App) PriceAlertGetAllTemplates() *controllers.GetTemplatesResponse {
+	if a.PriceAlertController == nil {
+		return &controllers.GetTemplatesResponse{Success: false, Message: "价格预警模块未初始化（PriceAlertController=nil）", Templates: nil}
+	}
+	return a.PriceAlertController.GetAllTemplates()
+}
+
+func (a *App) PriceAlertCreateAlert(jsonData string) *controllers.CreateAlertResponse {
+	if a.PriceAlertController == nil {
+		return &controllers.CreateAlertResponse{Success: false, Message: "价格预警模块未初始化（PriceAlertController=nil）"}
+	}
+	return a.PriceAlertController.CreateAlert(jsonData)
+}
+
+func (a *App) PriceAlertUpdateAlert(jsonData string) *controllers.CreateAlertResponse {
+	if a.PriceAlertController == nil {
+		return &controllers.CreateAlertResponse{Success: false, Message: "价格预警模块未初始化（PriceAlertController=nil）"}
+	}
+	return a.PriceAlertController.UpdateAlert(jsonData)
+}
+
+func (a *App) PriceAlertDeleteAlert(id int64) *controllers.CreateAlertResponse {
+	if a.PriceAlertController == nil {
+		return &controllers.CreateAlertResponse{Success: false, Message: "价格预警模块未初始化（PriceAlertController=nil）"}
+	}
+	return a.PriceAlertController.DeleteAlert(id)
+}
+
+func (a *App) PriceAlertToggleAlertStatus(id int64, isActive bool) *controllers.ToggleAlertStatusResponse {
+	if a.PriceAlertController == nil {
+		return &controllers.ToggleAlertStatusResponse{Success: false, Message: "价格预警模块未初始化（PriceAlertController=nil）"}
+	}
+	return a.PriceAlertController.ToggleAlertStatus(id, isActive)
+}
+
+func (a *App) PriceAlertCreateAlertFromTemplate(templateID, stockCode, stockName string, paramsJSON string) *controllers.CreateAlertFromTemplateResponse {
+	if a.PriceAlertController == nil {
+		return &controllers.CreateAlertFromTemplateResponse{Success: false, Message: "价格预警模块未初始化（PriceAlertController=nil）"}
+	}
+	return a.PriceAlertController.CreateAlertFromTemplate(templateID, stockCode, stockName, paramsJSON)
+}
+
+// --- PriceAlertController 转发器结束 ---
 
 // MathAbs 辅助函数
 func MathAbs(v float64) float64 {
@@ -1182,18 +1308,18 @@ func (a *App) BacktestMACD(code string, fastPeriod int, slowPeriod int, signalPe
 		if period <= 0 || len(src) == 0 {
 			return res
 		}
-		
+
 		// 第一个EMA值等于第一个收盘价
 		res[0] = src[0]
-		
+
 		// 计算平滑系数
 		multiplier := 2.0 / (float64(period) + 1.0)
-		
+
 		// 后续的EMA值
 		for i := 1; i < len(src); i++ {
-			res[i] = (src[i] - res[i-1]) * multiplier + res[i-1]
+			res[i] = (src[i]-res[i-1])*multiplier + res[i-1]
 		}
-		
+
 		return res
 	}
 
@@ -1203,14 +1329,14 @@ func (a *App) BacktestMACD(code string, fastPeriod int, slowPeriod int, signalPe
 	// BAR = (DIF - DEA) * 2
 	fastEMA := ema(closes, fastPeriod)
 	slowEMA := ema(closes, slowPeriod)
-	
+
 	dif := make([]float64, len(closes))
 	for i := 0; i < len(closes); i++ {
 		dif[i] = fastEMA[i] - slowEMA[i]
 	}
-	
+
 	dea := ema(dif, signalPeriod)
-	
+
 	bar := make([]float64, len(closes))
 	for i := 0; i < len(closes); i++ {
 		bar[i] = (dif[i] - dea[i]) * 2
@@ -1226,7 +1352,7 @@ func (a *App) BacktestMACD(code string, fastPeriod int, slowPeriod int, signalPe
 
 	for i := 1; i < len(closes); i++ {
 		price := closes[i]
-		
+
 		// 只有当DIF和DEA都已形成后才能产生信号
 		if dif[i-1] != 0 && dea[i-1] != 0 && dif[i] != 0 && dea[i] != 0 {
 			// 金叉：DIF上穿DEA（DIF从低于DEA变为高于DEA）
@@ -1554,4 +1680,3 @@ func (a *App) GetKLineSyncHistory(limit int) (interface{}, error) {
 	}
 	return a.klineSyncService.GetKLineSyncHistory(limit)
 }
-

@@ -4,11 +4,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"stock-analyzer-wails/models"
-
-	"go.uber.org/zap"
 )
 
 // PriceAlertCondition 价格预警条件结构
@@ -78,10 +77,9 @@ func NewPriceAlertRepository(db *sql.DB) *PriceAlertRepository {
 
 // CreateAlert 创建价格预警
 func (r *PriceAlertRepository) CreateAlert(alert *PriceThresholdAlert) error {
-	conditionsJSON, err := json.Marshal(alert.Conditions)
-	if err != nil {
-		return fmt.Errorf("序列化条件失败: %w", err)
-	}
+	// alert.Conditions 本身就是 JSON 字符串（PriceAlertConditions），这里不要二次 Marshal，
+	// 否则会把 JSON 变成带引号的字符串，导致后续解析/触发检查失败。
+	conditionsJSON := alert.Conditions
 
 	result, err := r.db.Exec(`
 		INSERT INTO price_threshold_alerts (
@@ -129,7 +127,7 @@ func (r *PriceAlertRepository) GetAlertByID(id int64) (*PriceThresholdAlert, err
 	}
 
 	if conditions.Valid {
-		alert.Conditions = conditions.String
+		alert.Conditions = normalizePriceAlertConditions(conditions.String)
 	}
 
 	if lastTriggeredAt.Valid {
@@ -137,6 +135,38 @@ func (r *PriceAlertRepository) GetAlertByID(id int64) (*PriceThresholdAlert, err
 	}
 
 	return alert, nil
+}
+
+// normalizePriceAlertConditions 兼容历史数据：早期版本会把 JSON 字符串再次 Marshal，
+// 导致数据库里存的是带引号的 JSON（例如 "\"{...}\""）。这里做一次解包回退。
+func normalizePriceAlertConditions(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return raw
+	}
+
+	// 1) 如果本身就是合法的 PriceAlertConditions JSON，直接返回
+	var cond PriceAlertConditions
+	if json.Unmarshal([]byte(raw), &cond) == nil {
+		return raw
+	}
+
+	// 2) 尝试把它当作 JSON 字符串解包成 inner JSON
+	var inner string
+	if json.Unmarshal([]byte(raw), &inner) == nil {
+		inner = strings.TrimSpace(inner)
+		if inner != "" {
+			// inner 有可能就是我们想要的 JSON
+			if json.Unmarshal([]byte(inner), &cond) == nil {
+				return inner
+			}
+			// 即使解析失败，也尽量返回 inner，便于前端/后端继续排查
+			return inner
+		}
+	}
+
+	// 3) 保底：返回原始值
+	return raw
 }
 
 // GetAllAlerts 获取所有预警
@@ -222,12 +252,10 @@ func (r *PriceAlertRepository) GetAlertsByStockCode(stockCode string) ([]*PriceT
 
 // UpdateAlert 更新预警
 func (r *PriceAlertRepository) UpdateAlert(alert *PriceThresholdAlert) error {
-	conditionsJSON, err := json.Marshal(alert.Conditions)
-	if err != nil {
-		return fmt.Errorf("序列化条件失败: %w", err)
-	}
+	// 同 CreateAlert：conditions 已是 JSON 字符串，避免二次 Marshal
+	conditionsJSON := alert.Conditions
 
-	_, err = r.db.Exec(`
+	_, err := r.db.Exec(`
 		UPDATE price_threshold_alerts
 		SET stock_code = ?, stock_name = ?, alert_type = ?, conditions = ?,
 		    is_active = ?, sensitivity = ?, cooldown_hours = ?,
@@ -448,7 +476,7 @@ func (r *PriceAlertRepository) scanAlert(rows *sql.Rows) (*PriceThresholdAlert, 
 	}
 
 	if conditions.Valid {
-		alert.Conditions = conditions.String
+		alert.Conditions = normalizePriceAlertConditions(conditions.String)
 	}
 
 	if lastTriggeredAt.Valid {

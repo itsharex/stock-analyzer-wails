@@ -22,20 +22,47 @@ type DBService struct {
 
 // NewDBService 初始化数据库连接并创建表
 func NewDBService() (*DBService, error) {
-	dbPath := filepath.Join(GetAppDataDir(), "stock_analyzer.db")
+	appDir := GetAppDataDir()
+	dbPath := filepath.Join(appDir, "stock_analyzer.db")
+	logger.Info("开始初始化 SQLite 数据库服务",
+		zap.String("module", "services.db"),
+		zap.String("op", "NewDBService"),
+		zap.String("appDir", appDir),
+		zap.String("dbPath", dbPath),
+	)
 
 	// 确保目录存在（GetAppDataDir 通常已创建，但这里做一次兜底）
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
+		logger.Error("创建数据库目录失败",
+			zap.String("module", "services.db"),
+			zap.String("op", "NewDBService"),
+			zap.String("step", "mkdir"),
+			zap.String("dbDir", filepath.Dir(dbPath)),
+			zap.Error(err),
+		)
 		return nil, fmt.Errorf("创建数据库目录失败: %w", err)
 	}
 
 	// 检查数据库文件是否存在，如果不存在则创建
 	_, err := os.Stat(dbPath)
 	isNewDB := os.IsNotExist(err)
+	logger.Info("数据库文件状态",
+		zap.String("module", "services.db"),
+		zap.String("op", "NewDBService"),
+		zap.Bool("isNewDB", isNewDB),
+		zap.String("dbPath", dbPath),
+	)
 
 	// 连接数据库
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
+		logger.Error("无法连接到数据库（首次 Open）",
+			zap.String("module", "services.db"),
+			zap.String("op", "NewDBService"),
+			zap.String("step", "open_1"),
+			zap.String("dbPath", dbPath),
+			zap.Error(err),
+		)
 		return nil, fmt.Errorf("无法连接到数据库: %w", err)
 	}
 
@@ -50,12 +77,26 @@ func NewDBService() (*DBService, error) {
 	db.Close()
 	db, err = sql.Open("sqlite", dbPathWithTimeout)
 	if err != nil {
+		logger.Error("无法连接到数据库（带 busy_timeout/WAL）",
+			zap.String("module", "services.db"),
+			zap.String("op", "NewDBService"),
+			zap.String("step", "open_2"),
+			zap.String("dsn", dbPathWithTimeout),
+			zap.Error(err),
+		)
 		return nil, fmt.Errorf("无法连接到数据库: %w", err)
 	}
 
 	// 立即验证连接可用性（避免延迟到首次 Query/Exec 才报错）
 	if err := db.Ping(); err != nil {
 		_ = db.Close()
+		logger.Error("数据库连接不可用（Ping 失败）",
+			zap.String("module", "services.db"),
+			zap.String("op", "NewDBService"),
+			zap.String("step", "ping"),
+			zap.String("dbPath", dbPath),
+			zap.Error(err),
+		)
 		return nil, fmt.Errorf("数据库连接不可用: %w", err)
 	}
 
@@ -66,6 +107,13 @@ func NewDBService() (*DBService, error) {
 	logger.Info("开始初始化数据库表结构", zap.String("path", dbPath))
 	if err := svc.initTables(); err != nil {
 		_ = db.Close()
+		logger.Error("初始化数据库表结构失败",
+			zap.String("module", "services.db"),
+			zap.String("op", "NewDBService"),
+			zap.String("step", "initTables"),
+			zap.String("dbPath", dbPath),
+			zap.Error(err),
+		)
 		return nil, fmt.Errorf("初始化数据库表失败: %w", err)
 	}
 
@@ -88,6 +136,12 @@ func (s *DBService) initTables() error {
 	// 开启事务
 	tx, err := s.db.Begin()
 	if err != nil {
+		logger.Error("开启初始化表结构事务失败",
+			zap.String("module", "services.db"),
+			zap.String("op", "initTables"),
+			zap.String("step", "begin_tx"),
+			zap.Error(err),
+		)
 		return err
 	}
 	defer func() {
@@ -108,6 +162,12 @@ func (s *DBService) initTables() error {
 	`)
 	if err != nil {
 		_ = tx.Rollback()
+		logger.Error("创建 watchlist 表失败",
+			zap.String("module", "services.db"),
+			zap.String("op", "initTables"),
+			zap.String("table", "watchlist"),
+			zap.Error(err),
+		)
 		return fmt.Errorf("创建 watchlist 表失败: %w", err)
 	}
 
@@ -127,6 +187,12 @@ func (s *DBService) initTables() error {
 	`)
 	if err != nil {
 		_ = tx.Rollback()
+		logger.Error("创建 alerts 表失败",
+			zap.String("module", "services.db"),
+			zap.String("op", "initTables"),
+			zap.String("table", "alerts"),
+			zap.Error(err),
+		)
 		return fmt.Errorf("创建 alerts 表失败: %w", err)
 	}
 
@@ -143,6 +209,12 @@ func (s *DBService) initTables() error {
 	`)
 	if err != nil {
 		_ = tx.Rollback()
+		logger.Error("创建 alert_history 表失败",
+			zap.String("module", "services.db"),
+			zap.String("op", "initTables"),
+			zap.String("table", "alert_history"),
+			zap.Error(err),
+		)
 		return fmt.Errorf("创建 alert_history 表失败: %w", err)
 	}
 
@@ -162,6 +234,12 @@ func (s *DBService) initTables() error {
 	`)
 	if err != nil {
 		_ = tx.Rollback()
+		logger.Error("创建 positions 表失败",
+			zap.String("module", "services.db"),
+			zap.String("op", "initTables"),
+			zap.String("table", "positions"),
+			zap.Error(err),
+		)
 		return fmt.Errorf("创建 positions 表失败: %w", err)
 	}
 
@@ -174,6 +252,12 @@ func (s *DBService) initTables() error {
 	`)
 	if err != nil {
 		_ = tx.Rollback()
+		logger.Error("创建 config 表失败",
+			zap.String("module", "services.db"),
+			zap.String("op", "initTables"),
+			zap.String("table", "config"),
+			zap.Error(err),
+		)
 		return fmt.Errorf("创建 config 表失败: %w", err)
 	}
 
@@ -196,6 +280,12 @@ func (s *DBService) initTables() error {
 	`)
 	if err != nil {
 		_ = tx.Rollback()
+		logger.Error("创建 sync_history 表失败",
+			zap.String("module", "services.db"),
+			zap.String("op", "initTables"),
+			zap.String("table", "sync_history"),
+			zap.Error(err),
+		)
 		return fmt.Errorf("创建 sync_history 表失败: %w", err)
 	}
 
@@ -214,6 +304,12 @@ func (s *DBService) initTables() error {
 	`)
 	if err != nil {
 		_ = tx.Rollback()
+		logger.Error("创建 strategy_config 表失败",
+			zap.String("module", "services.db"),
+			zap.String("op", "initTables"),
+			zap.String("table", "strategy_config"),
+			zap.Error(err),
+		)
 		return fmt.Errorf("创建 strategy_config 表失败: %w", err)
 	}
 
@@ -247,6 +343,12 @@ func (s *DBService) initTables() error {
 	`)
 	if err != nil {
 		_ = tx.Rollback()
+		logger.Error("创建 stocks 表失败",
+			zap.String("module", "services.db"),
+			zap.String("op", "initTables"),
+			zap.String("table", "stocks"),
+			zap.Error(err),
+		)
 		return fmt.Errorf("创建 stocks 表失败: %w", err)
 	}
 
@@ -254,24 +356,48 @@ func (s *DBService) initTables() error {
 	_, err = tx.Exec(`CREATE INDEX IF NOT EXISTS idx_stocks_name ON stocks(name);`)
 	if err != nil {
 		_ = tx.Rollback()
+		logger.Error("创建 stocks.name 索引失败",
+			zap.String("module", "services.db"),
+			zap.String("op", "initTables"),
+			zap.String("index", "idx_stocks_name"),
+			zap.Error(err),
+		)
 		return fmt.Errorf("创建 stocks.name 索引失败: %w", err)
 	}
 
 	_, err = tx.Exec(`CREATE INDEX IF NOT EXISTS idx_stocks_code ON stocks(code);`)
 	if err != nil {
 		_ = tx.Rollback()
+		logger.Error("创建 stocks.code 索引失败",
+			zap.String("module", "services.db"),
+			zap.String("op", "initTables"),
+			zap.String("index", "idx_stocks_code"),
+			zap.Error(err),
+		)
 		return fmt.Errorf("创建 stocks.code 索引失败: %w", err)
 	}
 
 	_, err = tx.Exec(`CREATE INDEX IF NOT EXISTS idx_stocks_market ON stocks(market);`)
 	if err != nil {
 		_ = tx.Rollback()
+		logger.Error("创建 stocks.market 索引失败",
+			zap.String("module", "services.db"),
+			zap.String("op", "initTables"),
+			zap.String("index", "idx_stocks_market"),
+			zap.Error(err),
+		)
 		return fmt.Errorf("创建 stocks.market 索引失败: %w", err)
 	}
 
 	_, err = tx.Exec(`CREATE INDEX IF NOT EXISTS idx_stocks_full_code ON stocks(full_code);`)
 	if err != nil {
 		_ = tx.Rollback()
+		logger.Error("创建 stocks.full_code 索引失败",
+			zap.String("module", "services.db"),
+			zap.String("op", "initTables"),
+			zap.String("index", "idx_stocks_full_code"),
+			zap.Error(err),
+		)
 		return fmt.Errorf("创建 stocks.full_code 索引失败: %w", err)
 	}
 
@@ -297,6 +423,12 @@ func (s *DBService) initTables() error {
 	`)
 	if err != nil {
 		_ = tx.Rollback()
+		logger.Error("创建 price_threshold_alerts 表失败",
+			zap.String("module", "services.db"),
+			zap.String("op", "initTables"),
+			zap.String("table", "price_threshold_alerts"),
+			zap.Error(err),
+		)
 		return fmt.Errorf("创建 price_threshold_alerts 表失败: %w", err)
 	}
 
@@ -304,12 +436,24 @@ func (s *DBService) initTables() error {
 	_, err = tx.Exec(`CREATE INDEX IF NOT EXISTS idx_price_alerts_stock_code ON price_threshold_alerts(stock_code);`)
 	if err != nil {
 		_ = tx.Rollback()
+		logger.Error("创建 price_threshold_alerts.stock_code 索引失败",
+			zap.String("module", "services.db"),
+			zap.String("op", "initTables"),
+			zap.String("index", "idx_price_alerts_stock_code"),
+			zap.Error(err),
+		)
 		return fmt.Errorf("创建 price_threshold_alerts.stock_code 索引失败: %w", err)
 	}
 
 	_, err = tx.Exec(`CREATE INDEX IF NOT EXISTS idx_price_alerts_is_active ON price_threshold_alerts(is_active);`)
 	if err != nil {
 		_ = tx.Rollback()
+		logger.Error("创建 price_threshold_alerts.is_active 索引失败",
+			zap.String("module", "services.db"),
+			zap.String("op", "initTables"),
+			zap.String("index", "idx_price_alerts_is_active"),
+			zap.Error(err),
+		)
 		return fmt.Errorf("创建 price_threshold_alerts.is_active 索引失败: %w", err)
 	}
 
@@ -326,6 +470,12 @@ func (s *DBService) initTables() error {
 	`)
 	if err != nil {
 		_ = tx.Rollback()
+		logger.Error("创建 price_alert_templates 表失败",
+			zap.String("module", "services.db"),
+			zap.String("op", "initTables"),
+			zap.String("table", "price_alert_templates"),
+			zap.Error(err),
+		)
 		return fmt.Errorf("创建 price_alert_templates 表失败: %w", err)
 	}
 
@@ -344,6 +494,12 @@ func (s *DBService) initTables() error {
 	`)
 	if err != nil {
 		_ = tx.Rollback()
+		logger.Error("创建 price_alert_trigger_history 表失败",
+			zap.String("module", "services.db"),
+			zap.String("op", "initTables"),
+			zap.String("table", "price_alert_trigger_history"),
+			zap.Error(err),
+		)
 		return fmt.Errorf("创建 price_alert_trigger_history 表失败: %w", err)
 	}
 
@@ -351,23 +507,47 @@ func (s *DBService) initTables() error {
 	_, err = tx.Exec(`CREATE INDEX IF NOT EXISTS idx_alert_history_alert_id ON price_alert_trigger_history(alert_id);`)
 	if err != nil {
 		_ = tx.Rollback()
+		logger.Error("创建 price_alert_trigger_history.alert_id 索引失败",
+			zap.String("module", "services.db"),
+			zap.String("op", "initTables"),
+			zap.String("index", "idx_alert_history_alert_id"),
+			zap.Error(err),
+		)
 		return fmt.Errorf("创建 price_alert_trigger_history.alert_id 索引失败: %w", err)
 	}
 
 	_, err = tx.Exec(`CREATE INDEX IF NOT EXISTS idx_alert_history_stock_code ON price_alert_trigger_history(stock_code);`)
 	if err != nil {
 		_ = tx.Rollback()
+		logger.Error("创建 price_alert_trigger_history.stock_code 索引失败",
+			zap.String("module", "services.db"),
+			zap.String("op", "initTables"),
+			zap.String("index", "idx_alert_history_stock_code"),
+			zap.Error(err),
+		)
 		return fmt.Errorf("创建 price_alert_trigger_history.stock_code 索引失败: %w", err)
 	}
 
 	_, err = tx.Exec(`CREATE INDEX IF NOT EXISTS idx_alert_history_triggered_at ON price_alert_trigger_history(triggered_at);`)
 	if err != nil {
 		_ = tx.Rollback()
+		logger.Error("创建 price_alert_trigger_history.triggered_at 索引失败",
+			zap.String("module", "services.db"),
+			zap.String("op", "initTables"),
+			zap.String("index", "idx_alert_history_triggered_at"),
+			zap.Error(err),
+		)
 		return fmt.Errorf("创建 price_alert_trigger_history.triggered_at 索引失败: %w", err)
 	}
 
 	// 提交事务
 	if err := tx.Commit(); err != nil {
+		logger.Error("提交初始化表结构事务失败",
+			zap.String("module", "services.db"),
+			zap.String("op", "initTables"),
+			zap.String("step", "commit"),
+			zap.Error(err),
+		)
 		return err
 	}
 
@@ -456,14 +636,14 @@ func (s *DBService) insertDefaultAlertTemplates() error {
 			Name:        "突破历史新高",
 			Description: "价格突破历史最高价时触发预警",
 			AlertType:   "high_low",
-			Conditions:  `[{"field": "high", "operator": ">", "value": 0.0, "reference": "historical_high"}]`,
+			Conditions:  `[{"field": "high_price", "operator": ">", "value": 0.0, "reference": "historical_high"}]`,
 		},
 		{
 			ID:          "template_low_new",
 			Name:        "跌破历史新低",
 			Description: "价格跌破历史最低价时触发预警",
 			AlertType:   "high_low",
-			Conditions:  `[{"field": "low", "operator": "<", "value": 0.0, "reference": "historical_low"}]`,
+			Conditions:  `[{"field": "low_price", "operator": "<", "value": 0.0, "reference": "historical_low"}]`,
 		},
 		{
 			ID:          "template_ma5_golden_cross",

@@ -21,6 +21,19 @@ export interface ErrorHandlingResult {
 export function parseError(error: any): ErrorHandlingResult {
   const errorMessage = error?.message || error?.toString() || '未知错误'
 
+  // 价格预警模块：保留更具体的报错，不要被“初始化/不可用”规则泛化
+  if (
+    errorMessage.includes('价格预警模块未初始化') ||
+    errorMessage.includes('PriceAlertController')
+  ) {
+    return {
+      type: ErrorType.SERVICE_UNAVAILABLE,
+      message: errorMessage,
+      suggestion: '请确认后端数据库初始化成功后再重试（如仍失败，请查看后端启动日志中的 SQLite 初始化错误）',
+      canRetry: false
+    }
+  }
+
   // 建仓分析（ENTRY_*）错误码优先解析，避免被下面的通用规则误判
   const codeMatch = errorMessage.match(/code=([A-Z0-9_]+)/)
   if (codeMatch) {
@@ -103,7 +116,7 @@ export function parseError(error: any): ErrorHandlingResult {
       errorMessage.includes('access denied')) {
     return {
       type: ErrorType.PERMISSION,
-      message: '文件权限不足，无法保存自选股',
+      message: '文件权限不足，无法保存数据',
       suggestion: '请检查应用是否有足够的文件访问权限，或以管理员身份运行',
       canRetry: false
     }
@@ -129,8 +142,8 @@ export function parseError(error: any): ErrorHandlingResult {
       errorMessage.includes('corrupted')) {
     return {
       type: ErrorType.FILE_CORRUPTED,
-      message: '自选股数据文件已损坏，已自动修复',
-      suggestion: '数据文件已重置，请重新添加自选股',
+      message: '数据格式异常或解析失败',
+      suggestion: '请检查输入内容或稍后重试；如持续出现请查看日志定位',
       canRetry: true
     }
   }
@@ -143,8 +156,8 @@ export function parseError(error: any): ErrorHandlingResult {
       errorMessage.includes('unavailable')) {
     return {
       type: ErrorType.SERVICE_UNAVAILABLE,
-      message: '自选股功能暂时不可用',
-      suggestion: '请重启应用或联系技术支持',
+      message: '功能暂时不可用',
+      suggestion: '请重启应用；如持续失败请查看后端日志/数据库初始化状态',
       canRetry: false
     }
   }

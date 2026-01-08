@@ -97,6 +97,11 @@ const PriceAlertPage: React.FC = () => {
   const [filterActive, setFilterActive] = useState<boolean | null>(null);
   const [activeTab, setActiveTab] = useState<'alerts' | 'templates' | 'history'>('alerts');
 
+  const toErrorText = (err: any): string => {
+    const r = parseError(err);
+    return r.suggestion ? `${r.message}\n建议：${r.suggestion}` : r.message;
+  };
+
   useEffect(() => {
     fetchData();
 
@@ -162,8 +167,7 @@ const PriceAlertPage: React.FC = () => {
         setTemplates(templatesRes.templates || []);
       }
     } catch (err) {
-      const errorResult = parseError(err);
-      setError(errorResult.message);
+      setError(toErrorText(err));
     } finally {
       setLoading(false);
     }
@@ -701,8 +705,7 @@ const PriceAlertPage: React.FC = () => {
         setError(res?.message || '删除失败');
       }
     } catch (err) {
-      const errorResult = parseError(err);
-      setError(errorResult.message);
+      setError(toErrorText(err));
     }
   };
 
@@ -715,14 +718,35 @@ const PriceAlertPage: React.FC = () => {
         setError(res?.message || '切换状态失败');
       }
     } catch (err) {
-      const errorResult = parseError(err);
-      setError(errorResult.message);
+      setError(toErrorText(err));
     }
   };
 
   const handleSaveAlert = async () => {
     if (!formData.stockCode || !formData.alertType) {
       setError('请填写完整信息');
+      return;
+    }
+
+    // 保存前确保股票名称存在（后端会强校验 stockName 不能为空）
+    if (searchingStock) {
+      setError('正在查询股票信息，请稍后再试');
+      return;
+    }
+    let stockName = (formData.stockName || '').trim();
+    if (!stockName) {
+      try {
+        const stockData = await getStockData(formData.stockCode);
+        stockName = stockData?.name || '';
+        if (stockName) {
+          setFormData(prev => ({ ...prev, stockName }));
+        }
+      } catch (e) {
+        // ignore，下面统一提示
+      }
+    }
+    if (!stockName) {
+      setError('股票名称不能为空：请先输入股票名称，或输入正确的股票代码后等待自动查询完成');
       return;
     }
 
@@ -735,6 +759,7 @@ const PriceAlertPage: React.FC = () => {
         // 更新
         const updateData = {
           ...formData,
+          stockName,
           id: editingAlert.id,
           isActive: editingAlert.isActive,
           conditions: conditionsJSON
@@ -746,7 +771,7 @@ const PriceAlertPage: React.FC = () => {
           res = await createPriceAlertFromTemplate(
             selectedTemplate,
             formData.stockCode,
-            formData.stockName,
+            stockName,
             JSON.stringify({
               sensitivity: formData.sensitivity,
               cooldownHours: formData.cooldownHours,
@@ -758,6 +783,7 @@ const PriceAlertPage: React.FC = () => {
         } else {
           const createData = {
             ...formData,
+            stockName,
             conditions: conditionsJSON
           };
           res = await createPriceAlert(JSON.stringify(createData));
@@ -771,8 +797,7 @@ const PriceAlertPage: React.FC = () => {
         setError(res?.message || '保存失败');
       }
     } catch (err) {
-      const errorResult = parseError(err);
-      setError(errorResult.message);
+      setError(toErrorText(err));
     }
   };
 
@@ -837,7 +862,7 @@ const PriceAlertPage: React.FC = () => {
       {error && (
         <div className="mb-6 bg-red-50 border border-red-200 rounded-xl p-4 flex items-center">
           <XCircle className="w-5 h-5 text-red-600 mr-3 flex-shrink-0" />
-          <p className="text-red-700 text-sm">{error}</p>
+          <p className="text-red-700 text-sm whitespace-pre-line">{error}</p>
           <button onClick={() => setError(null)} className="ml-auto text-red-400 hover:text-red-600">
             <XCircle className="w-4 h-4" />
           </button>

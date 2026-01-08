@@ -290,52 +290,52 @@ const getIntradayData = useCallback(async (code: string): Promise<IntradayRespon
   // Price Alert API
   const getAllPriceAlerts = useCallback(async () => {
     // @ts-ignore
-    return window.go.main.App.PriceAlertController?.GetAllAlerts()
+    return window.go.main.App.PriceAlertGetAllAlerts()
   }, [])
 
   const getActivePriceAlerts = useCallback(async () => {
     // @ts-ignore
-    return window.go.main.App.PriceAlertController?.GetActiveAlerts()
+    return window.go.main.App.PriceAlertGetActiveAlerts()
   }, [])
 
   const getPriceAlertsByCode = useCallback(async (code: string) => {
     // @ts-ignore
-    return window.go.main.App.PriceAlertController?.GetAlertsByStockCode(code)
+    return window.go.main.App.PriceAlertGetAlertsByStockCode(code)
   }, [])
 
   const getPriceAlertTemplates = useCallback(async () => {
     // @ts-ignore
-    return window.go.main.App.PriceAlertController?.GetAllTemplates()
+    return window.go.main.App.PriceAlertGetAllTemplates()
   }, [])
 
   const getPriceAlertHistory = useCallback(async (code: string, limit: number) => {
     // @ts-ignore
-    return window.go.main.App.PriceAlertController?.GetTriggerHistory(code, limit)
+    return window.go.main.App.PriceAlertGetTriggerHistory(code, limit)
   }, [])
 
   const createPriceAlert = useCallback(async (jsonData: string) => {
     // @ts-ignore
-    return window.go.main.App.PriceAlertController?.CreateAlert(jsonData)
+    return window.go.main.App.PriceAlertCreateAlert(jsonData)
   }, [])
 
   const updatePriceAlert = useCallback(async (jsonData: string) => {
     // @ts-ignore
-    return window.go.main.App.PriceAlertController?.UpdateAlert(jsonData)
+    return window.go.main.App.PriceAlertUpdateAlert(jsonData)
   }, [])
 
   const deletePriceAlert = useCallback(async (id: number) => {
     // @ts-ignore
-    return window.go.main.App.PriceAlertController?.DeleteAlert(id)
+    return window.go.main.App.PriceAlertDeleteAlert(id)
   }, [])
 
   const togglePriceAlert = useCallback(async (id: number, isActive: boolean) => {
     // @ts-ignore
-    return window.go.main.App.PriceAlertController?.ToggleAlertStatus(id, isActive)
+    return window.go.main.App.PriceAlertToggleAlertStatus(id, isActive)
   }, [])
 
   const createPriceAlertFromTemplate = useCallback(async (templateId: string, stockCode: string, stockName: string, paramsJson: string) => {
     // @ts-ignore
-    return window.go.main.App.PriceAlertController?.CreateAlertFromTemplate(templateId, stockCode, stockName, paramsJson)
+    return window.go.main.App.PriceAlertCreateAlertFromTemplate(templateId, stockCode, stockName, paramsJson)
   }, [])
 
 		return {

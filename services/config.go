@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"stock-analyzer-wails/internal/logger"
@@ -17,6 +18,11 @@ import (
 )
 
 const AppName = "StockAnalyzer"
+
+var (
+	appDataDirOnce  sync.Once
+	cachedAppDataDir string
+)
 
 // Provider 类型定义
 type Provider string
@@ -122,25 +128,85 @@ type GlobalStrategyConfig struct {
 
 // GetAppDataDir 获取跨平台的应用数据目录
 func GetAppDataDir() string {
-	var dir string
-	switch runtime.GOOS {
-	case "windows":
-		dir = os.Getenv("LOCALAPPDATA")
-		if dir == "" {
-			dir = os.Getenv("APPDATA")
-		}
-	case "darwin":
-		home, _ := os.UserHomeDir()
-		dir = filepath.Join(home, "Library", "Application Support")
-	default: // Linux and others
-		home, _ := os.UserHomeDir()
-		dir = filepath.Join(home, ".local", "share")
-	}
+	appDataDirOnce.Do(func() {
+		var (
+			baseDir string
+			source  string
+		)
 
-	appDir := filepath.Join(dir, AppName)
-	// 确保目录存在
-	os.MkdirAll(appDir, 0755)
-	return appDir
+		switch runtime.GOOS {
+		case "windows":
+			baseDir = strings.TrimSpace(os.Getenv("LOCALAPPDATA"))
+			source = "LOCALAPPDATA"
+			if baseDir == "" {
+				baseDir = strings.TrimSpace(os.Getenv("APPDATA"))
+				source = "APPDATA"
+			}
+		case "darwin":
+			home, err := os.UserHomeDir()
+			if err != nil {
+				logger.Warn("获取用户目录失败，将回退到当前目录",
+					zap.String("module", "services.config"),
+					zap.String("op", "GetAppDataDir"),
+					zap.String("os", runtime.GOOS),
+					zap.Error(err),
+				)
+				home = "."
+			}
+			baseDir = filepath.Join(home, "Library", "Application Support")
+			source = "UserHomeDir"
+		default: // Linux and others
+			home, err := os.UserHomeDir()
+			if err != nil {
+				logger.Warn("获取用户目录失败，将回退到当前目录",
+					zap.String("module", "services.config"),
+					zap.String("op", "GetAppDataDir"),
+					zap.String("os", runtime.GOOS),
+					zap.Error(err),
+				)
+				home = "."
+			}
+			baseDir = filepath.Join(home, ".local", "share")
+			source = "UserHomeDir"
+		}
+
+		if strings.TrimSpace(baseDir) == "" {
+			// 极端情况下环境变量为空，保证至少有个可写路径
+			baseDir = "."
+			source = "fallback-dot"
+			logger.Warn("应用数据目录基路径为空，已回退到当前目录（可能导致权限问题）",
+				zap.String("module", "services.config"),
+				zap.String("op", "GetAppDataDir"),
+				zap.String("os", runtime.GOOS),
+			)
+		}
+
+		appDir := filepath.Join(baseDir, AppName)
+		if err := os.MkdirAll(appDir, 0o755); err != nil {
+			logger.Error("创建应用数据目录失败（SQLite 初始化可能失败）",
+				zap.String("module", "services.config"),
+				zap.String("op", "GetAppDataDir"),
+				zap.String("os", runtime.GOOS),
+				zap.String("source", source),
+				zap.String("baseDir", baseDir),
+				zap.String("appDir", appDir),
+				zap.Error(err),
+			)
+		} else {
+			logger.Info("应用数据目录已解析",
+				zap.String("module", "services.config"),
+				zap.String("op", "GetAppDataDir"),
+				zap.String("os", runtime.GOOS),
+				zap.String("source", source),
+				zap.String("baseDir", baseDir),
+				zap.String("appDir", appDir),
+			)
+		}
+
+		cachedAppDataDir = appDir
+	})
+
+	return cachedAppDataDir
 }
 
 // ConfigService 负责全局配置的读取和写入
