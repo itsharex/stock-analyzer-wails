@@ -1113,12 +1113,36 @@ func (a *App) ClearAllSyncHistory() error {
 
 // GetSyncedKLineData 获取指定股票已同步的K线数据（支持分页和日期筛选）
 func (a *App) GetSyncedKLineData(code string, startDate string, endDate string, page int, pageSize int) ([]map[string]interface{}, int, error) {
+	// 打印调用参数
+	logger.Info("GetSyncedKLineData 被调用",
+		zap.String("code", code),
+		zap.String("startDate", startDate),
+		zap.String("endDate", endDate),
+		zap.Int("page", page),
+		zap.Int("pageSize", pageSize),
+	)
+
 	// 获取数据库服务实例
 	db := a.dbService
 	if db == nil {
+		logger.Error("数据库服务未初始化")
 		return nil, 0, fmt.Errorf("数据库服务未初始化")
 	}
 
 	// 调用数据库服务查询K线数据
-	return db.GetKLineDataWithPagination(code, startDate, endDate, page, pageSize)
+	data, total, err := db.GetKLineDataWithPagination(code, startDate, endDate, page, pageSize)
+
+	// 打印返回结果
+	logger.Info("GetSyncedKLineData 返回结果",
+		zap.Int("dataLength", len(data)),
+		zap.Int("total", total),
+		zap.Error(err),
+	)
+
+	// 如果有数据，打印第一条数据用于调试
+	if len(data) > 0 {
+		logger.Debug("第一条K线数据", zap.Any("firstItem", data[0]))
+	}
+
+	return data, total, err
 }

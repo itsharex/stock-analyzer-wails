@@ -180,8 +180,15 @@ const getIntradayData = useCallback(async (code: string): Promise<IntradayRespon
       throw new Error('GetSyncedKLineData 方法不可用，请确保已运行 wails dev 重新生成绑定文件')
     }
     try {
+      console.log('开始调用 GetSyncedKLineData, 参数:', { code, startDate, endDate, page, pageSize })
+
       // @ts-ignore
       const result = await window.go.main.App.GetSyncedKLineData(code, startDate, endDate, page, pageSize)
+
+      console.log('GetSyncedKLineData 返回的原始 result:', result)
+      console.log('result 的类型:', typeof result)
+      console.log('result 是否为数组:', Array.isArray(result))
+      console.log('result 的构造函数:', result?.constructor?.name)
 
       // 验证返回值是否是数组
       if (!Array.isArray(result)) {
@@ -191,6 +198,11 @@ const getIntradayData = useCallback(async (code: string): Promise<IntradayRespon
 
       // 解构返回值
       const [data, total] = result
+
+      console.log('解构后的 data:', data)
+      console.log('解构后的 total:', total)
+      console.log('data 的类型:', typeof data)
+      console.log('data 是否为数组:', Array.isArray(data))
 
       // 验证数据有效性
       if (!Array.isArray(data)) {
