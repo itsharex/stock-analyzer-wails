@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { parseError } from '../utils/errorHandler';
-import { Download, RefreshCw, CheckCircle, AlertCircle, Clock, Zap, Database } from 'lucide-react';
+import { RefreshCw, CheckCircle, AlertCircle, Clock, Zap, Database } from 'lucide-react';
 
 interface KLineSyncResult {
   success: boolean;
@@ -149,7 +149,7 @@ const KLineSyncPage: React.FC = () => {
             K线数据同步
           </h1>
           <p className="text-gray-400">
-            批量同步所有活跃股票的K线数据到本地数据库，使用协程池并发处理，提高同步效率
+            批量同步所有活跃股票的K线数据到本地数据库，顺序执行避免数据库锁定问题
           </p>
         </div>
 
@@ -166,11 +166,11 @@ const KLineSyncPage: React.FC = () => {
             </div>
             <div className="flex items-start gap-2">
               <CheckCircle className="w-4 h-4 text-green-400 mt-1 flex-shrink-0" />
-              <span>使用协程池并发处理，协程池大小为15</span>
+              <span>顺序执行每只股票同步，避免SQLite并发锁库问题</span>
             </div>
             <div className="flex items-start gap-2">
               <CheckCircle className="w-4 h-4 text-green-400 mt-1 flex-shrink-0" />
-              <span>随机延迟（100-300ms）模拟真人行为，防止IP被封</span>
+              <span>随机延迟（200-500ms）模拟真人行为，防止IP被封</span>
             </div>
             <div className="flex items-start gap-2">
               <CheckCircle className="w-4 h-4 text-green-400 mt-1 flex-shrink-0" />
