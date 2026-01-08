@@ -86,6 +86,51 @@ const PriceAlertPage: React.FC = () => {
 
   useEffect(() => {
     fetchData();
+
+    // 监听价格预警触发事件
+    const unsubscribe = (window as any).runtime?.EventsOn('price_alert_triggered', (data: any) => {
+      console.log('Price alert triggered:', data);
+
+      // 如果当前在历史标签页，刷新历史数据
+      if (activeTab === 'history') {
+        loadTriggerHistory();
+      }
+
+      // 显示浏览器通知（如果启用了桌面通知）
+      if (data.enableDesktop && 'Notification' in window) {
+        if (Notification.permission === 'granted') {
+          new Notification(`${data.stockName} (${data.stockCode}) - 预警触发`, {
+            body: `${data.message}，当前价格: ¥${data.triggerPrice.toFixed(2)}`,
+            icon: '/icon.png',
+            requireInteraction: true,
+          });
+        } else if (Notification.permission !== 'denied') {
+          Notification.requestPermission().then(permission => {
+            if (permission === 'granted') {
+              new Notification(`${data.stockName} (${data.stockCode}) - 预警触发`, {
+                body: `${data.message}，当前价格: ¥${data.triggerPrice.toFixed(2)}`,
+                icon: '/icon.png',
+                requireInteraction: true,
+              });
+            }
+          });
+        }
+      }
+
+      // 播放提示音（如果启用了声音）
+      if (data.enableSound) {
+        try {
+          const audio = new Audio('/alert.mp3');
+          audio.play().catch(err => console.error('Failed to play alert sound:', err));
+        } catch (err) {
+          console.error('Failed to play alert sound:', err);
+        }
+      }
+    });
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
   }, [activeTab]);
 
   const fetchData = async () => {

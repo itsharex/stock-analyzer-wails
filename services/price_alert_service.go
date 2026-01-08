@@ -23,6 +23,11 @@ func NewPriceAlertService(repo *repositories.PriceAlertRepository) *PriceAlertSe
 	return &PriceAlertService{repo: repo}
 }
 
+// GetRepository 获取 Repository（供 AlertMonitor 使用）
+func (s *PriceAlertService) GetRepository() *repositories.PriceAlertRepository {
+	return s.repo
+}
+
 // CreateAlertRequest 创建预警请求
 type CreateAlertRequest struct {
 	StockCode         string  `json:"stockCode"`

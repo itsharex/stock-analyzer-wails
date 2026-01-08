@@ -36,6 +36,7 @@ type App struct {
 	alertMutex      sync.Mutex
 	alertConfig     models.AlertConfig
 	klineSyncService *services.KLineSyncService // K线同步服务
+	priceAlertMonitor *services.AlertMonitor // 价格预警监控引擎
 
 	// Controllers (Wails Bindings)
 	WatchlistController      *controllers.WatchlistController
@@ -49,6 +50,7 @@ type App struct {
 
 	// Services (for internal use)
 	watchlistService *services.WatchlistService // 保持，用于内部逻辑调用
+	priceAlertService *services.PriceAlertService // 价格预警服务（内部使用）
 }
 
 // NewApp 创建新的App应用程序
@@ -116,6 +118,10 @@ func NewApp() *App {
 	stockMarketCtrl := controllers.NewStockMarketController(stockMarketSvc)
 	priceAlertCtrl := controllers.NewPriceAlertController(priceAlertSvc)
 
+	// 创建价格预警监控引擎（在 startup 中启动）
+	var alertMonitor *services.AlertMonitor
+	// 注意：AlertMonitor 需要传入 context，所以在 startup 中创建
+
 	return &App{
 		stockService:       stockSvc,
 		aiService:          nil,
@@ -133,11 +139,12 @@ func NewApp() *App {
 		PriceAlertController:  priceAlertCtrl,   // 价格预警控制器
 
 		// Services (for internal use)
-		watchlistService: watchlistSvc,
-		alertStorage:     alertSvc,
-		positionStorage:  positionSvc,
-		configService:    configSvc,
-		syncHistoryCtrl:  syncHistoryCtrl, // 内部引用
+		watchlistService:   watchlistSvc,
+		alertStorage:       alertSvc,
+		positionStorage:    positionSvc,
+		configService:      configSvc,
+		syncHistoryCtrl:    syncHistoryCtrl,   // 内部引用
+		priceAlertService:  priceAlertSvc,    // 价格预警服务
 		alertConfig: models.AlertConfig{
 			Sensitivity: 0.005, // 默认 0.5%
 			Cooldown:    1,     // 默认 1 小时
@@ -187,6 +194,18 @@ func (a *App) startup(ctx context.Context) {
 	}
 	if a.positionStorage != nil {
 		go a.startPositionMonitor()
+	}
+
+	// 启动价格预警监控引擎
+	if a.priceAlertService != nil && a.stockService != nil {
+		a.priceAlertMonitor = services.NewAlertMonitor(
+			a.ctx,
+			a.priceAlertService,
+			a.stockService,
+			a.stockService, // StockService 实现了 KLineDataService 接口（通过 GetKLineData 方法）
+		)
+		a.priceAlertMonitor.Start()
+		logger.Info("价格预警监控引擎已启动")
 	}
 }
 
