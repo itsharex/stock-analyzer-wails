@@ -38,11 +38,12 @@ type SyncStocksRequest struct {
 
 // StockMarketData 市场股票数据
 type StockMarketData struct {
-	ID     int64  `json:"id"`
-	Code   string `json:"code"`
-	Name   string `json:"name"`
-	Market string `json:"market"`   // SH, SZ, BJ
-	Type   string `json:"type"`     // 主板, 创业板, 科创板, 北交所
+	ID       int64  `json:"id"`
+	Code     string `json:"code"`
+	Name     string `json:"name"`
+	Market   string `json:"market"`   // SH, SZ, BJ
+	FullCode string `json:"fullCode"` // 市场代码 + 股票代码，如 SH600000
+	Type     string `json:"type"`     // 主板, 创业板, 科创板, 北交所
 	// 实时行情数据
 	Price         float64 `json:"price"`         // 最新价
 	ChangeRate    float64 `json:"changeRate"`    // 涨跌幅(%)
@@ -190,7 +191,7 @@ func (s *StockMarketService) SyncAllStocks() (*SyncStocksResult, error) {
 			stockData.Code,
 			stockData.Name,
 			stockData.Market,
-			stockData.Market+stockData.Code,
+			stockData.FullCode,
 			stockData.Type,
 			stockData.IsActive,
 			stockData.Price,
