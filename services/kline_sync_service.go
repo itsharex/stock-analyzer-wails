@@ -125,7 +125,8 @@ func (s *KLineSyncService) StartKLineSync(days int) (*KLineSyncResult, error) {
 	)
 
 	// 2. 使用协程池并发同步
-	const workerPoolSize = 15
+	// 注意：由于 SQLite 的并发限制，worker 数量不宜过大，设置为 5 以减少数据库锁竞争
+	const workerPoolSize = 5
 	taskChan := make(chan *KLineSyncTask, len(tasks))
 	resultChan := make(chan *KLineSyncTaskResult, len(tasks))
 
@@ -239,8 +240,9 @@ func (s *KLineSyncService) worker(workerID int, wg *sync.WaitGroup, taskChan <-c
 	defer wg.Done()
 
 	for task := range taskChan {
-		// 随机延迟模拟真人行为（100-300ms）
-		delay := time.Duration(rand.Intn(200)+100) * time.Millisecond
+		// 随机延迟模拟真人行为（200-500ms）
+		// 增加延迟范围以减少数据库锁竞争
+		delay := time.Duration(rand.Intn(300)+200) * time.Millisecond
 		time.Sleep(delay)
 
 		result := &KLineSyncTaskResult{

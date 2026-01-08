@@ -44,6 +44,15 @@ func NewDBService() (*DBService, error) {
 	db.SetMaxIdleConns(1)
 	db.SetConnMaxLifetime(time.Hour)
 
+	// 设置 SQLite 忙等待超时时间（5秒），避免并发写入时立即失败
+	// 在 DSN 中添加 _busy_timeout 参数（单位：毫秒）
+	dbPathWithTimeout := fmt.Sprintf("%s?_busy_timeout=5000&_journal_mode=WAL", dbPath)
+	db.Close()
+	db, err = sql.Open("sqlite", dbPathWithTimeout)
+	if err != nil {
+		return nil, fmt.Errorf("无法连接到数据库: %w", err)
+	}
+
 	// 立即验证连接可用性（避免延迟到首次 Query/Exec 才报错）
 	if err := db.Ping(); err != nil {
 		_ = db.Close()
@@ -346,6 +355,7 @@ func (s *DBService) CreateKLineCacheTable(code string) error {
 }
 
 // InsertOrUpdateKLineData 批量插入或更新 K 线数据
+// 使用事务和重试机制来处理数据库锁定
 func (s *DBService) InsertOrUpdateKLineData(code string, klines []map[string]interface{}) (int64, int64, error) {
 	tableName := fmt.Sprintf("kline_%s", code)
 
@@ -354,19 +364,25 @@ func (s *DBService) InsertOrUpdateKLineData(code string, klines []map[string]int
 		return 0, 0, err
 	}
 
-	var addedCount int64
-	var updatedCount int64
+	// 使用重试机制处理数据库锁定
+	maxRetries := 3
+	var addedCount, updatedCount int64
+	var lastErr error
 
-	for _, kline := range klines {
-		date := kline["date"].(string)
-		open := kline["open"].(float64)
-		high := kline["high"].(float64)
-		low := kline["low"].(float64)
-		close := kline["close"].(float64)
-		volume := kline["volume"].(int64)
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		// 开启事务
+		tx, err := s.db.Begin()
+		if err != nil {
+			lastErr = fmt.Errorf("开启事务失败: %w", err)
+			time.Sleep(time.Duration(attempt+1) * 100 * time.Millisecond)
+			continue
+		}
 
-		// 尝试插入，如果日期已存在则更新
-		result, err := s.db.Exec(fmt.Sprintf(`
+		addedCount = 0
+		updatedCount = 0
+
+		// 准备批量插入语句
+		insertSQL := fmt.Sprintf(`
 			INSERT INTO %s (date, open, high, low, close, volume, created_at, updated_at)
 			VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
 			ON CONFLICT(date) DO UPDATE SET
@@ -376,21 +392,54 @@ func (s *DBService) InsertOrUpdateKLineData(code string, klines []map[string]int
 				close = excluded.close,
 				volume = excluded.volume,
 				updated_at = CURRENT_TIMESTAMP
-		`, tableName), date, open, high, low, close, volume)
+		`, tableName)
 
+		stmt, err := tx.Prepare(insertSQL)
 		if err != nil {
-			return addedCount, updatedCount, fmt.Errorf("插入/更新 K 线数据失败: %w", err)
+			_ = tx.Rollback()
+			lastErr = fmt.Errorf("准备插入语句失败: %w", err)
+			time.Sleep(time.Duration(attempt+1) * 100 * time.Millisecond)
+			continue
 		}
+		defer stmt.Close()
 
-		// 检查是否是新插入还是更新
-		rowsAffected, err := result.RowsAffected()
-		if err == nil && rowsAffected > 0 {
-			// 这里无法直接区分是插入还是更新，所以我们计数所有操作
+		// 批量插入数据
+		for _, kline := range klines {
+			date := kline["date"].(string)
+			open := kline["open"].(float64)
+			high := kline["high"].(float64)
+			low := kline["low"].(float64)
+			close := kline["close"].(float64)
+			volume := kline["volume"].(int64)
+
+			_, err := stmt.Exec(date, open, high, low, close, volume)
+			if err != nil {
+				_ = tx.Rollback()
+				lastErr = fmt.Errorf("插入 K 线数据失败: %w", err)
+				time.Sleep(time.Duration(attempt+1) * 100 * time.Millisecond)
+				break // 退出内层循环，继续重试
+			}
 			addedCount++
 		}
+
+		// 检查是否所有数据都插入成功
+		if int(addedCount) != len(klines) {
+			continue // 继续重试
+		}
+
+		// 提交事务
+		if err := tx.Commit(); err != nil {
+			lastErr = fmt.Errorf("提交事务失败: %w", err)
+			time.Sleep(time.Duration(attempt+1) * 100 * time.Millisecond)
+			continue
+		}
+
+		// 成功
+		return addedCount, updatedCount, nil
 	}
 
-	return addedCount, updatedCount, nil
+	// 所有重试都失败
+	return 0, 0, fmt.Errorf("插入/更新 K 线数据失败（已重试 %d 次）: %w", maxRetries, lastErr)
 }
 
 // GetLatestKLineDate 获取指定股票在本地缓存中的最新 K 线日期
