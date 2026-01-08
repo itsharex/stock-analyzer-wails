@@ -12,7 +12,44 @@ import (
 	"go.uber.org/zap"
 )
 
-// StockMarketService 市场股票服务
+// 东方财富API字段定义
+const (
+	FieldCode           = "f12"  // f12:股票代码
+	FieldMarket         = "f13"  // f13:市场
+	FieldName           = "f14"  // f14:股票名称
+	FieldPrice          = "f2"   // f2:最新价
+	FieldChangeRate     = "f3"   // f3:涨跌幅
+	FieldChangeAmount   = "f4"   // f4:涨跌额
+	FieldVolume         = "f5"   // f5:总手（VOL）/成交量
+	FieldAmount         = "f6"   // f6:成交额
+	FieldAmplitude      = "f7"   // f7:振幅
+	FieldTurnover       = "f8"   // f8:换手率
+	FieldPE             = "f9"   // f9:市盈率(动态)
+	FieldVolumeRatio    = "f10"  // f10:量比
+	Field5MinChangeRate = "f11"  // f11:5分钟涨跌幅
+	FieldHigh           = "f15"  // f15:今日最高
+	FieldLow            = "f16"  // f16:今日最低
+	FieldOpen           = "f17"  // f17:今开
+	FieldPreClose       = "f18"  // f18:昨收
+	FieldMarketCap      = "f20"  // f20:总市值
+	FieldCircCap        = "f21"  // f21:流通市值
+	FieldRiseSpeed      = "f22"  // f22:涨速
+	FieldPB             = "f23"  // f23:市净率
+	Field60DayChange    = "f24"  // f24:60日涨跌幅
+	FieldYTDChange      = "f25"  // f25:年初至今涨跌幅
+	FieldListDate       = "f26"  // f26:上市时间
+	FieldPreSettlePrice = "f28"  // f28:昨日结算价
+	FieldLastVol        = "f30"  // f30:每天最后一笔交易的成交量
+	FieldBuyPrice       = "f31"  // f31:现汇买入价
+	FieldSellPrice      = "f32"  // f32:现汇卖出价
+	FieldWarrantRatio   = "f33"  // f33:委比
+	FieldBuyVol         = "f34"  // f34:外盘
+	FieldSellVol        = "f35"  // f35:内盘
+	FieldAOE            = "f37"  // f37:净资产收益率加权（AOE）最近季度
+	FieldTotalShare      = "f38"  // f38:总股本
+	FieldCircAShare     = "f39"  // f39:流通A股（万股）
+	FieldTotalRevenue   = "f40"  // f40:总营收（最近季度）
+	FieldRevenueYOY     = "f41"  // f41:总营收同比
 type StockMarketService struct {
 	dbService *DBService
 	client    *http.Client
@@ -94,7 +131,8 @@ func (s *StockMarketService) SyncAllStocks() (*SyncStocksResult, error) {
 	pn := 1
 	pz := 5000 // 每页5000条
 	fs := "m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23,m:0+t:81+s:2048"
-	fields := "f12,f14,f2,f3,f62,f184,f66,f69,f72,f75,f78,f81,f84,f87,f64,f65"
+	// 只请求数据库表需要的字段
+	fields := "f12,f13,f14,f2,f3,f4,f5,f6,f7,f8,f9,f10,f15,f16,f17,f18,f33"
 
 	// 获取数据库连接
 	db := s.dbService.GetDB()
@@ -294,45 +332,45 @@ func (s *StockMarketService) parseStockItem(item interface{}, updatedAt string) 
 		return nil
 	}
 
-	// 获取code
+	// 获取code (f12: 股票代码)
 	code, ok := data["f12"].(string)
 	if !ok || code == "" {
 		return nil
 	}
 
-	// 获取name
+	// 获取name (f14: 股票名称)
 	name, ok := data["f14"].(string)
 	if !ok {
 		name = ""
 	}
 
-	// 判断市场
+	// 获取market (f13: 市场)
 	market := "SH"
-	if strings.HasPrefix(code, "6") {
-		market = "SH"
-	} else if strings.HasPrefix(code, "0") || strings.HasPrefix(code, "3") {
-		market = "SZ"
-	} else if strings.HasPrefix(code, "8") || strings.HasPrefix(code, "4") {
-		market = "BJ"
+	if marketCode, ok := data["f13"].(string); ok && marketCode != "" {
+		market = marketCode
+	} else {
+		// 根据代码前缀判断市场（兜底逻辑）
+		if strings.HasPrefix(code, "6") {
+			market = "SH"
+		} else if strings.HasPrefix(code, "0") || strings.HasPrefix(code, "3") {
+			market = "SZ"
+		} else if strings.HasPrefix(code, "8") || strings.HasPrefix(code, "4") {
+			market = "BJ"
+		}
 	}
 
 	// 判断板块类型
 	stockType := "主板"
-	if strings.HasPrefix(code, "6") {
+	if strings.HasPrefix(code, "688") {
+		stockType = "科创板"
+	} else if strings.HasPrefix(code, "6") {
 		stockType = "主板"
 	} else if strings.HasPrefix(code, "0") {
 		stockType = "主板"
 	} else if strings.HasPrefix(code, "3") {
 		stockType = "创业板"
-	} else if strings.HasPrefix(code, "6") && len(code) == 6 {
-		stockType = "科创板" // 实际科创板以688开头
 	} else if strings.HasPrefix(code, "8") || strings.HasPrefix(code, "4") {
 		stockType = "北交所"
-	}
-
-	// 修正科创板判断
-	if strings.HasPrefix(code, "688") {
-		stockType = "科创板"
 	}
 
 	// 解析价格相关字段（接口返回的值通常是×100）
@@ -349,25 +387,19 @@ func (s *StockMarketService) parseStockItem(item interface{}, updatedAt string) 
 		return 0
 	}
 
-	// 解析数值字段
-	parseInt := func(key string) int {
+	// 解析数值字段（不需要除以100）
+	parseInt := func(key string) float64 {
 		if val, ok := data[key]; ok {
 			switch v := val.(type) {
 			case float64:
-				return int(v)
+				return v
 			case string:
-				i, _ := strconv.Atoi(v)
-				return i
+				f, _ := strconv.ParseFloat(v, 64)
+				return f
 			}
 		}
 		return 0
 	}
-
-	// 解析成交量（手）
-	volume := float64(parseInt("f69"))
-
-	// 解析成交额
-	amount := parseFloat("f62")
 
 	stock := &StockMarketData{
 		Code:         code,
@@ -376,20 +408,21 @@ func (s *StockMarketService) parseStockItem(item interface{}, updatedAt string) 
 		FullCode:     market + code,
 		Type:         stockType,
 		IsActive:     1,
-		Price:        parseFloat("f2"),
-		ChangeRate:   parseFloat("f3"),
-		ChangeAmount: parseFloat("f72"),
-		Volume:       volume,
-		Amount:       amount,
-		Amplitude:    parseFloat("f64"),
-		High:         parseFloat("f65"),
-		Low:          parseFloat("f66"),
-		Open:         parseFloat("f81"),
-		PreClose:     parseFloat("f78"),
-		Turnover:     parseFloat("f75"),
-		VolumeRatio:  parseFloat("f84"),
-		PE:           parseFloat("f184"),
-		WarrantRatio: parseFloat("f87"),
+		Price:        parseFloat("f2"),          // f2: 最新价
+		ChangeRate:   parseFloat("f3"),          // f3: 涨跌幅
+		ChangeAmount: parseFloat("f4"),          // f4: 涨跌额
+		Volume:       parseInt("f5"),            // f5: 总手（VOL）/成交量
+		Amount:       parseInt("f6"),            // f6: 成交额
+		Amplitude:    parseFloat("f7"),          // f7: 振幅
+		High:         parseFloat("f15"),         // f15: 今日最高
+		Low:          parseFloat("f16"),         // f16: 今日最低
+		Open:         parseFloat("f17"),         // f17: 今开
+		PreClose:     parseFloat("f18"),         // f18: 昨收
+		Turnover:     parseFloat("f8"),          // f8: 换手率
+		VolumeRatio:  parseFloat("f10"),         // f10: 量比
+		PE:           parseFloat("f9"),          // f9: 市盈率(动态)
+		WarrantRatio: parseFloat("f33"),         // f33: 委比
+		UpdatedAt:    updatedAt,
 		UpdatedAt:    updatedAt,
 	}
 
