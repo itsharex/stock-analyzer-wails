@@ -11,18 +11,20 @@ import SyncHistoryPage from './pages/SyncHistoryPage'
 import StrategyLibraryPage from './pages/StrategyLibraryPage'
 import StockListPage from './pages/StockListPage'
 import KLineSyncPage from './pages/KLineSyncPage'
+import PriceAlertPage from './pages/PriceAlertPage'
 import { AlertToast } from './components/AlertToast'
 import { AlertCenter } from './components/AlertCenter'
 import { useWailsAPI } from './hooks/useWailsAPI'
 import type { StockData, AnalysisReport as AnalysisReportType, AppConfig } from './types'
 
-type NavItem = 'analysis' | 'watchlist' | 'alerts' | 'settings' | 'backtest' | 'datasync' | 'synchistory' | 'strategylibrary' | 'strategy' | 'stocklist' | 'klinesync'
+type NavItem = 'analysis' | 'watchlist' | 'alerts' | 'settings' | 'backtest' | 'datasync' | 'synchistory' | 'strategylibrary' | 'strategy' | 'stocklist' | 'klinesync' | 'pricealert'
 
 
 function App() {
   const [activeTab, setActiveTab] = useState<NavItem>('analysis')
   const [dataSyncExpanded, setDataSyncExpanded] = useState(false)
   const [strategyExpanded, setStrategyExpanded] = useState(false)
+  const [alertsExpanded, setAlertsExpanded] = useState(false)
   const [stockData, setStockData] = useState<StockData | null>(null)
   const [analysisReport, setAnalysisReport] = useState<AnalysisReportType | null>(null)
   const [loading, setLoading] = useState(false)
@@ -122,17 +124,57 @@ function App() {
             <span className="font-medium">自选行情</span>
           </button>
 
-          <button
-            onClick={() => setActiveTab('alerts')}
-            className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${
-              activeTab === 'alerts'
-                ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20'
-                : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
-            }`}
-          >
-            <span className="text-xl">🔔</span>
-            <span className="font-medium">预警中心</span>
-          </button>
+          <div>
+            <button
+              onClick={() => setAlertsExpanded(!alertsExpanded)}
+              className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 ${
+                activeTab === 'alerts' || activeTab === 'pricealert'
+                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20'
+                  : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+              }`}
+            >
+              <div className="flex items-center space-x-3">
+                <span className="text-xl">🔔</span>
+                <span className="font-medium">预警中心</span>
+              </div>
+              <svg
+                className={`w-4 h-4 transition-transform ${alertsExpanded ? 'rotate-180' : ''}`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+
+            {/* 子菜单 */}
+            {alertsExpanded && (
+              <div className="ml-4 mt-1 space-y-1">
+                <button
+                  onClick={() => setActiveTab('alerts')}
+                  className={`w-full flex items-center space-x-2 px-4 py-2 rounded-lg transition-all duration-200 ${
+                    activeTab === 'alerts'
+                      ? 'bg-blue-600 text-white'
+                      : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                  }`}
+                >
+                  <span className="text-lg">⚡</span>
+                  <span className="text-sm">技术预警</span>
+                </button>
+                <button
+                  onClick={() => setActiveTab('pricealert')}
+                  className={`w-full flex items-center space-x-2 px-4 py-2 rounded-lg transition-all duration-200 ${
+                    activeTab === 'pricealert'
+                      ? 'bg-blue-600 text-white'
+                      : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                  }`}
+                >
+                  <span className="text-lg">💰</span>
+                  <span className="text-sm">价格预警</span>
+                </button>
+              </div>
+            )}
+          </div>
 
           <button
             onClick={() => setActiveTab('stocklist')}
@@ -301,13 +343,14 @@ function App() {
           <h2 className="text-lg font-semibold text-gray-800">
             {activeTab === 'analysis' ? '股票分析工作台' :
              activeTab === 'watchlist' ? '自选行情中心' :
-             activeTab === 'alerts' ? '智能预警中心' :
+             activeTab === 'alerts' ? '技术预警中心' :
              activeTab === 'stocklist' ? '市场股票列表' :
              activeTab === 'backtest' ? '策略回测中心' :
              activeTab === 'datasync' ? '数据同步中心' :
              activeTab === 'synchistory' ? '同步历史记录' :
              activeTab === 'klinesync' ? 'K线数据同步' :
              activeTab === 'strategylibrary' ? '策略库管理' :
+             activeTab === 'pricealert' ? '价格预警中心' :
              '系统参数配置'}
           </h2>
           <div className="flex items-center space-x-6 text-sm">
@@ -404,6 +447,8 @@ function App() {
             <StockListPage />
           ) : activeTab === 'klinesync' ? (
             <KLineSyncPage />
+          ) : activeTab === 'pricealert' ? (
+            <PriceAlertPage />
           ) : activeTab === 'backtest' ? (
             <BacktestPage />
           ) : activeTab === 'strategylibrary' ? (

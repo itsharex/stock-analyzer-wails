@@ -287,6 +287,57 @@ const getIntradayData = useCallback(async (code: string): Promise<IntradayRespon
     return window.go.main.App.UpdateStrategyBacktestResult(id, backtestResult)
   }, [])
 
+  // Price Alert API
+  const getAllPriceAlerts = useCallback(async () => {
+    // @ts-ignore
+    return window.go.main.App.PriceAlertController?.GetAllAlerts()
+  }, [])
+
+  const getActivePriceAlerts = useCallback(async () => {
+    // @ts-ignore
+    return window.go.main.App.PriceAlertController?.GetActiveAlerts()
+  }, [])
+
+  const getPriceAlertsByCode = useCallback(async (code: string) => {
+    // @ts-ignore
+    return window.go.main.App.PriceAlertController?.GetAlertsByStockCode(code)
+  }, [])
+
+  const getPriceAlertTemplates = useCallback(async () => {
+    // @ts-ignore
+    return window.go.main.App.PriceAlertController?.GetAllTemplates()
+  }, [])
+
+  const getPriceAlertHistory = useCallback(async (code: string, limit: number) => {
+    // @ts-ignore
+    return window.go.main.App.PriceAlertController?.GetTriggerHistory(code, limit)
+  }, [])
+
+  const createPriceAlert = useCallback(async (jsonData: string) => {
+    // @ts-ignore
+    return window.go.main.App.PriceAlertController?.CreateAlert(jsonData)
+  }, [])
+
+  const updatePriceAlert = useCallback(async (jsonData: string) => {
+    // @ts-ignore
+    return window.go.main.App.PriceAlertController?.UpdateAlert(jsonData)
+  }, [])
+
+  const deletePriceAlert = useCallback(async (id: number) => {
+    // @ts-ignore
+    return window.go.main.App.PriceAlertController?.DeleteAlert(id)
+  }, [])
+
+  const togglePriceAlert = useCallback(async (id: number, isActive: boolean) => {
+    // @ts-ignore
+    return window.go.main.App.PriceAlertController?.ToggleAlertStatus(id, isActive)
+  }, [])
+
+  const createPriceAlertFromTemplate = useCallback(async (templateId: string, stockCode: string, stockName: string, paramsJson: string) => {
+    // @ts-ignore
+    return window.go.main.App.PriceAlertController?.CreateAlertFromTemplate(templateId, stockCode, stockName, paramsJson)
+  }, [])
+
 		return {
 		    getStockData,
 		    getIntradayData,
@@ -337,6 +388,17 @@ const getIntradayData = useCallback(async (code: string): Promise<IntradayRespon
     GetAllStrategies,
     GetStrategyTypes,
     UpdateStrategyBacktestResult,
+    // Price Alert API
+    getAllPriceAlerts,
+    getActivePriceAlerts,
+    getPriceAlertsByCode,
+    getPriceAlertTemplates,
+    getPriceAlertHistory,
+    createPriceAlert,
+    updatePriceAlert,
+    deletePriceAlert,
+    togglePriceAlert,
+    createPriceAlertFromTemplate,
   }
 }
 
