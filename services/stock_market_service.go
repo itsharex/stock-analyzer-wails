@@ -197,8 +197,6 @@ func (s *StockMarketService) SyncAllStocks() (*SyncStocksResult, error) {
 
 		// 处理当前页的数据
 		processed := 0
-		inserted := 0
-		updated := 0
 		now := time.Now().Format("2006-01-02 15:04:05")
 
 		for _, item := range apiResp.Data.Diff {
