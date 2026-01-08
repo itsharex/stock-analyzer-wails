@@ -1110,3 +1110,15 @@ func (a *App) GetSyncHistoryCount() (int, error) {
 func (a *App) ClearAllSyncHistory() error {
 	return a.SyncHistoryController.ClearAllSyncHistory()
 }
+
+// GetSyncedKLineData 获取指定股票已同步的K线数据（支持分页和日期筛选）
+func (a *App) GetSyncedKLineData(code string, startDate string, endDate string, page int, pageSize int) ([]map[string]interface{}, int, error) {
+	// 获取数据库服务实例
+	db := a.dbService
+	if db == nil {
+		return nil, 0, fmt.Errorf("数据库服务未初始化")
+	}
+
+	// 调用数据库服务查询K线数据
+	return db.GetKLineDataWithPagination(code, startDate, endDate, page, pageSize)
+}

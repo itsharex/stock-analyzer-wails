@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"stock-analyzer-wails/internal/logger"
@@ -434,4 +435,83 @@ func (s *DBService) ClearKLineCacheTable(code string) error {
 	}
 
 	return nil
+}
+
+// GetKLineDataWithPagination 获取指定股票的 K 线数据（支持分页和日期筛选）
+func (s *DBService) GetKLineDataWithPagination(code string, startDate string, endDate string, page int, pageSize int) ([]map[string]interface{}, int, error) {
+	tableName := fmt.Sprintf("kline_%s", code)
+
+	// 构建基础查询和参数
+	var conditions []string
+	var params []interface{}
+
+	// 日期筛选
+	if startDate != "" {
+		conditions = append(conditions, "date >= ?")
+		params = append(params, startDate)
+	}
+	if endDate != "" {
+		conditions = append(conditions, "date <= ?")
+		params = append(params, endDate)
+	}
+
+	// 构建 WHERE 子句
+	whereClause := ""
+	if len(conditions) > 0 {
+		whereClause = "WHERE " + strings.Join(conditions, " AND ")
+	}
+
+	// 查询总数
+	countQuery := fmt.Sprintf("SELECT COUNT(*) FROM %s %s", tableName, whereClause)
+	var totalCount int
+	paramsForCount := make([]interface{}, len(params))
+	copy(paramsForCount, params)
+	err := s.db.QueryRow(countQuery, paramsForCount...).Scan(&totalCount)
+	if err != nil {
+		return nil, 0, fmt.Errorf("查询 K 线数据总数失败: %w", err)
+	}
+
+	// 查询分页数据
+	offset := (page - 1) * pageSize
+	query := fmt.Sprintf(`
+		SELECT date, open, high, low, close, volume FROM %s
+		%s
+		ORDER BY date DESC
+		LIMIT ? OFFSET ?
+	`, tableName, whereClause)
+
+	params = append(params, pageSize, offset)
+
+	rows, err := s.db.Query(query, params...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("查询 K 线数据失败: %w", err)
+	}
+	defer rows.Close()
+
+	var klines []map[string]interface{}
+	for rows.Next() {
+		var date string
+		var open, high, low, close float64
+		var volume int64
+
+		if err := rows.Scan(&date, &open, &high, &low, &close, &volume); err != nil {
+			return nil, 0, fmt.Errorf("扫描 K 线数据失败: %w", err)
+		}
+
+		klines = append(klines, map[string]interface{}{
+			"date":   date,
+			"open":   open,
+			"high":   high,
+			"low":    low,
+			"close":  close,
+			"volume": volume,
+		})
+	}
+
+	// 反转切片，使其按日期升序排列
+	for i, j := 0, len(klines)-1; i < j; i, j = i+1, j-1 {
+		klines[i], klines[j] = klines[j], klines[i]
+	}
+
+	return klines, totalCount, nil
 }

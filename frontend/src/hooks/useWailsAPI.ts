@@ -174,6 +174,12 @@ const getIntradayData = useCallback(async (code: string): Promise<IntradayRespon
     return window.go.main.App.GetSyncHistoryByCode(code, limit)
   }, [])
 
+  const getSyncedKLineData = useCallback(async (code: string, startDate: string, endDate: string, page: number, pageSize: number): Promise<{ data: any[], total: number }> => {
+    // @ts-ignore
+    const [data, total] = await window.go.main.App.GetSyncedKLineData(code, startDate, endDate, page, pageSize)
+    return { data, total }
+  }, [])
+
 		return {
 		    getStockData,
 		    getIntradayData,
@@ -210,6 +216,7 @@ const getIntradayData = useCallback(async (code: string): Promise<IntradayRespon
     getSyncHistoryCount,
     clearAllSyncHistory,
     getSyncHistoryByCode,
+    getSyncedKLineData,
   }
 }
 

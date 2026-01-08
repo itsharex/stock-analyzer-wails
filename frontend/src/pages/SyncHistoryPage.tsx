@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { parseError } from '../utils/errorHandler';
-import { History, Trash2, RefreshCw, CheckCircle, AlertCircle, Clock, Filter, Search, ChevronLeft, ChevronRight } from 'lucide-react';
+import { History, Trash2, RefreshCw, CheckCircle, AlertCircle, Clock, Filter, Search, ChevronLeft, ChevronRight, Eye } from 'lucide-react';
 import { useWailsAPI } from '../hooks/useWailsAPI';
+import SyncHistoryDetail from '../components/SyncHistoryDetail';
 
 interface SyncHistoryItem {
   id: number;
@@ -29,6 +30,10 @@ const SyncHistoryPage: React.FC = () => {
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [totalCount, setTotalCount] = useState<number>(0);
   const pageSize = 20;
+
+  // 详情模态框
+  const [detailModalOpen, setDetailModalOpen] = useState<boolean>(false);
+  const [selectedStock, setSelectedStock] = useState<SyncHistoryItem | null>(null);
 
   useEffect(() => {
     loadSyncHistories();
@@ -84,6 +89,20 @@ const SyncHistoryPage: React.FC = () => {
       const errorResult = parseError(err);
       alert(`清除失败: ${errorResult.message}`);
     }
+  };
+
+  const handleViewDetail = (item: SyncHistoryItem) => {
+    setSelectedStock(item);
+    setDetailModalOpen(true);
+  };
+
+  const handleCloseDetail = () => {
+    setDetailModalOpen(false);
+    setSelectedStock(null);
+  };
+
+  const handleResync = async (code: string) => {
+    await loadSyncHistories();
   };
 
   const getStatusIcon = (status: string) => {
@@ -263,6 +282,7 @@ const SyncHistoryPage: React.FC = () => {
                       <th className="text-right py-4 px-6 text-sm font-medium text-gray-400">更新记录</th>
                       <th className="text-right py-4 px-6 text-sm font-medium text-gray-400">耗时</th>
                       <th className="text-left py-4 px-6 text-sm font-medium text-gray-400">同步时间</th>
+                      <th className="text-center py-4 px-6 text-sm font-medium text-gray-400">操作</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -310,6 +330,17 @@ const SyncHistoryPage: React.FC = () => {
                             </div>
                           )}
                         </td>
+                        <td className="py-4 px-6 text-center">
+                          {item.status === 'success' && (
+                            <button
+                              onClick={() => handleViewDetail(item)}
+                              className="inline-flex items-center space-x-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm transition-colors"
+                            >
+                              <Eye className="w-4 h-4" />
+                              <span>查看详情</span>
+                            </button>
+                          )}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -346,6 +377,19 @@ const SyncHistoryPage: React.FC = () => {
             </>
           )}
         </div>
+
+        {/* 详情模态框 */}
+        {selectedStock && (
+          <SyncHistoryDetail
+            isOpen={detailModalOpen}
+            onClose={handleCloseDetail}
+            stockCode={selectedStock.stock_code}
+            stockName={selectedStock.stock_name}
+            startDate={selectedStock.start_date}
+            endDate={selectedStock.end_date}
+            onResync={handleResync}
+          />
+        )}
       </div>
     </div>
   );
