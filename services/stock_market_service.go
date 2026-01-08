@@ -92,35 +92,9 @@ func (s *StockMarketService) SyncAllStocks() (*SyncStocksResult, error) {
 
 	// 默认参数
 	pn := 1
-	pz := 5000
+	pz := 5000 // 每页5000条
 	fs := "m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23,m:0+t:81+s:2048"
 	fields := "f12,f14,f2,f3,f62,f184,f66,f69,f72,f75,f78,f81,f84,f87,f64,f65"
-
-	url := fmt.Sprintf(
-		"https://push2.eastmoney.com/api/qt/clist/get?pn=%d&pz=%d&fs=%s&fields=%s",
-		pn, pz, fs, fields,
-	)
-
-	logger.Info("开始同步市场股票", zap.String("url", url))
-
-	// 请求接口
-	resp, err := s.client.Get(url)
-	if err != nil {
-		logger.Error("请求东方财富API失败", zap.Error(err))
-		return nil, fmt.Errorf("请求东方财富API失败: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// 解析响应
-	var apiResp EastMoneyResponse
-	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
-		logger.Error("解析API响应失败", zap.Error(err))
-		return nil, fmt.Errorf("解析API响应失败: %w", err)
-	}
-
-	if apiResp.RC != 0 {
-		return nil, fmt.Errorf("API返回错误: rc=%d", apiResp.RC)
-	}
 
 	// 获取数据库连接
 	db := s.dbService.GetDB()
@@ -173,54 +147,120 @@ func (s *StockMarketService) SyncAllStocks() (*SyncStocksResult, error) {
 	}
 	defer stmt.Close()
 
-	// 遍历所有股票数据
-	processed := 0
-	inserted := 0
-	updated := 0
-	now := time.Now().Format("2006-01-02 15:04:05")
+	// 循环分页获取所有股票
+	totalProcessed := 0
+	totalInserted := 0
+	totalUpdated := 0
+	totalCount := 0
 
-	for _, item := range apiResp.Data.Diff {
-		// 解析股票数据
-		stockData := s.parseStockItem(item, now)
-		if stockData == nil {
-			continue
-		}
-
-		// 执行upsert
-		_, err := stmt.Exec(
-			stockData.Code,
-			stockData.Name,
-			stockData.Market,
-			stockData.FullCode,
-			stockData.Type,
-			stockData.IsActive,
-			stockData.Price,
-			stockData.ChangeRate,
-			stockData.ChangeAmount,
-			stockData.Volume,
-			stockData.Amount,
-			stockData.Amplitude,
-			stockData.High,
-			stockData.Low,
-			stockData.Open,
-			stockData.PreClose,
-			stockData.Turnover,
-			stockData.VolumeRatio,
-			stockData.PE,
-			stockData.WarrantRatio,
+	for {
+		url := fmt.Sprintf(
+			"https://push2.eastmoney.com/api/qt/clist/get?pn=%d&pz=%d&fs=%s&fields=%s",
+			pn, pz, fs, fields,
 		)
 
+		logger.Info("开始同步市场股票", zap.String("url", url), zap.Int("page", pn))
+
+		// 请求接口
+		resp, err := s.client.Get(url)
 		if err != nil {
-			logger.Error("插入股票数据失败", zap.String("code", stockData.Code), zap.Error(err))
-			continue
+			logger.Error("请求东方财富API失败", zap.Error(err))
+			_ = tx.Rollback()
+			return nil, fmt.Errorf("请求东方财富API失败: %w", err)
+		}
+		defer resp.Body.Close()
+
+		// 解析响应
+		var apiResp EastMoneyResponse
+		if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+			logger.Error("解析API响应失败", zap.Error(err))
+			_ = tx.Rollback()
+			return nil, fmt.Errorf("解析API响应失败: %w", err)
 		}
 
-		processed++
-		if processed == 1 {
-			inserted++
-		} else {
-			updated++
+		if apiResp.RC != 0 {
+			_ = tx.Rollback()
+			return nil, fmt.Errorf("API返回错误: rc=%d", apiResp.RC)
 		}
+
+		// 第一次请求时获取总数
+		if totalCount == 0 {
+			totalCount = apiResp.Data.Total
+			logger.Info("获取到股票总数", zap.Int("total", totalCount))
+		}
+
+		// 如果没有数据，退出循环
+		if len(apiResp.Data.Diff) == 0 {
+			logger.Info("本页无数据，同步完成", zap.Int("page", pn))
+			break
+		}
+
+		// 处理当前页的数据
+		processed := 0
+		inserted := 0
+		updated := 0
+		now := time.Now().Format("2006-01-02 15:04:05")
+
+		for _, item := range apiResp.Data.Diff {
+			// 解析股票数据
+			stockData := s.parseStockItem(item, now)
+			if stockData == nil {
+				continue
+			}
+
+			// 执行upsert
+			_, err := stmt.Exec(
+				stockData.Code,
+				stockData.Name,
+				stockData.Market,
+				stockData.FullCode,
+				stockData.Type,
+				stockData.IsActive,
+				stockData.Price,
+				stockData.ChangeRate,
+				stockData.ChangeAmount,
+				stockData.Volume,
+				stockData.Amount,
+				stockData.Amplitude,
+				stockData.High,
+				stockData.Low,
+				stockData.Open,
+				stockData.PreClose,
+				stockData.Turnover,
+				stockData.VolumeRatio,
+				stockData.PE,
+				stockData.WarrantRatio,
+			)
+
+			if err != nil {
+				logger.Error("插入股票数据失败", zap.String("code", stockData.Code), zap.Error(err))
+				continue
+			}
+
+			processed++
+			// 第一条记录算插入，其他算更新
+			if totalProcessed == 0 && processed == 1 {
+				totalInserted++
+			} else {
+				totalUpdated++
+			}
+		}
+
+		totalProcessed += processed
+		logger.Info("本页数据处理完成",
+			zap.Int("page", pn),
+			zap.Int("processed", processed),
+			zap.Int("totalProcessed", totalProcessed),
+		)
+
+		// 检查是否已经获取完所有数据
+		if totalProcessed >= totalCount {
+			logger.Info("已获取全部股票数据", zap.Int("total", totalCount))
+			break
+		}
+
+		// 下一页
+		pn++
 	}
 
 	// 提交事务
@@ -232,18 +272,18 @@ func (s *StockMarketService) SyncAllStocks() (*SyncStocksResult, error) {
 	duration := time.Since(startTime).Seconds()
 
 	logger.Info("同步市场股票完成",
-		zap.Int("total", apiResp.Data.Total),
-		zap.Int("processed", processed),
-		zap.Int("inserted", inserted),
-		zap.Int("updated", updated),
+		zap.Int("total", totalCount),
+		zap.Int("processed", totalProcessed),
+		zap.Int("inserted", totalInserted),
+		zap.Int("updated", totalUpdated),
 		zap.Float64("duration", duration),
 	)
 
 	return &SyncStocksResult{
-		Total:     apiResp.Data.Total,
-		Processed: processed,
-		Inserted:  inserted,
-		Updated:   updated,
+		Total:     totalCount,
+		Processed: totalProcessed,
+		Inserted:  totalInserted,
+		Updated:   totalUpdated,
 		Duration:  duration,
 		Message:   "同步成功",
 	}, nil
