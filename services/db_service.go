@@ -275,6 +275,97 @@ func (s *DBService) initTables() error {
 		return fmt.Errorf("创建 stocks.full_code 索引失败: %w", err)
 	}
 
+	// 9. Price Threshold Alerts 表 - 价格预警配置
+	_, err = tx.Exec(`
+		CREATE TABLE IF NOT EXISTS price_threshold_alerts (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			stock_code TEXT NOT NULL,
+			stock_name TEXT NOT NULL,
+			alert_type TEXT NOT NULL, -- 'price_change', 'target_price', 'stop_loss', 'high_low', 'price_range', 'ma_deviation', 'combined'
+			conditions TEXT NOT NULL, -- JSON格式: [{"field": "...", "operator": "...", "value": "..."}]
+			is_active BOOLEAN DEFAULT 1,
+			sensitivity REAL DEFAULT 0.001, -- 价格波动容差
+			cooldown_hours INTEGER DEFAULT 1, -- 冷却时间（小时）
+			post_trigger_action TEXT DEFAULT 'continue', -- 'continue', 'disable', 'once'
+			enable_sound BOOLEAN DEFAULT 1,
+			enable_desktop BOOLEAN DEFAULT 1,
+			template_id TEXT,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			last_triggered_at DATETIME
+		);
+	`)
+	if err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("创建 price_threshold_alerts 表失败: %w", err)
+	}
+
+	// 创建 price_threshold_alerts 表的索引
+	_, err = tx.Exec(`CREATE INDEX IF NOT EXISTS idx_price_alerts_stock_code ON price_threshold_alerts(stock_code);`)
+	if err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("创建 price_threshold_alerts.stock_code 索引失败: %w", err)
+	}
+
+	_, err = tx.Exec(`CREATE INDEX IF NOT EXISTS idx_price_alerts_is_active ON price_threshold_alerts(is_active);`)
+	if err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("创建 price_threshold_alerts.is_active 索引失败: %w", err)
+	}
+
+	// 10. Price Alert Templates 表 - 预警模板
+	_, err = tx.Exec(`
+		CREATE TABLE IF NOT EXISTS price_alert_templates (
+			id TEXT PRIMARY KEY,
+			name TEXT NOT NULL,
+			description TEXT,
+			alert_type TEXT NOT NULL,
+			conditions TEXT NOT NULL, -- JSON格式的模板条件
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
+	`)
+	if err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("创建 price_alert_templates 表失败: %w", err)
+	}
+
+	// 11. Price Alert Trigger History 表 - 预警触发历史
+	_, err = tx.Exec(`
+		CREATE TABLE IF NOT EXISTS price_alert_trigger_history (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			alert_id INTEGER NOT NULL,
+			stock_code TEXT NOT NULL,
+			stock_name TEXT NOT NULL,
+			alert_type TEXT NOT NULL,
+			trigger_price REAL,
+			trigger_message TEXT,
+			triggered_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
+	`)
+	if err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("创建 price_alert_trigger_history 表失败: %w", err)
+	}
+
+	// 创建 price_alert_trigger_history 表的索引
+	_, err = tx.Exec(`CREATE INDEX IF NOT EXISTS idx_alert_history_alert_id ON price_alert_trigger_history(alert_id);`)
+	if err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("创建 price_alert_trigger_history.alert_id 索引失败: %w", err)
+	}
+
+	_, err = tx.Exec(`CREATE INDEX IF NOT EXISTS idx_alert_history_stock_code ON price_alert_trigger_history(stock_code);`)
+	if err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("创建 price_alert_trigger_history.stock_code 索引失败: %w", err)
+	}
+
+	_, err = tx.Exec(`CREATE INDEX IF NOT EXISTS idx_alert_history_triggered_at ON price_alert_trigger_history(triggered_at);`)
+	if err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("创建 price_alert_trigger_history.triggered_at 索引失败: %w", err)
+	}
+
 	// 提交事务
 	if err := tx.Commit(); err != nil {
 		return err
@@ -314,6 +405,96 @@ func (s *DBService) insertDefaultConfigs() error {
 		}
 	}
 	logger.Info("默认配置项插入完成")
+
+	// 插入默认预警模板
+	if err := s.insertDefaultAlertTemplates(); err != nil {
+		logger.Warn("插入默认预警模板失败", zap.Error(err))
+	}
+
+	return nil
+}
+
+// insertDefaultAlertTemplates 插入默认预警模板
+func (s *DBService) insertDefaultAlertTemplates() error {
+	templates := []struct {
+		ID          string
+		Name        string
+		Description string
+		AlertType   string
+		Conditions  string
+	}{
+		{
+			ID:          "template_price_change_5",
+			Name:        "涨跌幅预警（5%）",
+			Description: "当日涨跌幅度超过5%时触发预警",
+			AlertType:   "price_change",
+			Conditions:  `[{"field": "price_change_percent", "operator": ">", "value": 5}]`,
+		},
+		{
+			ID:          "template_price_change_neg_5",
+			Name:        "涨跌幅预警（-5%）",
+			Description: "当日涨跌幅度低于-5%时触发预警",
+			AlertType:   "price_change",
+			Conditions:  `[{"field": "price_change_percent", "operator": "<", "value": -5}]`,
+		},
+		{
+			ID:          "template_target_price",
+			Name:        "目标价预警",
+			Description: "价格达到目标价时触发预警",
+			AlertType:   "target_price",
+			Conditions:  `[{"field": "close_price", "operator": ">=", "value": 0.0}]`,
+		},
+		{
+			ID:          "template_stop_loss",
+			Name:        "止损价预警",
+			Description: "价格跌破止损价时触发预警",
+			AlertType:   "stop_loss",
+			Conditions:  `[{"field": "close_price", "operator": "<=", "value": 0.0}]`,
+		},
+		{
+			ID:          "template_high_new",
+			Name:        "突破历史新高",
+			Description: "价格突破历史最高价时触发预警",
+			AlertType:   "high_low",
+			Conditions:  `[{"field": "high", "operator": ">", "value": 0.0, "reference": "historical_high"}]`,
+		},
+		{
+			ID:          "template_low_new",
+			Name:        "跌破历史新低",
+			Description: "价格跌破历史最低价时触发预警",
+			AlertType:   "high_low",
+			Conditions:  `[{"field": "low", "operator": "<", "value": 0.0, "reference": "historical_low"}]`,
+		},
+		{
+			ID:          "template_ma5_golden_cross",
+			Name:        "MA5金叉MA20",
+			Description: "5日均线上穿20日均线时触发预警",
+			AlertType:   "ma_deviation",
+			Conditions:  `[{"field": "ma5", "operator": ">", "value": 0.0, "reference": "ma20"}]`,
+		},
+		{
+			ID:          "template_volume_surge",
+			Name:        "放量预警",
+			Description: "成交量超过平均2倍时触发预警",
+			AlertType:   "combined",
+			Conditions:  `[{"field": "volume_ratio", "operator": ">", "value": 2}]`,
+		},
+	}
+
+	for _, tmpl := range templates {
+		_, err := s.db.Exec(`
+			INSERT OR IGNORE INTO price_alert_templates (id, name, description, alert_type, conditions)
+			VALUES (?, ?, ?, ?, ?)
+		`, tmpl.ID, tmpl.Name, tmpl.Description, tmpl.AlertType, tmpl.Conditions)
+		if err != nil {
+			logger.Warn("插入预警模板失败",
+				zap.String("template_id", tmpl.ID),
+				zap.Error(err),
+			)
+		}
+	}
+
+	logger.Info("默认预警模板插入完成")
 	return nil
 }
 

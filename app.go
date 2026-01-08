@@ -45,6 +45,7 @@ type App struct {
 	SyncHistoryController    *controllers.SyncHistoryController
 	StrategyController       *controllers.StrategyController // 策略控制器
 	StockMarketController    *controllers.StockMarketController // 市场股票控制器
+	PriceAlertController     *controllers.PriceAlertController // 价格预警控制器
 
 	// Services (for internal use)
 	watchlistService *services.WatchlistService // 保持，用于内部逻辑调用
@@ -89,14 +90,16 @@ func NewApp() *App {
 	configRepo := repositories.NewSQLiteConfigRepository(dbSvc.GetDB())
 	syncHistoryRepo := repositories.NewSQLiteSyncHistoryRepository(dbSvc.GetDB())
 	strategyRepo := repositories.NewStrategyRepository(dbSvc.GetDB())
+	priceAlertRepo := repositories.NewPriceAlertRepository(dbSvc.GetDB())
 
 	// 2. Service 层
 	watchlistSvc := services.NewWatchlistService(watchlistRepo)
 	alertSvc := services.NewAlertService(alertRepo)
 	positionSvc := services.NewPositionService(positionRepo)
 	configSvc := services.NewConfigService(configRepo)
-	strategySvc := services.NewStrategyService(strategyRepo)
+	strategySvc := services.NewStrategyService(strategySvc)
 	stockMarketSvc := services.NewStockMarketService(dbSvc)
+	priceAlertSvc := services.NewPriceAlertService(priceAlertRepo)
 
 	var klineSyncSvc *services.KLineSyncService
 	if dbSvc != nil {
@@ -111,6 +114,7 @@ func NewApp() *App {
 	syncHistoryCtrl := controllers.NewSyncHistoryController(syncHistoryRepo)
 	strategyCtrl := controllers.NewStrategyController(strategySvc)
 	stockMarketCtrl := controllers.NewStockMarketController(stockMarketSvc)
+	priceAlertCtrl := controllers.NewPriceAlertController(priceAlertSvc)
 
 	return &App{
 		stockService:       stockSvc,
@@ -126,6 +130,7 @@ func NewApp() *App {
 		SyncHistoryController: syncHistoryCtrl,
 		StrategyController:    strategyCtrl,
 		StockMarketController: stockMarketCtrl, // 市场股票控制器
+		PriceAlertController:  priceAlertCtrl,   // 价格预警控制器
 
 		// Services (for internal use)
 		watchlistService: watchlistSvc,
