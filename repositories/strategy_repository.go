@@ -123,7 +123,7 @@ func (r *StrategyRepository) GetByID(id int64) (*models.StrategyConfig, error) {
 		}
 	}
 
-	if backtestJSON.Valid {
+	if backtestJSON.Valid && backtestJSON.String != "" {
 		if err := json.Unmarshal([]byte(backtestJSON.String), &strategy.LastBacktestResult); err != nil {
 			return nil, fmt.Errorf("反序列化回测结果失败: %w", err)
 		}
@@ -161,7 +161,7 @@ func (r *StrategyRepository) GetAll() ([]models.StrategyConfig, error) {
 			}
 		}
 
-		if backtestJSON.Valid {
+		if backtestJSON.Valid && backtestJSON.String != "" {
 			if err := json.Unmarshal([]byte(backtestJSON.String), &strategy.LastBacktestResult); err != nil {
 				return nil, fmt.Errorf("反序列化回测结果失败: %w", err)
 			}
