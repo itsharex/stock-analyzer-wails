@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { X, RefreshCw, ChevronLeft, ChevronRight, Filter, Search, Calendar } from 'lucide-react';
+import { X, RefreshCw, ChevronLeft, ChevronRight, Filter, Calendar } from 'lucide-react';
 import KLineChart from './KLineChart';
 import { useWailsAPI } from '../hooks/useWailsAPI';
 import type { KLineData } from '../types';
@@ -23,7 +23,7 @@ const SyncHistoryDetail: React.FC<SyncHistoryDetailProps> = ({
   endDate,
   onResync,
 }) => {
-  const { getSyncedKLineData, getStockData, SyncStockData } = useWailsAPI();
+  const { getSyncedKLineData, SyncStockData } = useWailsAPI();
   const [klineData, setKlineData] = useState<KLineData[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -36,7 +36,6 @@ const SyncHistoryDetail: React.FC<SyncHistoryDetailProps> = ({
   // 分页
   const [currentPage, setCurrentPage] = useState<number>(1);
   const [pageSize] = useState<number>(20);
-  const [totalCount, setTotalCount] = useState<number>(0);
 
   // 筛选
   const [filterStartDate, setFilterStartDate] = useState<string>('');
@@ -70,7 +69,6 @@ const SyncHistoryDetail: React.FC<SyncHistoryDetailProps> = ({
       const safeData = result.data || []
 
       setTableData(safeData);
-      setTotalCount(result.total || 0);
 
       // 转换为K线图数据格式
       const klineChartData: KLineData[] = safeData.map((item: any) => ({
@@ -88,7 +86,6 @@ const SyncHistoryDetail: React.FC<SyncHistoryDetailProps> = ({
       setError(err.message || '加载K线数据失败');
       setTableData([]);
       setKlineData([]);
-      setTotalCount(0);
     } finally {
       setLoading(false);
     }

@@ -101,7 +101,7 @@ const SyncHistoryPage: React.FC = () => {
     setSelectedStock(null);
   };
 
-  const handleResync = async (code: string) => {
+  const handleResync = async (_code: string) => {
     await loadSyncHistories();
   };
 
