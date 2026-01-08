@@ -35,6 +35,7 @@ type App struct {
 	alerts          []*models.PriceAlert
 	alertMutex      sync.Mutex
 	alertConfig     models.AlertConfig
+	klineSyncService *services.KLineSyncService // K线同步服务
 
 	// Controllers (Wails Bindings)
 	WatchlistController      *controllers.WatchlistController
@@ -97,6 +98,11 @@ func NewApp() *App {
 	strategySvc := services.NewStrategyService(strategyRepo)
 	stockMarketSvc := services.NewStockMarketService(dbSvc)
 
+	var klineSyncSvc *services.KLineSyncService
+	if dbSvc != nil {
+		klineSyncSvc = services.NewKLineSyncService(dbSvc)
+	}
+
 	// 3. Controller 层 (Wails 绑定)
 	watchlistCtrl := controllers.NewWatchlistController(watchlistSvc)
 	alertCtrl := controllers.NewAlertController(alertSvc)
@@ -107,18 +113,19 @@ func NewApp() *App {
 	stockMarketCtrl := controllers.NewStockMarketController(stockMarketSvc)
 
 	return &App{
-		stockService: stockSvc,
-		aiService:    nil,
-		dbService:    dbSvc, // 存储 DBService
+		stockService:       stockSvc,
+		aiService:          nil,
+		dbService:          dbSvc, // 存储 DBService
+		klineSyncService:   klineSyncSvc, // K线同步服务
 
 		// Controllers
-		WatchlistController:      watchlistCtrl,
-		AlertController:          alertCtrl,
-		PositionController:       positionCtrl,
-		ConfigController:         configCtrl,
-		SyncHistoryController:    syncHistoryCtrl,
-		StrategyController:       strategyCtrl,
-		StockMarketController:    stockMarketCtrl, // 市场股票控制器
+		WatchlistController:   watchlistCtrl,
+		AlertController:       alertCtrl,
+		PositionController:    positionCtrl,
+		ConfigController:      configCtrl,
+		SyncHistoryController: syncHistoryCtrl,
+		StrategyController:    strategyCtrl,
+		StockMarketController: stockMarketCtrl, // 市场股票控制器
 
 		// Services (for internal use)
 		watchlistService: watchlistSvc,
@@ -140,6 +147,9 @@ func (a *App) startup(ctx context.Context) {
 
 	// 注册需要上下文的服务的 Startup 方法
 	a.stockService.Startup(ctx)
+	if a.klineSyncService != nil {
+		a.klineSyncService.SetContext(ctx)
+	}
 
 	// 迁移旧的 AI 配置（数据库不可用时 configService 为空，需要安全跳过）
 	if a.configService != nil {
@@ -1493,5 +1503,31 @@ func (a *App) GetSyncStats() (interface{}, error) {
 		return nil, fmt.Errorf("市场股票控制器未初始化")
 	}
 	return a.StockMarketController.GetSyncStats()
+}
+
+// ============ K线数据同步 API ============
+
+// StartKLineSync 开始K线数据同步
+func (a *App) StartKLineSync(days int) (interface{}, error) {
+	if a.klineSyncService == nil {
+		return nil, fmt.Errorf("K线同步服务未初始化")
+	}
+	return a.klineSyncService.StartKLineSync(days)
+}
+
+// GetKLineSyncProgress 获取K线同步进度
+func (a *App) GetKLineSyncProgress() (interface{}, error) {
+	if a.klineSyncService == nil {
+		return nil, fmt.Errorf("K线同步服务未初始化")
+	}
+	return a.klineSyncService.GetSyncProgress()
+}
+
+// GetKLineSyncHistory 获取K线同步历史记录
+func (a *App) GetKLineSyncHistory(limit int) (interface{}, error) {
+	if a.klineSyncService == nil {
+		return nil, fmt.Errorf("K线同步服务未初始化")
+	}
+	return a.klineSyncService.GetKLineSyncHistory(limit)
 }
 

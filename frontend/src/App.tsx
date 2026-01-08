@@ -10,12 +10,13 @@ import DataSyncPage from './pages/DataSyncPage'
 import SyncHistoryPage from './pages/SyncHistoryPage'
 import StrategyLibraryPage from './pages/StrategyLibraryPage'
 import StockListPage from './pages/StockListPage'
+import KLineSyncPage from './pages/KLineSyncPage'
 import { AlertToast } from './components/AlertToast'
 import { AlertCenter } from './components/AlertCenter'
 import { useWailsAPI } from './hooks/useWailsAPI'
 import type { StockData, AnalysisReport as AnalysisReportType, AppConfig } from './types'
 
-type NavItem = 'analysis' | 'watchlist' | 'alerts' | 'settings' | 'backtest' | 'datasync' | 'synchistory' | 'strategylibrary' | 'strategy' | 'stocklist'
+type NavItem = 'analysis' | 'watchlist' | 'alerts' | 'settings' | 'backtest' | 'datasync' | 'synchistory' | 'strategylibrary' | 'strategy' | 'stocklist' | 'klinesync'
 
 
 function App() {
@@ -207,7 +208,7 @@ function App() {
             <button
               onClick={() => setDataSyncExpanded(!dataSyncExpanded)}
               className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 ${
-                activeTab === 'datasync' || activeTab === 'synchistory'
+                activeTab === 'datasync' || activeTab === 'synchistory' || activeTab === 'klinesync'
                   ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20'
                   : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
               }`}
@@ -229,6 +230,19 @@ function App() {
             {/* 子菜单 */}
             {dataSyncExpanded && (
               <div className="ml-4 mt-1 space-y-1">
+                <button
+                  onClick={() => {
+                    setActiveTab('klinesync')
+                  }}
+                  className={`w-full flex items-center space-x-2 px-4 py-2 rounded-lg transition-all duration-200 ${
+                    activeTab === 'klinesync'
+                      ? 'bg-blue-600 text-white'
+                      : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                  }`}
+                >
+                  <span className="text-lg">📊</span>
+                  <span className="text-sm">K线同步</span>
+                </button>
                 <button
                   onClick={() => {
                     setActiveTab('datasync')
@@ -292,6 +306,7 @@ function App() {
              activeTab === 'backtest' ? '策略回测中心' :
              activeTab === 'datasync' ? '数据同步中心' :
              activeTab === 'synchistory' ? '同步历史记录' :
+             activeTab === 'klinesync' ? 'K线数据同步' :
              activeTab === 'strategylibrary' ? '策略库管理' :
              '系统参数配置'}
           </h2>
@@ -387,6 +402,8 @@ function App() {
             <AlertCenter />
           ) : activeTab === 'stocklist' ? (
             <StockListPage />
+          ) : activeTab === 'klinesync' ? (
+            <KLineSyncPage />
           ) : activeTab === 'backtest' ? (
             <BacktestPage />
           ) : activeTab === 'strategylibrary' ? (
