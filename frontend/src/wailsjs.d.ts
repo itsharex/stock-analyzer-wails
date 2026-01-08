@@ -74,10 +74,7 @@ declare global {
           SyncStockData(code: string, startDate: string, endDate: string): Promise<any>;
           BatchSyncStockData(codes: string[], startDate: string, endDate: string): Promise<void>;
           ClearStockCache(code: string): Promise<void>;
-        };
-        // 同步历史控制器
-        SyncHistoryController: {
-          AddSyncHistory(history: SyncHistoryItem): Promise<void>;
+          // 同步历史方法
           GetAllSyncHistory(limit: number, offset: number): Promise<SyncHistoryItem[]>;
           GetSyncHistoryByCode(code: string, limit: number): Promise<SyncHistoryItem[]>;
           GetSyncHistoryCount(): Promise<number>;

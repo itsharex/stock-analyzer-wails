@@ -156,22 +156,22 @@ const getIntradayData = useCallback(async (code: string): Promise<IntradayRespon
   // Sync History API
   const getAllSyncHistory = useCallback(async (limit: number, offset: number): Promise<any[]> => {
     // @ts-ignore
-    return window.go.main.SyncHistoryController.GetAllSyncHistory(limit, offset)
+    return window.go.main.App.GetAllSyncHistory(limit, offset)
   }, [])
 
   const getSyncHistoryCount = useCallback(async (): Promise<number> => {
     // @ts-ignore
-    return window.go.main.SyncHistoryController.GetSyncHistoryCount()
+    return window.go.main.App.GetSyncHistoryCount()
   }, [])
 
   const clearAllSyncHistory = useCallback(async (): Promise<void> => {
     // @ts-ignore
-    return window.go.main.SyncHistoryController.ClearAllSyncHistory()
+    return window.go.main.App.ClearAllSyncHistory()
   }, [])
 
   const getSyncHistoryByCode = useCallback(async (code: string, limit: number): Promise<any[]> => {
     // @ts-ignore
-    return window.go.main.SyncHistoryController.GetSyncHistoryByCode(code, limit)
+    return window.go.main.App.GetSyncHistoryByCode(code, limit)
   }, [])
 
 		return {

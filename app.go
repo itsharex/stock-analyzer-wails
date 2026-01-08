@@ -1085,3 +1085,25 @@ func (a *App) BacktestSimpleMA(code string, shortPeriod int, longPeriod int, ini
 }
 
 // --- 回测功能 结束 ---
+
+// --- SyncHistoryController 转发方法 ---
+
+// GetAllSyncHistory 获取所有同步历史记录（分页）
+func (a *App) GetAllSyncHistory(limit int, offset int) ([]*models.SyncHistory, error) {
+	return a.SyncHistoryController.GetAllSyncHistory(limit, offset)
+}
+
+// GetSyncHistoryByCode 根据股票代码获取同步历史记录
+func (a *App) GetSyncHistoryByCode(code string, limit int) ([]*models.SyncHistory, error) {
+	return a.SyncHistoryController.GetSyncHistoryByCode(code, limit)
+}
+
+// GetSyncHistoryCount 获取同步历史记录总数
+func (a *App) GetSyncHistoryCount() (int, error) {
+	return a.SyncHistoryController.GetSyncHistoryCount()
+}
+
+// ClearAllSyncHistory 清除所有同步历史记录
+func (a *App) ClearAllSyncHistory() error {
+	return a.SyncHistoryController.ClearAllSyncHistory()
+}
