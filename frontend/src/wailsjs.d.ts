@@ -40,3 +40,50 @@ interface AnalysisReport {
   targetPrice: string;
   generatedAt: string;
 }
+
+// 同步历史数据模型
+interface SyncHistoryItem {
+  id: number;
+  stock_code: string;
+  stock_name: string;
+  sync_type: string;
+  start_date: string;
+  end_date: string;
+  status: string;
+  records_added: number;
+  records_updated: number;
+  duration: number;
+  error_msg: string;
+  created_at: string;
+}
+
+// window.go 全局类型声明
+declare global {
+  interface Window {
+    go: {
+      main: {
+        App: {
+          // 原有方法
+          GetStockData(code: string): Promise<StockData>;
+          AnalyzeStock(code: string): Promise<AnalysisReport>;
+          QuickAnalyze(code: string): Promise<string>;
+          SearchStock(keyword: string): Promise<StockData[]>;
+          GetStockList(pageNum: number, pageSize: number): Promise<StockData[]>;
+          Greet(name: string): Promise<string>;
+          GetDataSyncStats(): Promise<any>;
+          SyncStockData(code: string, startDate: string, endDate: string): Promise<any>;
+          BatchSyncStockData(codes: string[], startDate: string, endDate: string): Promise<void>;
+          ClearStockCache(code: string): Promise<void>;
+        };
+        // 同步历史控制器
+        SyncHistoryController: {
+          AddSyncHistory(history: SyncHistoryItem): Promise<void>;
+          GetAllSyncHistory(limit: number, offset: number): Promise<SyncHistoryItem[]>;
+          GetSyncHistoryByCode(code: string, limit: number): Promise<SyncHistoryItem[]>;
+          GetSyncHistoryCount(): Promise<number>;
+          ClearAllSyncHistory(): Promise<void>;
+        };
+      };
+    };
+  }
+}
