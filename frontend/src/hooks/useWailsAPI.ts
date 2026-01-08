@@ -153,6 +153,27 @@ const getIntradayData = useCallback(async (code: string): Promise<IntradayRespon
     return window.go.main.App.ClearStockCache(code)
   }, [])
 
+  // Sync History API
+  const getAllSyncHistory = useCallback(async (limit: number, offset: number): Promise<any[]> => {
+    // @ts-ignore
+    return window.go.main.SyncHistoryController.GetAllSyncHistory(limit, offset)
+  }, [])
+
+  const getSyncHistoryCount = useCallback(async (): Promise<number> => {
+    // @ts-ignore
+    return window.go.main.SyncHistoryController.GetSyncHistoryCount()
+  }, [])
+
+  const clearAllSyncHistory = useCallback(async (): Promise<void> => {
+    // @ts-ignore
+    return window.go.main.SyncHistoryController.ClearAllSyncHistory()
+  }, [])
+
+  const getSyncHistoryByCode = useCallback(async (code: string, limit: number): Promise<any[]> => {
+    // @ts-ignore
+    return window.go.main.SyncHistoryController.GetSyncHistoryByCode(code, limit)
+  }, [])
+
 		return {
 		    getStockData,
 		    getIntradayData,
@@ -184,6 +205,11 @@ const getIntradayData = useCallback(async (code: string): Promise<IntradayRespon
     GetDataSyncStats,
     BatchSyncStockData,
     ClearStockCache,
+    // Sync History API
+    getAllSyncHistory,
+    getSyncHistoryCount,
+    clearAllSyncHistory,
+    getSyncHistoryByCode,
   }
 }
 

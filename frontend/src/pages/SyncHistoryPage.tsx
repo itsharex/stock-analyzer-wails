@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { parseError } from '../utils/errorHandler';
 import { History, Trash2, RefreshCw, CheckCircle, AlertCircle, Clock, Filter, Search, ChevronLeft, ChevronRight } from 'lucide-react';
+import { useWailsAPI } from '../hooks/useWailsAPI';
 
 interface SyncHistoryItem {
   id: number;
@@ -18,6 +19,7 @@ interface SyncHistoryItem {
 }
 
 const SyncHistoryPage: React.FC = () => {
+  const { getAllSyncHistory, getSyncHistoryCount, clearAllSyncHistory } = useWailsAPI();
   const [histories, setHistories] = useState<SyncHistoryItem[]>([]);
   const [filteredHistories, setFilteredHistories] = useState<SyncHistoryItem[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
@@ -55,10 +57,9 @@ const SyncHistoryPage: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      // @ts-ignore
       const [historyList, count] = await Promise.all([
-        window.go.main.SyncHistoryController.GetAllSyncHistory(pageSize, (currentPage - 1) * pageSize),
-        window.go.main.SyncHistoryController.GetSyncHistoryCount(),
+        getAllSyncHistory(pageSize, (currentPage - 1) * pageSize),
+        getSyncHistoryCount(),
       ]);
       setHistories(historyList);
       setTotalCount(count);
@@ -76,8 +77,7 @@ const SyncHistoryPage: React.FC = () => {
     }
 
     try {
-      // @ts-ignore
-      await window.go.main.SyncHistoryController.ClearAllSyncHistory();
+      await clearAllSyncHistory();
       alert('同步历史记录已清除');
       await loadSyncHistories();
     } catch (err) {
