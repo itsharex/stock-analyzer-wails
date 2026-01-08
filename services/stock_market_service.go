@@ -50,6 +50,69 @@ const (
 	FieldCircAShare     = "f39"  // f39:流通A股（万股）
 	FieldTotalRevenue   = "f40"  // f40:总营收（最近季度）
 	FieldRevenueYOY     = "f41"  // f41:总营收同比
+	FieldTotalProfit    = "f44"  // f44:总利润（最近季度）
+	FieldNetProfit      = "f45"  // f45:净利润（最近季度）
+	FieldProfitGrowth   = "f46"  // f46:净利润增长率（%）（同比）（最近季度）
+	FieldUndividedProfit = "f48" // f48:每股未分配利润
+	FieldGrossMargin    = "f49"  // f49:毛利率（最近季度）
+	FieldTotalAssets    = "f50"  // f50:总资产（最近季度）
+	FieldDebtRatio      = "f57"  // f57:负债率
+	FieldEquity         = "f58"  // f58:股东权益
+	FieldMainNetInflow  = "f62"  // f62:今日主力净流入
+	FieldSuperBuy       = "f64"  // f64:超大单流入
+	FieldSuperSell      = "f65"  // f65:超大单流出
+	FieldSuperNetInflow = "f66"  // f66:今日超大单净流入
+	FieldSuperNetRatio  = "f69"  // f69:超大单净比
+	FieldBigBuy         = "f70"  // f70:大单流入
+	FieldBigSell        = "f71"  // f71:大单流出
+	FieldBigNetInflow   = "f72"  // f72:今日大单净流入
+	FieldBigNetRatio    = "f75"  // f75:大单净比
+	FieldMidBuy         = "f76"  // f76:中单流入
+	FieldMidSell        = "f77"  // f77:中单流出
+	FieldMidNetInflow   = "f78"  // f78:今日中单净流入
+	FieldMidNetRatio    = "f81"  // f81:中单净比（%）
+	FieldSmallBuy       = "f82"  // f82:小单流入
+	FieldSmallSell      = "f83"  // f83:小单流出
+	FieldSmallNetInflow = "f84"  // f84:进入小单净流入
+	FieldSmallNetRatio  = "f87"  // f87:小单净比
+	FieldIndustry       = "f100" // f100:行业
+	FieldRegion         = "f102" // f102:地区板块
+	FieldRemark         = "f103" // f103:备注
+	FieldRiseCount      = "f104" // f104:上涨家数
+	FieldFallCount      = "f105" // f105:下跌家数
+	FieldFlatCount      = "f106" // f106:平盘家数
+	FieldEPS1           = "f112" // f112:每股收益（一）
+	FieldNetAssetPerShare = "f113" // f113:每股净资产
+	FieldPEStatic       = "f114" // f114:市盈率（静）
+	FieldPETTM          = "f115" // f115:市盈率（TTM）
+	FieldTradeTime      = "f124" // f124:交易时间
+	FieldLeaderStock    = "f128" // f128:板块领涨股
+	FieldNetProfitTTM   = "f129" // f129:净利润TTM
+	FieldPSTTM          = "f130" // f130:市销率TTM
+	FieldPCTTM          = "f131" // f131:市现率TTM
+	FieldRevenueTTM     = "f132" // f132:总营业收入TTM
+	FieldDividendRate   = "f133" // f133:股息率
+	FieldIndustryCount  = "f134" // f134:行业板块的成分股数
+	FieldNetAssets      = "f135" // f135:净资产
+	FieldNetProfitTTM2  = "f138" // f138:净利润TTM
+	FieldMain5DayNet    = "f164" // f164:5日主力净额
+	FieldSuper5DayNet   = "f166" // f166:5日超大单净额
+	FieldBig5DayNet     = "f168" // f168:5日大单净额
+	FieldMid5DayNet     = "f170" // f170:5日中单净额
+	FieldSmall5DayNet   = "f172" // f172:5日小单净额
+	FieldMain10DayNet   = "f174" // f174:10日主力净额
+	FieldSuper10DayNet  = "f176" // f176:10日超大单净额
+	FieldBig10DayNet    = "f178" // f178:10日大单净额
+	FieldMid10DayNet    = "f180" // f180:10日中单净额
+	FieldSmall10DayNet  = "f182" // f182:10日小单净额
+	FieldBondBuyCode    = "f348" // f348:可转债申购代码
+	FieldBondBuyDate    = "f243" // f243:可转债申购日期
+	FieldLimitUpPrice   = "f350" // f350:涨停价
+	FieldLimitDownPrice = "f351" // f351:跌停价
+	FieldAvgPrice       = "f352" // f352:均价
+)
+
+// StockMarketService 市场股票服务
 type StockMarketService struct {
 	dbService *DBService
 	client    *http.Client
@@ -422,7 +485,6 @@ func (s *StockMarketService) parseStockItem(item interface{}, updatedAt string) 
 		VolumeRatio:  parseFloat("f10"),         // f10: 量比
 		PE:           parseFloat("f9"),          // f9: 市盈率(动态)
 		WarrantRatio: parseFloat("f33"),         // f33: 委比
-		UpdatedAt:    updatedAt,
 		UpdatedAt:    updatedAt,
 	}
 
