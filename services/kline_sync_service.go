@@ -124,86 +124,93 @@ func (s *KLineSyncService) StartKLineSync(days int) (*KLineSyncResult, error) {
 		zap.Int("days", days),
 	)
 
-	// 2. 使用协程池并发同步
-	// 注意：由于 SQLite 的并发限制，worker 数量不宜过大，设置为 5 以减少数据库锁竞争
-	const workerPoolSize = 5
-	taskChan := make(chan *KLineSyncTask, len(tasks))
-	resultChan := make(chan *KLineSyncTaskResult, len(tasks))
-
-	// 启动worker
-	var wg sync.WaitGroup
-	for i := 0; i < workerPoolSize; i++ {
-		wg.Add(1)
-		go s.worker(i, &wg, taskChan, resultChan, days)
-	}
-
-	// 发送任务
-	for _, task := range tasks {
-		taskChan <- task
-	}
-	close(taskChan)
-
+	// 2. 顺序同步每只股票，避免SQLite并发锁库问题
 	// 统计结果
 	var successCount, failedCount, totalRecords int
-	var mu sync.Mutex
 
-	// 启动进度报告goroutine
+	// 初始化进度
 	progress := &KLineSyncProgress{
 		IsRunning:     true,
 		TotalCount:    len(tasks),
 		StartTime:     startTime.Format("2006-01-02 15:04:05"),
 	}
 
-	// 接收结果并更新进度
-	go func() {
-		completed := 0
-		for result := range resultChan {
-			completed++
+	// 顺序处理每只股票
+	for i, task := range tasks {
+		// 随机延迟模拟真人行为（200-500ms）
+		// 延迟可以防止被反爬虫机制识别
+		delay := time.Duration(rand.Intn(300)+200) * time.Millisecond
+		time.Sleep(delay)
 
-			mu.Lock()
-			if result.Success {
-				successCount++
-				totalRecords += result.RecordsCount
-			} else {
-				failedCount++
-			}
-			mu.Unlock()
-
-			// 计算速率
-			elapsed := time.Since(startTime).Seconds()
-			recordsPerSec := float64(totalRecords) / elapsed
-			estimatedSeconds := 0
-			if completed > 0 && elapsed > 0 {
-				estimatedSeconds = int((elapsed / float64(completed)) * float64(len(tasks)-completed))
-			}
+		// 获取K线数据
+		klines, err := s.fetchKLineData(task, days)
+		if err != nil {
+			failedCount++
+			logger.Error("获取K线数据失败",
+				zap.String("code", task.Code),
+				zap.Error(err),
+			)
 
 			// 更新进度
-			progress.CurrentIndex = completed
-			progress.CurrentCode = result.Code
-			progress.CurrentName = result.Name
-			progress.SuccessCount = successCount
-			progress.FailedCount = failedCount
-			progress.TotalRecords = totalRecords
-			progress.RecordsPerSec = recordsPerSec
-			progress.ElapsedSeconds = int(elapsed)
-			progress.EstimatedSeconds = estimatedSeconds
+			s.updateProgress(progress, i+1, len(tasks), task.Code, task.Name, successCount, failedCount, totalRecords, startTime)
 
-			// 发送进度事件
-			s.emitProgress(progress)
-
-			if completed == len(tasks) {
-				progress.IsRunning = false
-				s.emitProgress(progress)
+			// 记录同步历史
+			if recordErr := s.recordSyncHistory(task, days, 0, 0, 0, false, err.Error()); recordErr != nil {
+				logger.Error("记录同步历史失败",
+					zap.String("code", task.Code),
+					zap.Error(recordErr),
+				)
 			}
+			continue
 		}
-	}()
 
-	// 等待所有worker完成
-	wg.Wait()
-	close(resultChan)
+		// 存储K线数据
+		added, updated, err := s.saveKLineData(task.Code, klines)
+		if err != nil {
+			failedCount++
+			logger.Error("保存K线数据失败",
+				zap.String("code", task.Code),
+				zap.Error(err),
+			)
 
-	// 等待进度报告完成
-	time.Sleep(100 * time.Millisecond)
+			// 更新进度
+			s.updateProgress(progress, i+1, len(tasks), task.Code, task.Name, successCount, failedCount, totalRecords, startTime)
+
+			// 记录同步历史
+			if recordErr := s.recordSyncHistory(task, days, len(klines), 0, 0, false, err.Error()); recordErr != nil {
+				logger.Error("记录同步历史失败",
+					zap.String("code", task.Code),
+					zap.Error(recordErr),
+				)
+			}
+			continue
+		}
+
+		successCount++
+		totalRecords += int(added + updated)
+
+		// 记录同步历史
+		if err := s.recordSyncHistory(task, days, len(klines), int(added), int(updated), true, ""); err != nil {
+			logger.Error("记录同步历史失败",
+				zap.String("code", task.Code),
+				zap.Error(err),
+			)
+		}
+
+		logger.Debug("K线数据同步成功",
+			zap.String("code", task.Code),
+			zap.Int("records", len(klines)),
+			zap.Int("added", int(added)),
+			zap.Int("updated", int(updated)),
+		)
+
+		// 更新进度
+		s.updateProgress(progress, i+1, len(tasks), task.Code, task.Name, successCount, failedCount, totalRecords, startTime)
+	}
+
+	// 发送最终进度
+	progress.IsRunning = false
+	s.emitProgress(progress)
 
 	duration := int(time.Since(startTime).Seconds())
 
@@ -224,82 +231,6 @@ func (s *KLineSyncService) StartKLineSync(days int) (*KLineSyncResult, error) {
 		Duration:     duration,
 		Message:      fmt.Sprintf("同步完成：成功 %d 只，失败 %d 只，总记录数 %d 条", successCount, failedCount, totalRecords),
 	}, nil
-}
-
-// KLineSyncTaskResult K线同步任务结果
-type KLineSyncTaskResult struct {
-	Code         string
-	Name         string
-	Success      bool
-	RecordsCount int
-	Error        string
-}
-
-// worker 协程池worker
-func (s *KLineSyncService) worker(workerID int, wg *sync.WaitGroup, taskChan <-chan *KLineSyncTask, resultChan chan<- *KLineSyncTaskResult, days int) {
-	defer wg.Done()
-
-	for task := range taskChan {
-		// 随机延迟模拟真人行为（200-500ms）
-		// 增加延迟范围以减少数据库锁竞争
-		delay := time.Duration(rand.Intn(300)+200) * time.Millisecond
-		time.Sleep(delay)
-
-		result := &KLineSyncTaskResult{
-			Code: task.Code,
-			Name: task.Name,
-		}
-
-		// 获取K线数据
-		klines, err := s.fetchKLineData(task, days)
-		if err != nil {
-			result.Success = false
-			result.Error = err.Error()
-			logger.Error("获取K线数据失败",
-				zap.Int("worker_id", workerID),
-				zap.String("code", task.Code),
-				zap.Error(err),
-			)
-			resultChan <- result
-			continue
-		}
-
-		// 存储K线数据
-		added, updated, err := s.saveKLineData(task.Code, klines)
-		if err != nil {
-			result.Success = false
-			result.Error = err.Error()
-			logger.Error("保存K线数据失败",
-				zap.Int("worker_id", workerID),
-				zap.String("code", task.Code),
-				zap.Error(err),
-			)
-			resultChan <- result
-			continue
-		}
-
-		result.Success = true
-		result.RecordsCount = int(added + updated)
-
-		// 记录同步历史
-		if err := s.recordSyncHistory(task, days, len(klines), int(added), int(updated), true, ""); err != nil {
-			logger.Error("记录同步历史失败",
-				zap.Int("worker_id", workerID),
-				zap.String("code", task.Code),
-				zap.Error(err),
-			)
-		}
-
-		logger.Debug("K线数据同步成功",
-			zap.Int("worker_id", workerID),
-			zap.String("code", task.Code),
-			zap.Int("records", len(klines)),
-			zap.Int("added", int(added)),
-			zap.Int("updated", int(updated)),
-		)
-
-		resultChan <- result
-	}
 }
 
 // getActiveStocks 获取所有活跃股票
@@ -459,6 +390,31 @@ func (s *KLineSyncService) recordSyncHistory(task *KLineSyncTask, days int, tota
 	`, task.Code, task.Name, startDate, endDate, status, added, updated, errorMsg)
 
 	return err
+}
+
+// updateProgress 更新进度信息
+func (s *KLineSyncService) updateProgress(progress *KLineSyncProgress, currentIndex, totalCount int, code, name string, successCount, failedCount, totalRecords int, startTime time.Time) {
+	// 计算速率
+	elapsed := time.Since(startTime).Seconds()
+	recordsPerSec := float64(totalRecords) / elapsed
+	estimatedSeconds := 0
+	if currentIndex > 0 && elapsed > 0 {
+		estimatedSeconds = int((elapsed / float64(currentIndex)) * float64(totalCount-currentIndex))
+	}
+
+	// 更新进度
+	progress.CurrentIndex = currentIndex
+	progress.CurrentCode = code
+	progress.CurrentName = name
+	progress.SuccessCount = successCount
+	progress.FailedCount = failedCount
+	progress.TotalRecords = totalRecords
+	progress.RecordsPerSec = recordsPerSec
+	progress.ElapsedSeconds = int(elapsed)
+	progress.EstimatedSeconds = estimatedSeconds
+
+	// 发送进度事件
+	s.emitProgress(progress)
 }
 
 // emitProgress 发送进度事件
