@@ -441,6 +441,22 @@ func (s *DBService) ClearKLineCacheTable(code string) error {
 func (s *DBService) GetKLineDataWithPagination(code string, startDate string, endDate string, page int, pageSize int) ([]map[string]interface{}, int, error) {
 	tableName := fmt.Sprintf("kline_%s", code)
 
+	// 检查表是否存在，如果不存在则返回空数据
+	var tableExists bool
+	err := s.db.QueryRow(`
+		SELECT COUNT(*) FROM sqlite_master
+		WHERE type='table' AND name=?
+	`, tableName).Scan(&tableExists)
+
+	if err != nil {
+		return []map[string]interface{}{}, 0, nil
+	}
+
+	if !tableExists {
+		// 表不存在，返回空数组而不是错误
+		return []map[string]interface{}{}, 0, nil
+	}
+
 	// 构建基础查询和参数
 	var conditions []string
 	var params []interface{}
@@ -466,9 +482,10 @@ func (s *DBService) GetKLineDataWithPagination(code string, startDate string, en
 	var totalCount int
 	paramsForCount := make([]interface{}, len(params))
 	copy(paramsForCount, params)
-	err := s.db.QueryRow(countQuery, paramsForCount...).Scan(&totalCount)
+	err = s.db.QueryRow(countQuery, paramsForCount...).Scan(&totalCount)
 	if err != nil {
-		return nil, 0, fmt.Errorf("查询 K 线数据总数失败: %w", err)
+		// 如果查询失败（可能是表不存在等），返回空数组
+		return []map[string]interface{}{}, 0, nil
 	}
 
 	// 查询分页数据
@@ -484,7 +501,8 @@ func (s *DBService) GetKLineDataWithPagination(code string, startDate string, en
 
 	rows, err := s.db.Query(query, params...)
 	if err != nil {
-		return nil, 0, fmt.Errorf("查询 K 线数据失败: %w", err)
+		// 如果查询失败，返回空数组
+		return []map[string]interface{}{}, 0, nil
 	}
 	defer rows.Close()
 
@@ -495,7 +513,7 @@ func (s *DBService) GetKLineDataWithPagination(code string, startDate string, en
 		var volume int64
 
 		if err := rows.Scan(&date, &open, &high, &low, &close, &volume); err != nil {
-			return nil, 0, fmt.Errorf("扫描 K 线数据失败: %w", err)
+			return []map[string]interface{}{}, 0, nil
 		}
 
 		klines = append(klines, map[string]interface{}{
