@@ -18,10 +18,11 @@ interface BacktestPanelProps {
 }
 
 const BacktestPanel: React.FC<BacktestPanelProps> = ({ stockCode }) => {
-  const { BacktestSimpleMA, GetAllStrategies, CreateStrategy, UpdateStrategyBacktestResult } = useWailsAPI();
+  const { BacktestSimpleMA, BacktestMACD, GetAllStrategies, CreateStrategy, UpdateStrategyBacktestResult } = useWailsAPI();
 
   const [shortPeriod, setShortPeriod] = useState<number>(5);
   const [longPeriod, setLongPeriod] = useState<number>(20);
+  const [signalPeriod, setSignalPeriod] = useState<number>(9);
   const [initialCapital, setInitialCapital] = useState<number>(100000);
   const [startDate, setStartDate] = useState<string>('2023-01-01');
   const [endDate, setEndDate] = useState<string>('2023-12-31');
@@ -55,21 +56,24 @@ const BacktestPanel: React.FC<BacktestPanelProps> = ({ stockCode }) => {
   };
 
   const handleBacktest = async () => {
-    // 检查策略类型是否支持
-    if (selectedStrategy && selectedStrategy.strategyType !== 'simple_ma') {
-      alert(`暂不支持 ${selectedStrategy.strategyType} 策略的回测功能，目前仅支持双均线策略。`);
-      return;
-    }
-
     setLoading(true);
     setError(null);
     setBacktestResult(null);
     try {
-      const result = await BacktestSimpleMA(stockCode, shortPeriod, longPeriod, initialCapital, startDate, endDate);
+      let result;
+      
+      if (selectedStrategy && selectedStrategy.strategyType === 'macd') {
+        // MACD策略回测
+        result = await BacktestMACD(stockCode, shortPeriod, longPeriod, signalPeriod, initialCapital, startDate, endDate);
+      } else {
+        // 默认使用双均线策略回测
+        result = await BacktestSimpleMA(stockCode, shortPeriod, longPeriod, initialCapital, startDate, endDate);
+      }
+      
       setBacktestResult(result);
 
       // 如果是从策略库执行的，更新策略的回测结果
-      if (selectedStrategy && selectedStrategy.strategyType === 'simple_ma') {
+      if (selectedStrategy && (selectedStrategy.strategyType === 'simple_ma' || selectedStrategy.strategyType === 'macd')) {
         try {
           await UpdateStrategyBacktestResult(selectedStrategy.id, {
             totalReturn: result.totalReturn,
@@ -121,6 +125,9 @@ const BacktestPanel: React.FC<BacktestPanelProps> = ({ stockCode }) => {
         if (strategy.parameters.slowPeriod) {
           setLongPeriod(Number(strategy.parameters.slowPeriod));
         }
+        if (strategy.parameters.signalPeriod) {
+          setSignalPeriod(Number(strategy.parameters.signalPeriod));
+        }
       }
 
       // 通用参数
@@ -143,15 +150,34 @@ const BacktestPanel: React.FC<BacktestPanelProps> = ({ stockCode }) => {
     }
 
     try {
+      // 根据当前选择或默认的策略类型来确定保存类型
+      const strategyType = selectedStrategy ? selectedStrategy.strategyType : 'simple_ma';
+      
+      // 根据策略类型构建不同的参数
+      let parameters: any = {
+        initialCapital,
+      };
+
+      if (strategyType === 'macd') {
+        parameters = {
+          ...parameters,
+          fastPeriod: shortPeriod,
+          slowPeriod: longPeriod,
+          signalPeriod: signalPeriod,
+        };
+      } else {
+        parameters = {
+          ...parameters,
+          shortPeriod,
+          longPeriod,
+        };
+      }
+
       await CreateStrategy(
         strategyName,
         strategyDescription,
-        'simple_ma',
-        {
-          shortPeriod,
-          longPeriod,
-          initialCapital,
-        }
+        strategyType,
+        parameters
       );
       setShowSaveModal(false);
       setStrategyName('');
@@ -208,7 +234,7 @@ const BacktestPanel: React.FC<BacktestPanelProps> = ({ stockCode }) => {
               const strategyTypeName = strategy.strategyType === 'simple_ma' ? '双均线' :
                                       strategy.strategyType === 'macd' ? 'MACD' :
                                       strategy.strategyType;
-              const isSupported = strategy.strategyType === 'simple_ma';
+              const isSupported = strategy.strategyType === 'simple_ma' || strategy.strategyType === 'macd';
               return (
                 <option key={strategy.id} value={strategy.id.toString()} disabled={!isSupported}>
                   {strategy.name} ({strategyTypeName}) {!isSupported && '[暂不支持回测]'}
@@ -229,11 +255,6 @@ const BacktestPanel: React.FC<BacktestPanelProps> = ({ stockCode }) => {
           <div className="text-xs text-gray-400">
             已加载策略: <span className="font-semibold text-blue-400">{selectedStrategy.name}</span>
             {selectedStrategy.description && ` - ${selectedStrategy.description}`}
-            {selectedStrategy.strategyType !== 'simple_ma' && (
-              <div className="mt-1 text-yellow-400">
-                ⚠️ 当前策略类型暂不支持回测，仅支持查看和编辑参数
-              </div>
-            )}
           </div>
         )}
       </div>
@@ -262,6 +283,20 @@ const BacktestPanel: React.FC<BacktestPanelProps> = ({ stockCode }) => {
             min="1"
           />
         </div>
+        {/* MACD策略的信号线周期参数 */}
+        {(!selectedStrategy || selectedStrategy.strategyType === 'macd') && (
+          <div>
+            <label htmlFor="signalPeriod" className="block text-sm font-medium text-gray-300">信号线周期 (DEA):</label>
+            <input
+              type="number"
+              id="signalPeriod"
+              value={signalPeriod}
+              onChange={(e) => setSignalPeriod(parseInt(e.target.value))}
+              className="mt-1 block w-full rounded-md bg-gray-700 border-gray-600 text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+              min="1"
+            />
+          </div>
+        )}
         <div>
           <label htmlFor="initialCapital" className="block text-sm font-medium text-gray-300">初始资金:</label>
           <input
@@ -298,11 +333,9 @@ const BacktestPanel: React.FC<BacktestPanelProps> = ({ stockCode }) => {
       <button
         onClick={handleBacktest}
         className="w-full py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
-        disabled={loading || (selectedStrategy && selectedStrategy.strategyType !== 'simple_ma')}
+        disabled={loading}
       >
-        {loading ? '回测中...' :
-         selectedStrategy && selectedStrategy.strategyType !== 'simple_ma' ?
-         '此策略类型暂不支持回测' : '开始回测'}
+        {loading ? '回测中...' : '开始回测'}
       </button>
 
       {error && <div className="mt-4 text-red-400">错误: {error}</div>}

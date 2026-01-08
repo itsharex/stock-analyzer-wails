@@ -133,6 +133,11 @@ const getIntradayData = useCallback(async (code: string): Promise<IntradayRespon
     return window.go.main.App.BacktestSimpleMA(code, shortPeriod, longPeriod, initialCapital, startDate, endDate)
   }, [])
 
+  const BacktestMACD = useCallback(async (code: string, fastPeriod: number, slowPeriod: number, signalPeriod: number, initialCapital: number, startDate: string, endDate: string): Promise<BacktestResult> => {
+    // @ts-ignore
+    return window.go.main.App.BacktestMACD(code, fastPeriod, slowPeriod, signalPeriod, initialCapital, startDate, endDate)
+  }, [])
+
   const SyncStockData = useCallback(async (code: string, startDate: string, endDate: string): Promise<any> => {
     // @ts-ignore
     return window.go.main.App.SyncStockData(code, startDate, endDate)
@@ -293,6 +298,7 @@ const getIntradayData = useCallback(async (code: string): Promise<IntradayRespon
 	    getPositions,
     removePosition,
     BacktestSimpleMA,
+    BacktestMACD,
     SyncStockData,
     GetDataSyncStats,
     BatchSyncStockData,

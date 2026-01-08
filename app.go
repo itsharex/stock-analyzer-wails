@@ -1092,6 +1092,237 @@ func (a *App) BacktestSimpleMA(code string, shortPeriod int, longPeriod int, ini
 	return res, nil
 }
 
+// BacktestMACD 使用MACD策略（DIF上穿DEA做多，DIF下穿DEA清仓）进行回测
+// 参数：
+// - code: 股票代码（6位，或 SH/SZ 前缀均可，内部统一处理）
+// - fastPeriod: 快线周期，通常为12
+// - slowPeriod: 慢线周期，通常为26
+// - signalPeriod: 信号线周期，通常为9
+// - initialCapital: 初始资金
+// - startDate/endDate: 回测区间（YYYY-MM-DD），为空则不裁剪
+// 返回：BacktestResult，包含交易记录、净值曲线、收益指标等
+func (a *App) BacktestMACD(code string, fastPeriod int, slowPeriod int, signalPeriod int, initialCapital float64, startDate string, endDate string) (*models.BacktestResult, error) {
+	code = strings.TrimSpace(code)
+	if code == "" {
+		return nil, fmt.Errorf("股票代码不能为空")
+	}
+	if fastPeriod <= 0 || slowPeriod <= 0 || fastPeriod >= slowPeriod {
+		return nil, fmt.Errorf("参数错误: fastPeriod 必须 > 0 且 < slowPeriod")
+	}
+	if signalPeriod <= 0 {
+		return nil, fmt.Errorf("参数错误: signalPeriod 必须 > 0")
+	}
+	if initialCapital <= 0 {
+		return nil, fmt.Errorf("初始资金必须大于 0")
+	}
+
+	// 获取尽量多的历史数据，后续按区间过滤
+	klines, err := a.stockService.GetKLineData(code, 5000, "daily")
+	if err != nil {
+		return nil, fmt.Errorf("获取K线失败: %w", err)
+	}
+	if len(klines) == 0 {
+		return nil, fmt.Errorf("无K线数据")
+	}
+
+	// 过滤区间
+	var dates []string
+	var closes []float64
+	for _, k := range klines {
+		if (startDate == "" || k.Time >= startDate) && (endDate == "" || k.Time <= endDate) {
+			dates = append(dates, k.Time)
+			closes = append(closes, k.Close)
+		}
+	}
+	if len(closes) == 0 {
+		return nil, fmt.Errorf("指定日期范围内没有数据")
+	}
+
+	// 计算EMA（指数移动平均）
+	ema := func(src []float64, period int) []float64 {
+		res := make([]float64, len(src))
+		if period <= 0 || len(src) == 0 {
+			return res
+		}
+		
+		// 第一个EMA值等于第一个收盘价
+		res[0] = src[0]
+		
+		// 计算平滑系数
+		multiplier := 2.0 / (float64(period) + 1.0)
+		
+		// 后续的EMA值
+		for i := 1; i < len(src); i++ {
+			res[i] = (src[i] - res[i-1]) * multiplier + res[i-1]
+		}
+		
+		return res
+	}
+
+	// 计算MACD
+	// DIF = EMA(快线周期) - EMA(慢线周期)
+	// DEA = EMA(DIF, 信号线周期)
+	// BAR = (DIF - DEA) * 2
+	fastEMA := ema(closes, fastPeriod)
+	slowEMA := ema(closes, slowPeriod)
+	
+	dif := make([]float64, len(closes))
+	for i := 0; i < len(closes); i++ {
+		dif[i] = fastEMA[i] - slowEMA[i]
+	}
+	
+	dea := ema(dif, signalPeriod)
+	
+	bar := make([]float64, len(closes))
+	for i := 0; i < len(closes); i++ {
+		bar[i] = (dif[i] - dea[i]) * 2
+	}
+
+	// 回测循环
+	cash := initialCapital
+	units := 0.0
+	inPosition := false
+	entryPrice := 0.0
+	trades := make([]models.TradeRecord, 0)
+	equityCurve := make([]float64, 0, len(closes))
+
+	for i := 1; i < len(closes); i++ {
+		price := closes[i]
+		
+		// 只有当DIF和DEA都已形成后才能产生信号
+		if dif[i-1] != 0 && dea[i-1] != 0 && dif[i] != 0 && dea[i] != 0 {
+			// 金叉：DIF上穿DEA（DIF从低于DEA变为高于DEA）
+			crossUp := dif[i-1] <= dea[i-1] && dif[i] > dea[i]
+			// 死叉：DIF下穿DEA（DIF从高于DEA变为低于DEA）
+			crossDown := dif[i-1] >= dea[i-1] && dif[i] < dea[i]
+
+			if crossUp && !inPosition {
+				// 全仓买入
+				if price > 0 {
+					units = cash / price
+					cash = 0
+					inPosition = true
+					entryPrice = price
+					trades = append(trades, models.TradeRecord{
+						Time: dates[i], Type: "BUY", Price: price, Volume: 0, Amount: units * price,
+					})
+				}
+			} else if crossDown && inPosition {
+				// 全部卖出
+				cash = cash + units*price
+				profit := (price - entryPrice) * units
+				trades = append(trades, models.TradeRecord{
+					Time: dates[i], Type: "SELL", Price: price, Volume: 0, Amount: units * price, Profit: profit,
+				})
+				units = 0
+				inPosition = false
+			}
+		}
+
+		// 记录每日净值
+		equity := cash + units*price
+		equityCurve = append(equityCurve, equity)
+	}
+
+	// 如果最后仍持仓，按最后一天价格平仓
+	if inPosition {
+		lastPrice := closes[len(closes)-1]
+		cash = cash + units*lastPrice
+		profit := (lastPrice - entryPrice) * units
+		trades = append(trades, models.TradeRecord{
+			Time: dates[len(dates)-1], Type: "SELL", Price: lastPrice, Volume: 0, Amount: units * lastPrice, Profit: profit,
+		})
+		units = 0
+		inPosition = false
+	}
+
+	final := cash
+	ret := final/initialCapital - 1
+
+	// 年化收益（按交易日 252 估算）
+	annualized := 0.0
+	if len(equityCurve) > 0 {
+		days := len(equityCurve)
+		if days > 0 {
+			annualized = math.Pow(final/initialCapital, 252.0/float64(days)) - 1
+		}
+	}
+
+	// 最大回撤
+	peak := equityCurve[0]
+	maxDD := 0.0
+	for _, v := range equityCurve {
+		if v > peak {
+			peak = v
+		}
+		dd := 0.0
+		if peak > 0 {
+			dd = (peak - v) / peak
+		}
+		if dd > maxDD {
+			maxDD = dd
+		}
+	}
+
+	// 胜率
+	wins := 0
+	finishedTrades := 0
+	for _, t := range trades {
+		if t.Type == "SELL" {
+			finishedTrades++
+			if t.Profit > 0 {
+				wins++
+			}
+		}
+	}
+	winRate := 0.0
+	if finishedTrades > 0 {
+		winRate = float64(wins) / float64(finishedTrades)
+	}
+
+	res := &models.BacktestResult{
+		StrategyName: fmt.Sprintf("MACD(%d,%d,%d)", fastPeriod, slowPeriod, signalPeriod),
+		StockCode:    code,
+		StartDate: func() string {
+			if len(dates) > 0 {
+				return dates[0]
+			}
+			return startDate
+		}(),
+		EndDate: func() string {
+			if len(dates) > 0 {
+				return dates[len(dates)-1]
+			}
+			return endDate
+		}(),
+		InitialCapital:   initialCapital,
+		FinalCapital:     final,
+		TotalReturn:      ret,
+		AnnualizedReturn: annualized,
+		MaxDrawdown:      maxDD,
+		WinRate:          winRate,
+		TradeCount:       finishedTrades,
+		Trades:           trades,
+		EquityCurve:      equityCurve,
+		EquityDates:      dates,
+	}
+
+	logger.Info("MACD回测完成",
+		zap.String("module", "app.backtest"),
+		zap.String("code", code),
+		zap.Int("fastPeriod", fastPeriod),
+		zap.Int("slowPeriod", slowPeriod),
+		zap.Int("signalPeriod", signalPeriod),
+		zap.Float64("init", initialCapital),
+		zap.Float64("final", final),
+		zap.Float64("ret", ret),
+		zap.Float64("maxDD", maxDD),
+		zap.Float64("winRate", winRate),
+	)
+
+	return res, nil
+}
+
 // --- 回测功能 结束 ---
 
 // --- SyncHistoryController 转发方法 ---
