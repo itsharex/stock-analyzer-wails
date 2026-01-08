@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"math"
 	"strings"
-	"time"
 
 	"stock-analyzer-wails/internal/logger"
 	"stock-analyzer-wails/repositories"
