@@ -2,9 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { parseError } from '../utils/errorHandler';
 import { useWailsAPI } from '../hooks/useWailsAPI';
 import {
-  Plus, Edit3, Trash2, Bell, History, Search, Filter,
-  CheckCircle, XCircle, Clock, Target, Shield, Zap,
-  Settings, Play, Pause, TrendingUp, TrendingDown, PlusCircle, MinusCircle, ChevronDown
+  Plus, Edit3, Trash2, Bell, History, Search,
+  CheckCircle, XCircle, Clock, Target, Shield,
+  Play, Pause, PlusCircle, MinusCircle
 } from 'lucide-react';
 
 interface PriceAlert {
@@ -279,7 +279,7 @@ const PriceAlertPage: React.FC = () => {
 
   // 添加条件（组合预警）
   const addCondition = () => {
-    setAlertConditions(prev => ({
+    setAlertConditions((prev: any) => ({
       ...prev,
       conditions: [...prev.conditions, { field: '', operator: '', value: 0 }]
     }));
@@ -290,17 +290,17 @@ const PriceAlertPage: React.FC = () => {
     if (alertConditions.conditions.length <= 1) {
       return;
     }
-    setAlertConditions(prev => ({
+    setAlertConditions((prev: any) => ({
       ...prev,
-      conditions: prev.conditions.filter((_, i) => i !== index)
+      conditions: prev.conditions.filter((_: any, i: number) => i !== index)
     }));
   };
 
   // 更新条件
   const updateCondition = (index: number, field: string, value: any) => {
-    setAlertConditions(prev => ({
+    setAlertConditions((prev: any) => ({
       ...prev,
-      conditions: prev.conditions.map((cond, i) =>
+      conditions: prev.conditions.map((cond: any, i: number) =>
         i === index ? { ...cond, [field]: value } : cond
       )
     }));
@@ -333,7 +333,7 @@ const PriceAlertPage: React.FC = () => {
             updateCondition={updateCondition}
             addCondition={addCondition}
             removeCondition={removeCondition}
-            setLogic={(logic) => setAlertConditions(prev => ({ ...prev, logic }))}
+            setLogic={(logic: string) => setAlertConditions((prev: any) => ({ ...prev, logic }))}
           />
         );
       default:
@@ -636,6 +636,7 @@ const PriceAlertPage: React.FC = () => {
   };
 
   const handleCreateAlert = () => {
+    console.log('handleCreateAlert called');
     setEditingAlert(null);
     setSelectedTemplate('');
     setFormData({
@@ -654,6 +655,7 @@ const PriceAlertPage: React.FC = () => {
       conditions: [{ field: '', operator: '', value: 0 }]
     });
     setStockCodeError(null);
+    console.log('Setting showModal to true');
     setShowModal(true);
   };
 

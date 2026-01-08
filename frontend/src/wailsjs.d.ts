@@ -81,6 +81,31 @@ declare global {
           ClearAllSyncHistory(): Promise<void>;
           // 获取已同步的K线数据
           GetSyncedKLineData(code: string, startDate: string, endDate: string, page: number, pageSize: number): Promise<{ data: any[], total: number }>;
+          // 策略管理方法
+          CreateStrategy(jsonData: string): Promise<any>;
+          UpdateStrategy(jsonData: string): Promise<any>;
+          DeleteStrategy(id: number): Promise<any>;
+          GetStrategy(id: string): Promise<any>;
+          GetAllStrategies(): Promise<any>;
+          GetStrategyTypes(): Promise<any>;
+          UpdateStrategyBacktestResult(jsonData: string): Promise<any>;
+          // 市场股票方法
+          SyncAllStocks(): Promise<any>;
+          GetStocksList(page: number, pageSize: number): Promise<any>;
+          GetSyncStats(): Promise<any>;
+          // 价格预警控制器
+          PriceAlertController: {
+            GetAllAlerts(): Promise<{ success: boolean; message: string; alerts: any[] }>;
+            GetActiveAlerts(): Promise<{ success: boolean; message: string; alerts: any[] }>;
+            GetAlertsByStockCode(code: string): Promise<any>;
+            GetAllTemplates(): Promise<{ success: boolean; templates: any[] }>;
+            GetTriggerHistory(code: string, limit: number): Promise<{ success: boolean; histories: any[] }>;
+            CreateAlert(jsonData: string): Promise<{ success: boolean; message: string }>;
+            UpdateAlert(jsonData: string): Promise<{ success: boolean; message: string }>;
+            DeleteAlert(id: number): Promise<{ success: boolean; message: string }>;
+            ToggleAlertStatus(id: number, isActive: boolean): Promise<{ success: boolean; message: string }>;
+            CreateAlertFromTemplate(templateId: string, stockCode: string, stockName: string, paramsJson: string): Promise<{ success: boolean; message: string }>;
+          };
         };
       };
     };

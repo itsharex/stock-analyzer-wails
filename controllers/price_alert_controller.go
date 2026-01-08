@@ -3,8 +3,6 @@ package controllers
 import (
 	"encoding/json"
 	"stock-analyzer-wails/services"
-
-	"go.uber.org/zap"
 )
 
 // PriceAlertController 价格预警控制器
