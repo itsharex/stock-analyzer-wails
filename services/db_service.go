@@ -164,6 +164,28 @@ func (s *DBService) initTables() error {
 		return fmt.Errorf("创建 config 表失败: %w", err)
 	}
 
+	// 6. Sync History 表
+	_, err = tx.Exec(`
+		CREATE TABLE IF NOT EXISTS sync_history (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			stock_code TEXT NOT NULL,
+			stock_name TEXT NOT NULL,
+			sync_type TEXT NOT NULL, -- 'single' or 'batch'
+			start_date TEXT NOT NULL,
+			end_date TEXT NOT NULL,
+			status TEXT NOT NULL, -- 'success' or 'failed'
+			records_added INTEGER DEFAULT 0,
+			records_updated INTEGER DEFAULT 0,
+			duration INTEGER DEFAULT 0, -- 耗时（秒）
+			error_msg TEXT,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
+	`)
+	if err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("创建 sync_history 表失败: %w", err)
+	}
+
 	// 提交事务
 	if err := tx.Commit(); err != nil {
 		return err

@@ -7,15 +7,17 @@ import Watchlist from './components/Watchlist'
 import WatchlistDetail from './components/WatchlistDetail'
 import BacktestPage from './pages/BacktestPage'
 import DataSyncPage from './pages/DataSyncPage'
+import SyncHistoryPage from './pages/SyncHistoryPage'
 import { AlertToast } from './components/AlertToast'
 import { AlertCenter } from './components/AlertCenter'
 import { useWailsAPI } from './hooks/useWailsAPI'
 import type { StockData, AnalysisReport as AnalysisReportType, AppConfig } from './types'
 
-type NavItem = 'analysis' | 'watchlist' | 'alerts' | 'settings' | 'backtest' | 'datasync'
+type NavItem = 'analysis' | 'watchlist' | 'alerts' | 'settings' | 'backtest' | 'datasync' | 'synchistory'
 
 function App() {
   const [activeTab, setActiveTab] = useState<NavItem>('analysis')
+  const [dataSyncExpanded, setDataSyncExpanded] = useState(false)
   const [stockData, setStockData] = useState<StockData | null>(null)
   const [analysisReport, setAnalysisReport] = useState<AnalysisReportType | null>(null)
   const [loading, setLoading] = useState(false)
@@ -130,8 +132,8 @@ function App() {
           <button
             onClick={() => setActiveTab('backtest')}
             className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${
-              activeTab === 'backtest' 
-                ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' 
+              activeTab === 'backtest'
+                ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20'
                 : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
             }`}
           >
@@ -139,17 +141,62 @@ function App() {
             <span className="font-medium">策略回测</span>
           </button>
 
-          <button
-            onClick={() => setActiveTab('datasync')}
-            className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${
-              activeTab === 'datasync' 
-                ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' 
-                : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
-            }`}
-          >
-            <span className="text-xl">💾</span>
-            <span className="font-medium">数据同步</span>
-          </button>
+          {/* 数据同步菜单组 */}
+          <div>
+            <button
+              onClick={() => setDataSyncExpanded(!dataSyncExpanded)}
+              className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 ${
+                activeTab === 'datasync' || activeTab === 'synchistory'
+                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20'
+                  : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+              }`}
+            >
+              <div className="flex items-center space-x-3">
+                <span className="text-xl">💾</span>
+                <span className="font-medium">数据同步</span>
+              </div>
+              <svg
+                className={`w-4 h-4 transition-transform ${dataSyncExpanded ? 'rotate-180' : ''}`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+
+            {/* 子菜单 */}
+            {dataSyncExpanded && (
+              <div className="ml-4 mt-1 space-y-1">
+                <button
+                  onClick={() => {
+                    setActiveTab('datasync')
+                  }}
+                  className={`w-full flex items-center space-x-2 px-4 py-2 rounded-lg transition-all duration-200 ${
+                    activeTab === 'datasync'
+                      ? 'bg-blue-600 text-white'
+                      : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                  }`}
+                >
+                  <span className="text-lg">🔄</span>
+                  <span className="text-sm">数据同步</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setActiveTab('synchistory')
+                  }}
+                  className={`w-full flex items-center space-x-2 px-4 py-2 rounded-lg transition-all duration-200 ${
+                    activeTab === 'synchistory'
+                      ? 'bg-blue-600 text-white'
+                      : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                  }`}
+                >
+                  <span className="text-lg">📜</span>
+                  <span className="text-sm">同步历史</span>
+                </button>
+              </div>
+            )}
+          </div>
 
           <button
             onClick={() => setActiveTab('settings')}
@@ -177,7 +224,13 @@ function App() {
         {/* 顶部状态栏 */}
         <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-8 z-10">
           <h2 className="text-lg font-semibold text-gray-800">
-            {activeTab === 'analysis' ? '股票分析工作台' : activeTab === 'watchlist' ? '自选行情中心' : activeTab === 'alerts' ? '智能预警中心' : activeTab === 'backtest' ? '策略回测中心' : activeTab === 'datasync' ? '数据同步中心' : '系统参数配置'}
+            {activeTab === 'analysis' ? '股票分析工作台' :
+             activeTab === 'watchlist' ? '自选行情中心' :
+             activeTab === 'alerts' ? '智能预警中心' :
+             activeTab === 'backtest' ? '策略回测中心' :
+             activeTab === 'datasync' ? '数据同步中心' :
+             activeTab === 'synchistory' ? '同步历史记录' :
+             '系统参数配置'}
           </h2>
           <div className="flex items-center space-x-6 text-sm">
             {currentConfig && (
@@ -273,6 +326,8 @@ function App() {
             <BacktestPage />
           ) : activeTab === 'datasync' ? (
             <DataSyncPage />
+          ) : activeTab === 'synchistory' ? (
+            <SyncHistoryPage />
           ) : (
             <Settings onConfigSaved={handleConfigSaved} />
           )}

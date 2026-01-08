@@ -30,6 +30,7 @@ type App struct {
 	positionStorage *services.PositionService
 	configService   *services.ConfigService // 新增 ConfigService
 	dbService       *services.DBService     // 新增 DBService
+	syncHistoryCtrl *controllers.SyncHistoryController // 同步历史控制器
 	aiInitErr       error
 	alerts          []*models.PriceAlert
 	alertMutex      sync.Mutex
@@ -40,6 +41,7 @@ type App struct {
 	AlertController     *controllers.AlertController
 	PositionController  *controllers.PositionController
 	ConfigController    *controllers.ConfigController
+	SyncHistoryController *controllers.SyncHistoryController
 
 	// Services (for internal use)
 	watchlistService *services.WatchlistService // 保持，用于内部逻辑调用
@@ -82,6 +84,7 @@ func NewApp() *App {
 	alertRepo := repositories.NewSQLiteAlertRepository(dbSvc.GetDB())
 	positionRepo := repositories.NewSQLitePositionRepository(dbSvc.GetDB())
 	configRepo := repositories.NewSQLiteConfigRepository(dbSvc.GetDB())
+	syncHistoryRepo := repositories.NewSQLiteSyncHistoryRepository(dbSvc.GetDB())
 
 	// 2. Service 层
 	watchlistSvc := services.NewWatchlistService(watchlistRepo)
@@ -94,6 +97,7 @@ func NewApp() *App {
 	alertCtrl := controllers.NewAlertController(alertSvc)
 	positionCtrl := controllers.NewPositionController(positionSvc)
 	configCtrl := controllers.NewConfigController(configSvc)
+	syncHistoryCtrl := controllers.NewSyncHistoryController(syncHistoryRepo)
 
 	return &App{
 		stockService: stockSvc,
@@ -105,12 +109,14 @@ func NewApp() *App {
 		AlertController:     alertCtrl,
 		PositionController:  positionCtrl,
 		ConfigController:    configCtrl,
+		SyncHistoryController: syncHistoryCtrl,
 
 		// Services (for internal use)
 		watchlistService: watchlistSvc,
 		alertStorage:     alertSvc,
 		positionStorage:  positionSvc,
 		configService:    configSvc,
+		syncHistoryCtrl:  syncHistoryCtrl, // 内部引用
 		alertConfig: models.AlertConfig{
 			Sensitivity: 0.005, // 默认 0.5%
 			Cooldown:    1,     // 默认 1 小时
@@ -808,7 +814,50 @@ func (a *App) shutdown(ctx context.Context) {
 
 // SyncStockData 同步单个股票的历史数据到本地 SQLite
 func (a *App) SyncStockData(code string, startDate string, endDate string) (*models.SyncResult, error) {
-	return a.stockService.SyncStockData(code, startDate, endDate)
+	startTime := time.Now()
+
+	// 调用 stockService 同步数据
+	result, err := a.stockService.SyncStockData(code, startDate, endDate)
+
+	// 保存同步历史记录
+	duration := int(time.Since(startTime).Seconds())
+	stockName := ""
+
+	// 尝试获取股票名称
+	if stock, err := a.stockService.GetStockByCode(code); err == nil {
+		stockName = stock.Name
+	}
+
+	history := models.SyncHistory{
+		StockCode:      code,
+		StockName:      stockName,
+		SyncType:       "single",
+		StartDate:      startDate,
+		EndDate:        endDate,
+		Status:         "success",
+		RecordsAdded:   result.RecordsAdded,
+		RecordsUpdated: result.RecordsUpdated,
+		Duration:       duration,
+	}
+
+	if err != nil {
+		history.Status = "failed"
+		history.ErrorMsg = result.ErrorMessage
+	}
+
+	// 异步保存历史记录，避免影响同步性能
+	if a.syncHistoryCtrl != nil {
+		go func() {
+			if saveErr := a.syncHistoryCtrl.AddSyncHistory(history); saveErr != nil {
+				logger.Error("保存同步历史记录失败",
+					zap.String("stock_code", code),
+					zap.Error(saveErr),
+				)
+			}
+		}()
+	}
+
+	return result, err
 }
 
 // GetDataSyncStats 获取数据同步统计信息
