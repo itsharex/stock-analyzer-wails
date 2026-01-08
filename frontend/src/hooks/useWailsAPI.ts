@@ -187,8 +187,16 @@ const getIntradayData = useCallback(async (code: string): Promise<IntradayRespon
 
       console.log('GetSyncedKLineData 返回的原始 result:', result)
       console.log('result 的类型:', typeof result)
+      console.log('result 是否为 null:', result === null)
+      console.log('result 是否为 undefined:', result === undefined)
       console.log('result 是否为数组:', Array.isArray(result))
       console.log('result 的构造函数:', result?.constructor?.name)
+
+      // 检查 result 是否为 null 或 undefined
+      if (result == null) {
+        console.error('GetSyncedKLineData 返回了 null 或 undefined')
+        throw new Error('GetSyncedKLineData 返回了 null 或 undefined，请检查后端实现')
+      }
 
       // 验证返回值是否是数组
       if (!Array.isArray(result)) {

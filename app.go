@@ -1132,6 +1132,12 @@ func (a *App) GetSyncedKLineData(code string, startDate string, endDate string, 
 	// 调用数据库服务查询K线数据
 	data, total, err := db.GetKLineDataWithPagination(code, startDate, endDate, page, pageSize)
 
+	// 确保 data 不是 nil
+	if data == nil {
+		logger.Warn("GetKLineDataWithPagination 返回了 nil，初始化为空数组")
+		data = []map[string]interface{}{}
+	}
+
 	// 打印返回结果
 	logger.Info("GetSyncedKLineData 返回结果",
 		zap.Int("dataLength", len(data)),

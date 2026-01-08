@@ -449,11 +449,13 @@ func (s *DBService) GetKLineDataWithPagination(code string, startDate string, en
 	`, tableName).Scan(&tableExists)
 
 	if err != nil {
+		logger.Warn("查询表是否存在失败，返回空数组", zap.String("tableName", tableName), zap.Error(err))
 		return []map[string]interface{}{}, 0, nil
 	}
 
 	if !tableExists {
-		// 表不存在，返回空数组而不是错误
+		// 表不存在，返回初始化的空数组而不是 nil
+		logger.Info("K线表不存在，返回空数组", zap.String("tableName", tableName))
 		return []map[string]interface{}{}, 0, nil
 	}
 
