@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Search, RefreshCw, TrendingUp, TrendingDown, Activity } from 'lucide-react';
+import { Search, RefreshCw, Activity } from 'lucide-react';
 import { useWailsAPI } from '../hooks/useWailsAPI';
 import { StockMarketData, SyncStocksResult } from '../types';
 
