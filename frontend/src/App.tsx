@@ -9,12 +9,13 @@ import BacktestPage from './pages/BacktestPage'
 import DataSyncPage from './pages/DataSyncPage'
 import SyncHistoryPage from './pages/SyncHistoryPage'
 import StrategyLibraryPage from './pages/StrategyLibraryPage'
+import StockListPage from './pages/StockListPage'
 import { AlertToast } from './components/AlertToast'
 import { AlertCenter } from './components/AlertCenter'
 import { useWailsAPI } from './hooks/useWailsAPI'
 import type { StockData, AnalysisReport as AnalysisReportType, AppConfig } from './types'
 
-type NavItem = 'analysis' | 'watchlist' | 'alerts' | 'settings' | 'backtest' | 'datasync' | 'synchistory' | 'strategylibrary' | 'strategy'
+type NavItem = 'analysis' | 'watchlist' | 'alerts' | 'settings' | 'backtest' | 'datasync' | 'synchistory' | 'strategylibrary' | 'strategy' | 'stocklist'
 
 
 function App() {
@@ -130,6 +131,18 @@ function App() {
           >
             <span className="text-xl">🔔</span>
             <span className="font-medium">预警中心</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('stocklist')}
+            className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${
+              activeTab === 'stocklist'
+                ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20'
+                : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+            }`}
+          >
+            <span className="text-xl">🏢</span>
+            <span className="font-medium">市场股票</span>
           </button>
 
           {/* 策略菜单组 */}
@@ -275,6 +288,7 @@ function App() {
             {activeTab === 'analysis' ? '股票分析工作台' :
              activeTab === 'watchlist' ? '自选行情中心' :
              activeTab === 'alerts' ? '智能预警中心' :
+             activeTab === 'stocklist' ? '市场股票列表' :
              activeTab === 'backtest' ? '策略回测中心' :
              activeTab === 'datasync' ? '数据同步中心' :
              activeTab === 'synchistory' ? '同步历史记录' :
@@ -371,6 +385,8 @@ function App() {
             </div>
           ) : activeTab === 'alerts' ? (
             <AlertCenter />
+          ) : activeTab === 'stocklist' ? (
+            <StockListPage />
           ) : activeTab === 'backtest' ? (
             <BacktestPage />
           ) : activeTab === 'strategylibrary' ? (

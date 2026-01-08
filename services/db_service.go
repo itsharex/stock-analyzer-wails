@@ -208,6 +208,64 @@ func (s *DBService) initTables() error {
 		return fmt.Errorf("创建 strategy_config 表失败: %w", err)
 	}
 
+	// 8. Stocks 表 - 市场全量股票列表
+	_, err = tx.Exec(`
+		CREATE TABLE IF NOT EXISTS stocks (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			code TEXT NOT NULL,
+			name TEXT NOT NULL,
+			market TEXT NOT NULL, -- 'SH', 'SZ', 'BJ'
+			full_code TEXT NOT NULL UNIQUE, -- 如 'SH600519'
+			type TEXT, -- 板块类型：主板, 创业板, 科创板, 北交所
+			is_active INTEGER DEFAULT 1, -- 1: 正常, 0: 退市/停牌
+			price REAL, -- 最新价
+			change_rate REAL, -- 涨跌幅(%)
+			change_amount REAL, -- 涨跌额
+			volume REAL, -- 成交量(手)
+			amount REAL, -- 成交额
+			amplitude REAL, -- 振幅(%)
+			high REAL, -- 最高价
+			low REAL, -- 最低价
+			open REAL, -- 开盘价
+			pre_close REAL, -- 昨收
+			turnover REAL, -- 换手率(%)
+			volume_ratio REAL, -- 量比
+			pe REAL, -- 市盈率
+			warrant_ratio REAL, -- 委比(%)
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(code)
+		);
+	`)
+	if err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("创建 stocks 表失败: %w", err)
+	}
+
+	// 创建 stocks 表的索引
+	_, err = tx.Exec(`CREATE INDEX IF NOT EXISTS idx_stocks_name ON stocks(name);`)
+	if err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("创建 stocks.name 索引失败: %w", err)
+	}
+
+	_, err = tx.Exec(`CREATE INDEX IF NOT EXISTS idx_stocks_code ON stocks(code);`)
+	if err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("创建 stocks.code 索引失败: %w", err)
+	}
+
+	_, err = tx.Exec(`CREATE INDEX IF NOT EXISTS idx_stocks_market ON stocks(market);`)
+	if err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("创建 stocks.market 索引失败: %w", err)
+	}
+
+	_, err = tx.Exec(`CREATE INDEX IF NOT EXISTS idx_stocks_full_code ON stocks(full_code);`)
+	if err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("创建 stocks.full_code 索引失败: %w", err)
+	}
+
 	// 提交事务
 	if err := tx.Commit(); err != nil {
 		return err

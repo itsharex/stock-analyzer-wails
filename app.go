@@ -43,6 +43,7 @@ type App struct {
 	ConfigController         *controllers.ConfigController
 	SyncHistoryController    *controllers.SyncHistoryController
 	StrategyController       *controllers.StrategyController // 策略控制器
+	StockMarketController    *controllers.StockMarketController // 市场股票控制器
 
 	// Services (for internal use)
 	watchlistService *services.WatchlistService // 保持，用于内部逻辑调用
@@ -94,6 +95,7 @@ func NewApp() *App {
 	positionSvc := services.NewPositionService(positionRepo)
 	configSvc := services.NewConfigService(configRepo)
 	strategySvc := services.NewStrategyService(strategyRepo)
+	stockMarketSvc := services.NewStockMarketService(dbSvc)
 
 	// 3. Controller 层 (Wails 绑定)
 	watchlistCtrl := controllers.NewWatchlistController(watchlistSvc)
@@ -102,6 +104,7 @@ func NewApp() *App {
 	configCtrl := controllers.NewConfigController(configSvc)
 	syncHistoryCtrl := controllers.NewSyncHistoryController(syncHistoryRepo)
 	strategyCtrl := controllers.NewStrategyController(strategySvc)
+	stockMarketCtrl := controllers.NewStockMarketController(stockMarketSvc)
 
 	return &App{
 		stockService: stockSvc,
@@ -115,6 +118,7 @@ func NewApp() *App {
 		ConfigController:         configCtrl,
 		SyncHistoryController:    syncHistoryCtrl,
 		StrategyController:       strategyCtrl,
+		StockMarketController:    stockMarketCtrl, // 市场股票控制器
 
 		// Services (for internal use)
 		watchlistService: watchlistSvc,

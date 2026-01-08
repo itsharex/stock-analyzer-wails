@@ -301,6 +301,42 @@ export interface TradeRecord {
   profit: number;
 }
 
+// 市场股票数据
+export interface StockMarketData {
+  id: number;
+  code: string;
+  name: string;
+  market: string; // SH, SZ, BJ
+  fullCode: string; // 如 SH600519
+  type: string; // 主板, 创业板, 科创板, 北交所
+  isActive: number; // 1: 正常, 0: 退市/停牌
+  price: number; // 最新价
+  changeRate: number; // 涨跌幅(%)
+  changeAmount: number; // 涨跌额
+  volume: number; // 成交量(手)
+  amount: number; // 成交额
+  amplitude: number; // 振幅(%)
+  high: number; // 最高价
+  low: number; // 最低价
+  open: number; // 开盘价
+  preClose: number; // 昨收
+  turnover: number; // 换手率(%)
+  volumeRatio: number; // 量比
+  pe: number; // 市盈率
+  warrantRatio: number; // 委比(%)
+  updatedAt: string; // 最后更新时间
+}
+
+// 同步结果
+export interface SyncStocksResult {
+  total: number;
+  processed: number;
+  inserted: number;
+  updated: number;
+  duration: number;
+  message: string;
+}
+
 export interface BacktestResult {
   strategyName: string;
   stockCode: string;

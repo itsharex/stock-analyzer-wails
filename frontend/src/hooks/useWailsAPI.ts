@@ -223,6 +223,22 @@ const getIntradayData = useCallback(async (code: string): Promise<IntradayRespon
     }
   }, [])
 
+  // 市场股票管理 API
+  const syncAllStocks = useCallback(async (): Promise<any> => {
+    // @ts-ignore
+    return window.go.main.App.SyncAllStocks()
+  }, [])
+
+  const getStocksList = useCallback(async (page: number, pageSize: number, search: string): Promise<any> => {
+    // @ts-ignore
+    return window.go.main.App.GetStocksList(page, pageSize, search)
+  }, [])
+
+  const getSyncStats = useCallback(async (): Promise<any> => {
+    // @ts-ignore
+    return window.go.main.App.GetSyncStats()
+  }, [])
+
   // 策略管理 API
   const CreateStrategy = useCallback(async (name: string, description: string, strategyType: string, parameters: Record<string, any>) => {
     // @ts-ignore
@@ -309,6 +325,10 @@ const getIntradayData = useCallback(async (code: string): Promise<IntradayRespon
     clearAllSyncHistory,
     getSyncHistoryByCode,
     getSyncedKLineData,
+    // Market Stock API
+    syncAllStocks,
+    getStocksList,
+    getSyncStats,
     // Strategy Management API
     CreateStrategy,
     UpdateStrategy,
