@@ -51,15 +51,18 @@ func NewDBService() (*DBService, error) {
 
 	svc := &DBService{db: db, dbPath: dbPath}
 
+	// 始终调用 initTables() 确保所有表都存在（使用 CREATE TABLE IF NOT EXISTS）
+	// 这样即使数据库文件存在但缺少某些表，也能自动创建
+	logger.Info("开始初始化数据库表结构", zap.String("path", dbPath))
+	if err := svc.initTables(); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("初始化数据库表失败: %w", err)
+	}
+
 	if isNewDB {
-		logger.Info("数据库文件不存在，开始初始化表结构", zap.String("path", dbPath))
-		if err := svc.initTables(); err != nil {
-			_ = db.Close()
-			return nil, fmt.Errorf("初始化数据库表失败: %w", err)
-		}
-		logger.Info("数据库表结构初始化完成")
+		logger.Info("数据库文件不存在，已完成初始化")
 	} else {
-		logger.Info("数据库连接成功", zap.String("path", dbPath))
+		logger.Info("数据库表结构检查完成")
 	}
 
 	return svc, nil

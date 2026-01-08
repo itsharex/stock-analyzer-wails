@@ -1118,12 +1118,73 @@ func (s *StockService) ClearStockCache(code string) error {
 // BatchSyncStockData 批量同步多个股票的历史数据
 // 该方法会为每个股票创建独立的表，并通过 Wails 事件发送同步进度
 func (s *StockService) BatchSyncStockData(codes []string, startDate string, endDate string) error {
-	// TODO: 实现批量同步逻辑
-	// 1. 遍历 codes 列表
-	// 2. 对每个 code 调用 SyncStockData
-	// 3. 通过 runtime.EventsEmit 发送进度事件 (eventName: "dataSyncProgress")
-	// 4. 处理错误并继续下一个
+	if len(codes) == 0 {
+		return fmt.Errorf("股票代码列表为空")
+	}
 
-	// 当前返回 nil，表示成功
+	logger.Info("开始批量同步股票数据",
+		zap.String("module", "services.stock"),
+		zap.String("op", "BatchSyncStockData"),
+		zap.Int("stock_count", len(codes)),
+		zap.String("start_date", startDate),
+		zap.String("end_date", endDate),
+	)
+
+	startTime := time.Now()
+	totalAdded := 0
+	totalUpdated := 0
+	failedCodes := []string{}
+	successCodes := []string{}
+
+	// 遍历 codes 列表
+	for i, code := range codes {
+		// 调用 SyncStockData
+		result, err := s.SyncStockData(code, startDate, endDate)
+
+		// 发送进度事件
+		if s.ctx != nil {
+			runtime.EventsEmit(s.ctx, "dataSyncProgress", map[string]interface{}{
+				"currentIndex": i + 1,
+				"totalCount":   len(codes),
+				"currentCode":  code,
+				"stockName":    result.StockCode, // 这里可以用实际股票名称
+				"success":      result.Success,
+				"message":      result.Message,
+			})
+		}
+
+		if err != nil || !result.Success {
+			failedCodes = append(failedCodes, code)
+			logger.Error("同步单个股票数据失败",
+				zap.String("code", code),
+				zap.String("error", result.ErrorMessage),
+			)
+		} else {
+			totalAdded += result.RecordsAdded
+			totalUpdated += result.RecordsUpdated
+			successCodes = append(successCodes, code)
+		}
+
+		// 避免 API 限流，短暂延迟
+		if i < len(codes)-1 {
+			time.Sleep(200 * time.Millisecond)
+		}
+	}
+
+	duration := int(time.Since(startTime).Seconds())
+
+	logger.Info("批量同步完成",
+		zap.Int("success_count", len(successCodes)),
+		zap.Int("failed_count", len(failedCodes)),
+		zap.Int("total_added", totalAdded),
+		zap.Int("total_updated", totalUpdated),
+		zap.Int("duration", duration),
+	)
+
+	// 如果所有都失败了，返回错误
+	if len(successCodes) == 0 {
+		return fmt.Errorf("批量同步失败，所有股票同步都失败了")
+	}
+
 	return nil
 }
