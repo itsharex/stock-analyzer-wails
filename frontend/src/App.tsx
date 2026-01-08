@@ -14,11 +14,13 @@ import { AlertCenter } from './components/AlertCenter'
 import { useWailsAPI } from './hooks/useWailsAPI'
 import type { StockData, AnalysisReport as AnalysisReportType, AppConfig } from './types'
 
-type NavItem = 'analysis' | 'watchlist' | 'alerts' | 'settings' | 'backtest' | 'datasync' | 'synchistory' | 'strategylibrary'
+type NavItem = 'analysis' | 'watchlist' | 'alerts' | 'settings' | 'backtest' | 'datasync' | 'synchistory' | 'strategylibrary' | 'strategy'
+
 
 function App() {
   const [activeTab, setActiveTab] = useState<NavItem>('analysis')
   const [dataSyncExpanded, setDataSyncExpanded] = useState(false)
+  const [strategyExpanded, setStrategyExpanded] = useState(false)
   const [stockData, setStockData] = useState<StockData | null>(null)
   const [analysisReport, setAnalysisReport] = useState<AnalysisReportType | null>(null)
   const [loading, setLoading] = useState(false)
@@ -121,8 +123,8 @@ function App() {
           <button
             onClick={() => setActiveTab('alerts')}
             className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${
-              activeTab === 'alerts' 
-                ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20' 
+              activeTab === 'alerts'
+                ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20'
                 : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
             }`}
           >
@@ -130,29 +132,62 @@ function App() {
             <span className="font-medium">预警中心</span>
           </button>
 
-          <button
-            onClick={() => setActiveTab('backtest')}
-            className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${
-              activeTab === 'backtest'
-                ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20'
-                : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
-            }`}
-          >
-            <span className="text-xl">📈</span>
-            <span className="font-medium">策略回测</span>
-          </button>
+          {/* 策略菜单组 */}
+          <div>
+            <button
+              onClick={() => setStrategyExpanded(!strategyExpanded)}
+              className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all duration-200 ${
+                activeTab === 'backtest' || activeTab === 'strategylibrary'
+                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20'
+                  : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+              }`}
+            >
+              <div className="flex items-center space-x-3">
+                <span className="text-xl">🎯</span>
+                <span className="font-medium">策略</span>
+              </div>
+              <svg
+                className={`w-4 h-4 transition-transform ${strategyExpanded ? 'rotate-180' : ''}`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
 
-          <button
-            onClick={() => setActiveTab('strategylibrary')}
-            className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${
-              activeTab === 'strategylibrary'
-                ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20'
-                : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
-            }`}
-          >
-            <span className="text-xl">📚</span>
-            <span className="font-medium">策略库</span>
-          </button>
+            {/* 子菜单 */}
+            {strategyExpanded && (
+              <div className="ml-4 mt-1 space-y-1">
+                <button
+                  onClick={() => {
+                    setActiveTab('backtest')
+                  }}
+                  className={`w-full flex items-center space-x-2 px-4 py-2 rounded-lg transition-all duration-200 ${
+                    activeTab === 'backtest'
+                      ? 'bg-blue-600 text-white'
+                      : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                  }`}
+                >
+                  <span className="text-lg">📈</span>
+                  <span className="text-sm">策略回测</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setActiveTab('strategylibrary')
+                  }}
+                  className={`w-full flex items-center space-x-2 px-4 py-2 rounded-lg transition-all duration-200 ${
+                    activeTab === 'strategylibrary'
+                      ? 'bg-blue-600 text-white'
+                      : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                  }`}
+                >
+                  <span className="text-lg">📚</span>
+                  <span className="text-sm">策略库</span>
+                </button>
+              </div>
+            )}
+          </div>
 
           {/* 数据同步菜单组 */}
           <div>
@@ -243,6 +278,7 @@ function App() {
              activeTab === 'backtest' ? '策略回测中心' :
              activeTab === 'datasync' ? '数据同步中心' :
              activeTab === 'synchistory' ? '同步历史记录' :
+             activeTab === 'strategylibrary' ? '策略库管理' :
              '系统参数配置'}
           </h2>
           <div className="flex items-center space-x-6 text-sm">
