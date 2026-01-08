@@ -4,7 +4,7 @@ import { useWailsAPI } from '../hooks/useWailsAPI';
 import {
   Plus, Edit3, Trash2, Bell, History, Search, Filter,
   CheckCircle, XCircle, Clock, Target, Shield, Zap,
-  Settings, Play, Pause
+  Settings, Play, Pause, TrendingUp, TrendingDown, PlusCircle, MinusCircle, ChevronDown
 } from 'lucide-react';
 
 interface PriceAlert {
@@ -55,6 +55,7 @@ const PriceAlertPage: React.FC = () => {
     deletePriceAlert,
     togglePriceAlert,
     createPriceAlertFromTemplate,
+    getStockData,
   } = useWailsAPI();
 
   const [alerts, setAlerts] = useState<PriceAlert[]>([]);
@@ -78,6 +79,18 @@ const PriceAlertPage: React.FC = () => {
     enableSound: true,
     enableDesktop: true,
   });
+
+  // 结构化预警条件状态
+  const [alertConditions, setAlertConditions] = useState<any>({
+    logic: 'AND',
+    conditions: [
+      { field: '', operator: '', value: 0, reference: '' }
+    ]
+  });
+
+  // 股票代码查询状态
+  const [searchingStock, setSearchingStock] = useState(false);
+  const [stockCodeError, setStockCodeError] = useState<string | null>(null);
 
   // 筛选状态
   const [filterCode, setFilterCode] = useState<string>('');
@@ -167,6 +180,461 @@ const PriceAlertPage: React.FC = () => {
     }
   };
 
+  // 股票代码自动查询
+  const handleStockCodeBlur = async (code: string) => {
+    if (!code || code.length !== 6) {
+      return;
+    }
+
+    setSearchingStock(true);
+    setStockCodeError(null);
+
+    try {
+      const stockData = await getStockData(code);
+      if (stockData) {
+        setFormData(prev => ({ ...prev, stockName: stockData.name }));
+      } else {
+        setStockCodeError('未找到该股票');
+      }
+    } catch (err) {
+      console.error('Failed to fetch stock data:', err);
+      setStockCodeError('查询股票信息失败');
+    } finally {
+      setSearchingStock(false);
+    }
+  };
+
+  // 预警类型变化时重置条件
+  const handleAlertTypeChange = (alertType: string) => {
+    setFormData(prev => ({ ...prev, alertType }));
+
+    // 根据预警类型初始化默认条件
+    const defaultConditions = getDefaultConditions(alertType);
+    setAlertConditions(defaultConditions);
+  };
+
+  // 获取默认预警条件
+  const getDefaultConditions = (alertType: string) => {
+    switch (alertType) {
+      case 'price_change':
+        return {
+          logic: 'AND',
+          conditions: [
+            { field: 'price_change_percent', operator: '>', value: 5 }
+          ]
+        };
+      case 'target_price':
+        return {
+          logic: 'AND',
+          conditions: [
+            { field: 'close_price', operator: '>=', value: 0 }
+          ]
+        };
+      case 'stop_loss':
+        return {
+          logic: 'AND',
+          conditions: [
+            { field: 'close_price', operator: '<=', value: 0 }
+          ]
+        };
+      case 'high_low':
+        return {
+          logic: 'AND',
+          conditions: [
+            { field: 'high_price', operator: '>', value: 0, reference: 'historical_high' }
+          ]
+        };
+      case 'price_range':
+        return {
+          logic: 'AND',
+          conditions: [
+            { field: 'close_price', operator: '>=', value: 0 },
+            { field: 'close_price', operator: '<=', value: 0 }
+          ]
+        };
+      case 'ma_deviation':
+        return {
+          logic: 'AND',
+          conditions: [
+            { field: 'ma5', operator: '>', value: 0, reference: 'ma20' }
+          ]
+        };
+      case 'combined':
+        return {
+          logic: 'AND',
+          conditions: [
+            { field: 'price_change_percent', operator: '>', value: 0 },
+            { field: 'volume_ratio', operator: '>', value: 0 }
+          ]
+        };
+      default:
+        return {
+          logic: 'AND',
+          conditions: [
+            { field: '', operator: '', value: 0 }
+          ]
+        };
+    }
+  };
+
+  // 添加条件（组合预警）
+  const addCondition = () => {
+    setAlertConditions(prev => ({
+      ...prev,
+      conditions: [...prev.conditions, { field: '', operator: '', value: 0 }]
+    }));
+  };
+
+  // 删除条件
+  const removeCondition = (index: number) => {
+    if (alertConditions.conditions.length <= 1) {
+      return;
+    }
+    setAlertConditions(prev => ({
+      ...prev,
+      conditions: prev.conditions.filter((_, i) => i !== index)
+    }));
+  };
+
+  // 更新条件
+  const updateCondition = (index: number, field: string, value: any) => {
+    setAlertConditions(prev => ({
+      ...prev,
+      conditions: prev.conditions.map((cond, i) =>
+        i === index ? { ...cond, [field]: value } : cond
+      )
+    }));
+  };
+
+  // 将结构化条件转换为JSON字符串
+  const serializeConditions = (): string => {
+    return JSON.stringify(alertConditions);
+  };
+
+  // 渲染预警条件表单
+  const renderAlertConditions = () => {
+    switch (formData.alertType) {
+      case 'price_change':
+        return <PriceChangeForm alertConditions={alertConditions} updateCondition={updateCondition} />;
+      case 'target_price':
+        return <TargetPriceForm alertConditions={alertConditions} updateCondition={updateCondition} />;
+      case 'stop_loss':
+        return <StopLossForm alertConditions={alertConditions} updateCondition={updateCondition} />;
+      case 'high_low':
+        return <HighLowForm alertConditions={alertConditions} updateCondition={updateCondition} />;
+      case 'price_range':
+        return <PriceRangeForm alertConditions={alertConditions} updateCondition={updateCondition} />;
+      case 'ma_deviation':
+        return <MADeviationForm alertConditions={alertConditions} updateCondition={updateCondition} />;
+      case 'combined':
+        return (
+          <CombinedForm
+            alertConditions={alertConditions}
+            updateCondition={updateCondition}
+            addCondition={addCondition}
+            removeCondition={removeCondition}
+            setLogic={(logic) => setAlertConditions(prev => ({ ...prev, logic }))}
+          />
+        );
+      default:
+        return <div className="text-sm text-gray-500">请选择预警类型</div>;
+    }
+  };
+
+  // 涨跌幅预警表单
+  const PriceChangeForm = ({ alertConditions, updateCondition }: any) => {
+    const condition = alertConditions.conditions[0] || {};
+    return (
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">涨跌幅类型</label>
+            <select
+              value={condition.operator}
+              onChange={(e) => updateCondition(0, 'operator', e.target.value)}
+              className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+            >
+              <option value=">">涨幅超过</option>
+              <option value="<">跌幅超过</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">百分比 (%)</label>
+            <input
+              type="number"
+              step="0.1"
+              min="0"
+              max="100"
+              value={condition.value || ''}
+              onChange={(e) => updateCondition(0, 'value', parseFloat(e.target.value))}
+              className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              placeholder="例如: 5"
+            />
+          </div>
+        </div>
+        <p className="text-xs text-gray-500">
+          {condition.operator === '>' ? '当涨幅达到设定值时触发预警' : '当跌幅达到设定值时触发预警'}
+        </p>
+      </div>
+    );
+  };
+
+  // 目标价预警表单
+  const TargetPriceForm = ({ alertConditions, updateCondition }: any) => {
+    const condition = alertConditions.conditions[0] || {};
+    return (
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">操作符</label>
+            <select
+              value={condition.operator}
+              onChange={(e) => updateCondition(0, 'operator', e.target.value)}
+              className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+            >
+              <option value=">=">价格达到或高于</option>
+              <option value="<=">价格达到或低于</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">目标价格 (元)</label>
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              value={condition.value || ''}
+              onChange={(e) => updateCondition(0, 'value', parseFloat(e.target.value))}
+              className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              placeholder="例如: 100.00"
+            />
+          </div>
+        </div>
+        <p className="text-xs text-gray-500">
+          当股价达到设定的目标价格时触发预警
+        </p>
+      </div>
+    );
+  };
+
+  // 止损价预警表单
+  const StopLossForm = ({ alertConditions, updateCondition }: any) => {
+    const condition = alertConditions.conditions[0] || {};
+    return (
+      <div className="space-y-4">
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">止损价格 (元)</label>
+          <input
+            type="number"
+            step="0.01"
+            min="0"
+            value={condition.value || ''}
+            onChange={(e) => updateCondition(0, 'value', parseFloat(e.target.value))}
+            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+            placeholder="例如: 90.00"
+          />
+        </div>
+        <p className="text-xs text-gray-500">
+          当股价跌破设定的止损价格时触发预警，用于风险控制
+        </p>
+      </div>
+    );
+  };
+
+  // 突破高低点预警表单
+  const HighLowForm = ({ alertConditions, updateCondition }: any) => {
+    const condition = alertConditions.conditions[0] || {};
+    return (
+      <div className="space-y-4">
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">突破类型</label>
+          <select
+            value={condition.reference}
+            onChange={(e) => updateCondition(0, 'reference', e.target.value)}
+            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+          >
+            <option value="historical_high">突破历史新高</option>
+            <option value="historical_low">跌破历史新低</option>
+          </select>
+        </div>
+        <p className="text-xs text-gray-500">
+          当股价突破近期的历史最高价或最低价时触发预警
+        </p>
+      </div>
+    );
+  };
+
+  // 价格区间预警表单
+  const PriceRangeForm = ({ alertConditions, updateCondition }: any) => {
+    const condition1 = alertConditions.conditions[0] || {};
+    const condition2 = alertConditions.conditions[1] || {};
+    return (
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">价格下限 (元)</label>
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              value={condition1.value || ''}
+              onChange={(e) => updateCondition(0, 'value', parseFloat(e.target.value))}
+              className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              placeholder="例如: 90.00"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">价格上限 (元)</label>
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              value={condition2.value || ''}
+              onChange={(e) => updateCondition(1, 'value', parseFloat(e.target.value))}
+              className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              placeholder="例如: 110.00"
+            />
+          </div>
+        </div>
+        <p className="text-xs text-gray-500">
+          当股价进入或超出设定的价格区间时触发预警
+        </p>
+      </div>
+    );
+  };
+
+  // 均线偏离预警表单
+  const MADeviationForm = ({ alertConditions, updateCondition }: any) => {
+    const condition = alertConditions.conditions[0] || {};
+    return (
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">均线类型</label>
+            <select
+              value={condition.reference}
+              onChange={(e) => updateCondition(0, 'reference', e.target.value)}
+              className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+            >
+              <option value="ma20">MA5 上穿 MA20 (金叉)</option>
+              <option value="ma20">MA5 下穿 MA20 (死叉)</option>
+              <option value="ma10">MA5 上穿 MA10</option>
+              <option value="ma10">MA5 下穿 MA10</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">偏离幅度 (%)</label>
+            <input
+              type="number"
+              step="0.1"
+              min="0"
+              max="10"
+              value={condition.value || ''}
+              onChange={(e) => updateCondition(0, 'value', parseFloat(e.target.value))}
+              className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+              placeholder="例如: 0.5"
+            />
+          </div>
+        </div>
+        <p className="text-xs text-gray-500">
+          当股价均线发生交叉或偏离设定幅度时触发预警
+        </p>
+      </div>
+    );
+  };
+
+  // 组合预警表单
+  const CombinedForm = ({ alertConditions, updateCondition, addCondition, removeCondition, setLogic }: any) => {
+    const fields = [
+      { value: 'price_change_percent', label: '涨跌幅' },
+      { value: 'close_price', label: '收盘价' },
+      { value: 'high_price', label: '最高价' },
+      { value: 'low_price', label: '最低价' },
+      { value: 'volume_ratio', label: '量比' },
+      { value: 'ma5', label: 'MA5' },
+      { value: 'ma10', label: 'MA10' },
+      { value: 'ma20', label: 'MA20' },
+    ];
+
+    return (
+      <div className="space-y-4">
+        {/* 逻辑关系选择 */}
+        <div>
+          <label className="block text-xs font-medium text-gray-600 mb-1">逻辑关系</label>
+          <select
+            value={alertConditions.logic}
+            onChange={(e) => setLogic(e.target.value)}
+            className="w-full px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+          >
+            <option value="AND">满足所有条件 (AND)</option>
+            <option value="OR">满足任一条件 (OR)</option>
+          </select>
+        </div>
+
+        {/* 条件列表 */}
+        <div className="space-y-3">
+          {alertConditions.conditions.map((condition: any, index: number) => (
+            <div key={index} className="flex items-start space-x-2 bg-white p-3 rounded-lg border border-gray-200">
+              <div className="flex-1 grid grid-cols-3 gap-2">
+                <select
+                  value={condition.field}
+                  onChange={(e) => updateCondition(index, 'field', e.target.value)}
+                  className="px-2 py-1.5 bg-gray-50 border border-gray-200 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                >
+                  <option value="">选择字段</option>
+                  {fields.map(field => (
+                    <option key={field.value} value={field.value}>{field.label}</option>
+                  ))}
+                </select>
+
+                <select
+                  value={condition.operator}
+                  onChange={(e) => updateCondition(index, 'operator', e.target.value)}
+                  className="px-2 py-1.5 bg-gray-50 border border-gray-200 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                >
+                  <option value=">">&gt;</option>
+                  <option value=">=">&gt;=</option>
+                  <option value="<">&lt;</option>
+                  <option value="<=">&lt;=</option>
+                  <option value="==">==</option>
+                  <option value="!=">!=</option>
+                </select>
+
+                <input
+                  type="number"
+                  step="0.01"
+                  value={condition.value || ''}
+                  onChange={(e) => updateCondition(index, 'value', parseFloat(e.target.value))}
+                  className="px-2 py-1.5 bg-gray-50 border border-gray-200 rounded text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20"
+                  placeholder="值"
+                />
+              </div>
+
+              <button
+                onClick={() => removeCondition(index)}
+                disabled={alertConditions.conditions.length <= 1}
+                className="mt-1 p-1.5 text-red-500 hover:bg-red-50 rounded disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                <MinusCircle className="w-4 h-4" />
+              </button>
+            </div>
+          ))}
+        </div>
+
+        <button
+          onClick={addCondition}
+          className="w-full px-4 py-2 border-2 border-dashed border-blue-300 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors flex items-center justify-center space-x-2 text-sm"
+        >
+          <PlusCircle className="w-4 h-4" />
+          <span>添加条件</span>
+        </button>
+
+        <p className="text-xs text-gray-500">
+          {alertConditions.logic === 'AND' ? '需要所有条件同时满足才触发预警' : '任意一个条件满足即触发预警'}
+        </p>
+      </div>
+    );
+  };
+
   const handleCreateAlert = () => {
     setEditingAlert(null);
     setSelectedTemplate('');
@@ -181,6 +649,11 @@ const PriceAlertPage: React.FC = () => {
       enableSound: true,
       enableDesktop: true,
     });
+    setAlertConditions({
+      logic: 'AND',
+      conditions: [{ field: '', operator: '', value: 0 }]
+    });
+    setStockCodeError(null);
     setShowModal(true);
   };
 
@@ -198,6 +671,20 @@ const PriceAlertPage: React.FC = () => {
       enableSound: alert.enableSound,
       enableDesktop: alert.enableDesktop,
     });
+
+    // 解析JSON条件
+    try {
+      const parsed = JSON.parse(alert.conditions);
+      setAlertConditions(parsed);
+    } catch (err) {
+      console.error('Failed to parse conditions:', err);
+      setAlertConditions({
+        logic: 'AND',
+        conditions: [{ field: '', operator: '', value: 0 }]
+      });
+    }
+
+    setStockCodeError(null);
     setShowModal(true);
   };
 
@@ -232,16 +719,24 @@ const PriceAlertPage: React.FC = () => {
   };
 
   const handleSaveAlert = async () => {
-    if (!formData.stockCode || !formData.alertType || !formData.conditions) {
+    if (!formData.stockCode || !formData.alertType) {
       setError('请填写完整信息');
       return;
     }
+
+    // 序列化预警条件
+    const conditionsJSON = serializeConditions();
 
     try {
       let res;
       if (editingAlert) {
         // 更新
-        const updateData = { ...formData, id: editingAlert.id, isActive: editingAlert.isActive };
+        const updateData = {
+          ...formData,
+          id: editingAlert.id,
+          isActive: editingAlert.isActive,
+          conditions: conditionsJSON
+        };
         res = await updatePriceAlert(JSON.stringify(updateData));
       } else {
         // 从模板创建或直接创建
@@ -259,7 +754,11 @@ const PriceAlertPage: React.FC = () => {
             })
           );
         } else {
-          res = await createPriceAlert(JSON.stringify(formData));
+          const createData = {
+            ...formData,
+            conditions: conditionsJSON
+          };
+          res = await createPriceAlert(JSON.stringify(createData));
         }
       }
 
@@ -638,13 +1137,25 @@ const PriceAlertPage: React.FC = () => {
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     股票代码 *
                   </label>
-                  <input
-                    type="text"
-                    value={formData.stockCode}
-                    onChange={(e) => setFormData({ ...formData, stockCode: e.target.value })}
-                    className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                    placeholder="例如: 600519"
-                  />
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={formData.stockCode}
+                      onChange={(e) => setFormData({ ...formData, stockCode: e.target.value })}
+                      onBlur={(e) => handleStockCodeBlur(e.target.value)}
+                      disabled={searchingStock}
+                      className={`w-full px-4 py-2 bg-gray-50 border ${stockCodeError ? 'border-red-300' : 'border-gray-200'} rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 pr-10`}
+                      placeholder="例如: 600519"
+                    />
+                    {searchingStock && (
+                      <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                      </div>
+                    )}
+                  </div>
+                  {stockCodeError && (
+                    <p className="text-xs text-red-500 mt-1">{stockCodeError}</p>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -655,7 +1166,7 @@ const PriceAlertPage: React.FC = () => {
                     value={formData.stockName}
                     onChange={(e) => setFormData({ ...formData, stockName: e.target.value })}
                     className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20"
-                    placeholder="例如: 贵州茅台"
+                    placeholder="自动查询或手动输入"
                   />
                 </div>
               </div>
@@ -667,7 +1178,7 @@ const PriceAlertPage: React.FC = () => {
                 </label>
                 <select
                   value={formData.alertType}
-                  onChange={(e) => setFormData({ ...formData, alertType: e.target.value })}
+                  onChange={(e) => handleAlertTypeChange(e.target.value)}
                   className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20"
                 >
                   <option value="">请选择预警类型</option>
@@ -681,22 +1192,13 @@ const PriceAlertPage: React.FC = () => {
                 </select>
               </div>
 
-              {/* 预警条件（JSON） */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  预警条件 (JSON) *
-                </label>
-                <textarea
-                  value={formData.conditions}
-                  onChange={(e) => setFormData({ ...formData, conditions: e.target.value })}
-                  rows={6}
-                  className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/20 font-mono text-sm"
-                  placeholder='{"alert_type": "price_change", "conditions": [{"field": "price_change_percent", "operator": ">", "value": 5}]}'
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  格式示例: {`{"alert_type": "price_change", "conditions": [{"field": "price_change_percent", "operator": ">", "value": 5}]}`}
-                </p>
-              </div>
+              {/* 预警条件（表单化） */}
+              {formData.alertType && (
+                <div className="bg-gray-50 rounded-xl p-4 border border-gray-200">
+                  <h4 className="text-sm font-semibold text-gray-700 mb-3">预警条件</h4>
+                  {renderAlertConditions()}
+                </div>
+              )}
 
               {/* 配置项 */}
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
