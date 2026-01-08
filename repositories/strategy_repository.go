@@ -145,7 +145,8 @@ func (r *StrategyRepository) GetAll() ([]models.StrategyConfig, error) {
 	}
 	defer rows.Close()
 
-	var strategies []models.StrategyConfig
+	// 初始化切片，确保即使没有数据也返回空数组而不是 nil
+	strategies := make([]models.StrategyConfig, 0)
 	for rows.Next() {
 		var strategy models.StrategyConfig
 		var parametersJSON, backtestJSON sql.NullString

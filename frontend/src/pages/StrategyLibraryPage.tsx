@@ -34,11 +34,20 @@ const StrategyLibraryPage: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
+      console.log('开始加载策略列表...');
       const result = await GetAllStrategies();
+      console.log('获取到的策略列表结果:', result);
       if (Array.isArray(result)) {
         setStrategies(result);
+        console.log('策略列表已加载，共', result.length, '个策略');
+      } else {
+        console.warn('返回的结果不是数组:', result);
+        setError('返回的数据格式错误');
       }
     } catch (err: any) {
+      console.error('加载策略列表失败:', err);
+      console.error('错误对象:', err);
+      console.error('错误消息:', err.message);
       setError(err.message || '加载策略列表失败');
     } finally {
       setLoading(false);

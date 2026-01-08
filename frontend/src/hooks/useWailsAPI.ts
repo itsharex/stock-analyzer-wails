@@ -240,8 +240,20 @@ const getIntradayData = useCallback(async (code: string): Promise<IntradayRespon
   }, [])
 
   const GetAllStrategies = useCallback(async () => {
-    // @ts-ignore
-    return window.go.main.App.GetAllStrategies()
+    try {
+      // @ts-ignore
+      if (!window.go?.main?.App?.GetAllStrategies) {
+        throw new Error('GetAllStrategies 方法不可用，请确保已运行 wails dev 重新生成绑定文件')
+      }
+      console.log('调用 GetAllStrategies...')
+      // @ts-ignore
+      const result = await window.go.main.App.GetAllStrategies()
+      console.log('GetAllStrategies 返回结果:', result)
+      return result
+    } catch (error: any) {
+      console.error('调用 GetAllStrategies 失败:', error)
+      throw error
+    }
   }, [])
 
   const GetStrategyTypes = useCallback(async () => {
