@@ -190,6 +190,24 @@ func (s *DBService) initTables() error {
 		return fmt.Errorf("创建 sync_history 表失败: %w", err)
 	}
 
+	// 7. Strategy Config 表
+	_, err = tx.Exec(`
+		CREATE TABLE IF NOT EXISTS strategy_config (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL,
+			description TEXT,
+			strategy_type TEXT NOT NULL, -- 'simple_ma', 'macd', etc.
+			parameters TEXT NOT NULL, -- JSON 格式的策略参数
+			last_backtest_result TEXT, -- 最后一次回测结果（JSON）
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);
+	`)
+	if err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("创建 strategy_config 表失败: %w", err)
+	}
+
 	// 提交事务
 	if err := tx.Commit(); err != nil {
 		return err

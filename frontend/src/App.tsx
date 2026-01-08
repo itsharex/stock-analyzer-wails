@@ -8,12 +8,13 @@ import WatchlistDetail from './components/WatchlistDetail'
 import BacktestPage from './pages/BacktestPage'
 import DataSyncPage from './pages/DataSyncPage'
 import SyncHistoryPage from './pages/SyncHistoryPage'
+import StrategyLibraryPage from './pages/StrategyLibraryPage'
 import { AlertToast } from './components/AlertToast'
 import { AlertCenter } from './components/AlertCenter'
 import { useWailsAPI } from './hooks/useWailsAPI'
 import type { StockData, AnalysisReport as AnalysisReportType, AppConfig } from './types'
 
-type NavItem = 'analysis' | 'watchlist' | 'alerts' | 'settings' | 'backtest' | 'datasync' | 'synchistory'
+type NavItem = 'analysis' | 'watchlist' | 'alerts' | 'settings' | 'backtest' | 'datasync' | 'synchistory' | 'strategylibrary'
 
 function App() {
   const [activeTab, setActiveTab] = useState<NavItem>('analysis')
@@ -139,6 +140,18 @@ function App() {
           >
             <span className="text-xl">📈</span>
             <span className="font-medium">策略回测</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab('strategylibrary')}
+            className={`w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${
+              activeTab === 'strategylibrary'
+                ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/20'
+                : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+            }`}
+          >
+            <span className="text-xl">📚</span>
+            <span className="font-medium">策略库</span>
           </button>
 
           {/* 数据同步菜单组 */}
@@ -324,6 +337,8 @@ function App() {
             <AlertCenter />
           ) : activeTab === 'backtest' ? (
             <BacktestPage />
+          ) : activeTab === 'strategylibrary' ? (
+            <StrategyLibraryPage />
           ) : activeTab === 'datasync' ? (
             <DataSyncPage />
           ) : activeTab === 'synchistory' ? (

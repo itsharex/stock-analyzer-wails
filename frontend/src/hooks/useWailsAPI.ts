@@ -218,6 +218,42 @@ const getIntradayData = useCallback(async (code: string): Promise<IntradayRespon
     }
   }, [])
 
+  // 策略管理 API
+  const CreateStrategy = useCallback(async (name: string, description: string, strategyType: string, parameters: Record<string, any>) => {
+    // @ts-ignore
+    return window.go.main.App.CreateStrategy(name, description, strategyType, parameters)
+  }, [])
+
+  const UpdateStrategy = useCallback(async (id: number, name: string, description: string, strategyType: string, parameters: Record<string, any>) => {
+    // @ts-ignore
+    return window.go.main.App.UpdateStrategy(id, name, description, strategyType, parameters)
+  }, [])
+
+  const DeleteStrategy = useCallback(async (id: number) => {
+    // @ts-ignore
+    return window.go.main.App.DeleteStrategy(id)
+  }, [])
+
+  const GetStrategy = useCallback(async (id: number) => {
+    // @ts-ignore
+    return window.go.main.App.GetStrategy(id)
+  }, [])
+
+  const GetAllStrategies = useCallback(async () => {
+    // @ts-ignore
+    return window.go.main.App.GetAllStrategies()
+  }, [])
+
+  const GetStrategyTypes = useCallback(async () => {
+    // @ts-ignore
+    return window.go.main.App.GetStrategyTypes()
+  }, [])
+
+  const UpdateStrategyBacktestResult = useCallback(async (id: number, backtestResult: Record<string, any>) => {
+    // @ts-ignore
+    return window.go.main.App.UpdateStrategyBacktestResult(id, backtestResult)
+  }, [])
+
 		return {
 		    getStockData,
 		    getIntradayData,
@@ -255,6 +291,14 @@ const getIntradayData = useCallback(async (code: string): Promise<IntradayRespon
     clearAllSyncHistory,
     getSyncHistoryByCode,
     getSyncedKLineData,
+    // Strategy Management API
+    CreateStrategy,
+    UpdateStrategy,
+    DeleteStrategy,
+    GetStrategy,
+    GetAllStrategies,
+    GetStrategyTypes,
+    UpdateStrategyBacktestResult,
   }
 }
 

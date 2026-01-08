@@ -37,11 +37,12 @@ type App struct {
 	alertConfig     models.AlertConfig
 
 	// Controllers (Wails Bindings)
-	WatchlistController *controllers.WatchlistController
-	AlertController     *controllers.AlertController
-	PositionController  *controllers.PositionController
-	ConfigController    *controllers.ConfigController
-	SyncHistoryController *controllers.SyncHistoryController
+	WatchlistController      *controllers.WatchlistController
+	AlertController          *controllers.AlertController
+	PositionController       *controllers.PositionController
+	ConfigController         *controllers.ConfigController
+	SyncHistoryController    *controllers.SyncHistoryController
+	StrategyController       *controllers.StrategyController // 策略控制器
 
 	// Services (for internal use)
 	watchlistService *services.WatchlistService // 保持，用于内部逻辑调用
@@ -85,12 +86,14 @@ func NewApp() *App {
 	positionRepo := repositories.NewSQLitePositionRepository(dbSvc.GetDB())
 	configRepo := repositories.NewSQLiteConfigRepository(dbSvc.GetDB())
 	syncHistoryRepo := repositories.NewSQLiteSyncHistoryRepository(dbSvc.GetDB())
+	strategyRepo := repositories.NewStrategyRepository(dbSvc.GetDB())
 
 	// 2. Service 层
 	watchlistSvc := services.NewWatchlistService(watchlistRepo)
 	alertSvc := services.NewAlertService(alertRepo)
 	positionSvc := services.NewPositionService(positionRepo)
 	configSvc := services.NewConfigService(configRepo)
+	strategySvc := services.NewStrategyService(strategyRepo)
 
 	// 3. Controller 层 (Wails 绑定)
 	watchlistCtrl := controllers.NewWatchlistController(watchlistSvc)
@@ -98,6 +101,7 @@ func NewApp() *App {
 	positionCtrl := controllers.NewPositionController(positionSvc)
 	configCtrl := controllers.NewConfigController(configSvc)
 	syncHistoryCtrl := controllers.NewSyncHistoryController(syncHistoryRepo)
+	strategyCtrl := controllers.NewStrategyController(strategySvc)
 
 	return &App{
 		stockService: stockSvc,
@@ -105,11 +109,12 @@ func NewApp() *App {
 		dbService:    dbSvc, // 存储 DBService
 
 		// Controllers
-		WatchlistController: watchlistCtrl,
-		AlertController:     alertCtrl,
-		PositionController:  positionCtrl,
-		ConfigController:    configCtrl,
-		SyncHistoryController: syncHistoryCtrl,
+		WatchlistController:      watchlistCtrl,
+		AlertController:          alertCtrl,
+		PositionController:       positionCtrl,
+		ConfigController:         configCtrl,
+		SyncHistoryController:    syncHistoryCtrl,
+		StrategyController:       strategyCtrl,
 
 		// Services (for internal use)
 		watchlistService: watchlistSvc,
@@ -1170,3 +1175,62 @@ func (a *App) GetSyncedKLineData(code string, startDate string, endDate string, 
 	response.Total = total
 	return response
 }
+
+// ============ 策略管理 API ============
+
+// CreateStrategy 创建策略
+func (a *App) CreateStrategy(name string, description string, strategyType string, parameters map[string]interface{}) error {
+	if a.StrategyController == nil {
+		return fmt.Errorf("策略控制器未初始化")
+	}
+	return a.StrategyController.CreateStrategy(name, description, strategyType, parameters)
+}
+
+// UpdateStrategy 更新策略
+func (a *App) UpdateStrategy(id int64, name string, description string, strategyType string, parameters map[string]interface{}) error {
+	if a.StrategyController == nil {
+		return fmt.Errorf("策略控制器未初始化")
+	}
+	return a.StrategyController.UpdateStrategy(id, name, description, strategyType, parameters)
+}
+
+// DeleteStrategy 删除策略
+func (a *App) DeleteStrategy(id int64) error {
+	if a.StrategyController == nil {
+		return fmt.Errorf("策略控制器未初始化")
+	}
+	return a.StrategyController.DeleteStrategy(id)
+}
+
+// GetStrategy 获取策略
+func (a *App) GetStrategy(id int64) (interface{}, error) {
+	if a.StrategyController == nil {
+		return nil, fmt.Errorf("策略控制器未初始化")
+	}
+	return a.StrategyController.GetStrategy(id)
+}
+
+// GetAllStrategies 获取所有策略
+func (a *App) GetAllStrategies() (interface{}, error) {
+	if a.StrategyController == nil {
+		return nil, fmt.Errorf("策略控制器未初始化")
+	}
+	return a.StrategyController.GetAllStrategies()
+}
+
+// GetStrategyTypes 获取所有策略类型
+func (a *App) GetStrategyTypes() interface{} {
+	if a.StrategyController == nil {
+		return []interface{}{}
+	}
+	return a.StrategyController.GetStrategyTypes()
+}
+
+// UpdateStrategyBacktestResult 更新策略回测结果
+func (a *App) UpdateStrategyBacktestResult(id int64, backtestResult map[string]interface{}) error {
+	if a.StrategyController == nil {
+		return fmt.Errorf("策略控制器未初始化")
+	}
+	return a.StrategyController.UpdateStrategyBacktestResult(id, backtestResult)
+}
+
