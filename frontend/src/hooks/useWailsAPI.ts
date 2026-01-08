@@ -179,9 +179,30 @@ const getIntradayData = useCallback(async (code: string): Promise<IntradayRespon
     if (!window.go?.main?.App?.GetSyncedKLineData) {
       throw new Error('GetSyncedKLineData 方法不可用，请确保已运行 wails dev 重新生成绑定文件')
     }
-    // @ts-ignore
-    const [data, total] = await window.go.main.App.GetSyncedKLineData(code, startDate, endDate, page, pageSize)
-    return { data, total }
+    try {
+      // @ts-ignore
+      const result = await window.go.main.App.GetSyncedKLineData(code, startDate, endDate, page, pageSize)
+
+      // 验证返回值是否是数组
+      if (!Array.isArray(result)) {
+        console.error('GetSyncedKLineData 返回值不是数组:', result)
+        throw new Error('GetSyncedKLineData 返回数据格式错误，请检查后端实现')
+      }
+
+      // 解构返回值
+      const [data, total] = result
+
+      // 验证数据有效性
+      if (!Array.isArray(data)) {
+        console.error('返回的数据字段不是数组:', data)
+        throw new Error('返回的数据格式错误，data 字段应该是数组')
+      }
+
+      return { data, total }
+    } catch (error: any) {
+      console.error('调用 GetSyncedKLineData 失败:', error)
+      throw error
+    }
   }, [])
 
 		return {

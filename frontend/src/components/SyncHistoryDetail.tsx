@@ -61,11 +61,19 @@ const SyncHistoryDetail: React.FC<SyncHistoryDetailProps> = ({
     setError(null);
     try {
       const result = await getSyncedKLineData(stockCode, start, end, 1, 5000);
-      setTableData(result.data);
-      setTotalCount(result.total);
+
+      // 验证返回的数据格式
+      if (!result || !Array.isArray(result.data)) {
+        throw new Error('返回数据格式错误：data 字段应该是数组')
+      }
+
+      const safeData = result.data || []
+
+      setTableData(safeData);
+      setTotalCount(result.total || 0);
 
       // 转换为K线图数据格式
-      const klineChartData: KLineData[] = result.data.map((item: any) => ({
+      const klineChartData: KLineData[] = safeData.map((item: any) => ({
         time: item.date,
         open: item.open,
         high: item.high,
@@ -76,6 +84,7 @@ const SyncHistoryDetail: React.FC<SyncHistoryDetailProps> = ({
 
       setKlineData(klineChartData);
     } catch (err: any) {
+      console.error('加载K线数据失败:', err)
       setError(err.message || '加载K线数据失败');
       setTableData([]);
       setKlineData([]);
@@ -86,7 +95,10 @@ const SyncHistoryDetail: React.FC<SyncHistoryDetailProps> = ({
   };
 
   const applyFilter = () => {
-    let filtered = [...tableData];
+    // 确保 tableData 是数组
+    const safeTableData = Array.isArray(tableData) ? tableData : [];
+
+    let filtered = [...safeTableData];
 
     if (filterStartDate) {
       filtered = filtered.filter((item) => item.date >= filterStartDate);
