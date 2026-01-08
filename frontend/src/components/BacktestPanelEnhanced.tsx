@@ -46,9 +46,8 @@ const BacktestPanel: React.FC<BacktestPanelProps> = ({ stockCode }) => {
     try {
       const result = await GetAllStrategies();
       if (Array.isArray(result)) {
-        // 只显示双均线策略
-        const maStrategies = result.filter((s: StrategyConfig) => s.strategyType === 'simple_ma');
-        setStrategies(maStrategies);
+        // 显示所有策略
+        setStrategies(result);
       }
     } catch (err) {
       console.error('加载策略列表失败:', err);
@@ -56,6 +55,12 @@ const BacktestPanel: React.FC<BacktestPanelProps> = ({ stockCode }) => {
   };
 
   const handleBacktest = async () => {
+    // 检查策略类型是否支持
+    if (selectedStrategy && selectedStrategy.strategyType !== 'simple_ma') {
+      alert(`暂不支持 ${selectedStrategy.strategyType} 策略的回测功能，目前仅支持双均线策略。`);
+      return;
+    }
+
     setLoading(true);
     setError(null);
     setBacktestResult(null);
@@ -64,7 +69,7 @@ const BacktestPanel: React.FC<BacktestPanelProps> = ({ stockCode }) => {
       setBacktestResult(result);
 
       // 如果是从策略库执行的，更新策略的回测结果
-      if (selectedStrategy) {
+      if (selectedStrategy && selectedStrategy.strategyType === 'simple_ma') {
         try {
           await UpdateStrategyBacktestResult(selectedStrategy.id, {
             totalReturn: result.totalReturn,
@@ -98,13 +103,27 @@ const BacktestPanel: React.FC<BacktestPanelProps> = ({ stockCode }) => {
     const strategy = strategies.find(s => s.id === parseInt(strategyId));
     if (strategy) {
       setSelectedStrategy(strategy);
-      // 应用策略参数
-      if (strategy.parameters.shortPeriod) {
-        setShortPeriod(Number(strategy.parameters.shortPeriod));
+
+      // 根据策略类型应用不同的参数
+      if (strategy.strategyType === 'simple_ma') {
+        // 双均线策略参数
+        if (strategy.parameters.shortPeriod) {
+          setShortPeriod(Number(strategy.parameters.shortPeriod));
+        }
+        if (strategy.parameters.longPeriod) {
+          setLongPeriod(Number(strategy.parameters.longPeriod));
+        }
+      } else if (strategy.strategyType === 'macd') {
+        // MACD 策略参数
+        if (strategy.parameters.fastPeriod) {
+          setShortPeriod(Number(strategy.parameters.fastPeriod));
+        }
+        if (strategy.parameters.slowPeriod) {
+          setLongPeriod(Number(strategy.parameters.slowPeriod));
+        }
       }
-      if (strategy.parameters.longPeriod) {
-        setLongPeriod(Number(strategy.parameters.longPeriod));
-      }
+
+      // 通用参数
       if (strategy.parameters.initialCapital) {
         setInitialCapital(Number(strategy.parameters.initialCapital));
       }
@@ -153,6 +172,21 @@ const BacktestPanel: React.FC<BacktestPanelProps> = ({ stockCode }) => {
     capital: value,
   })) || [];
 
+  // 根据策略类型获取参数标签
+  const getShortPeriodLabel = () => {
+    if (selectedStrategy) {
+      return selectedStrategy.strategyType === 'macd' ? '快线周期' : '短周期均线 (MA)';
+    }
+    return '短周期均线 (MA)';
+  };
+
+  const getLongPeriodLabel = () => {
+    if (selectedStrategy) {
+      return selectedStrategy.strategyType === 'macd' ? '慢线周期' : '长周期均线 (MA)';
+    }
+    return '长周期均线 (MA)';
+  };
+
   return (
     <div className="p-4 bg-gray-800 text-gray-100 rounded-lg shadow-lg">
       <h2 className="text-2xl font-bold mb-4">回测面板 - {stockCode}</h2>
@@ -170,11 +204,17 @@ const BacktestPanel: React.FC<BacktestPanelProps> = ({ stockCode }) => {
             className="flex-1 px-3 py-2 rounded-md bg-gray-600 border border-gray-500 text-gray-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
           >
             <option value="">手动输入参数</option>
-            {strategies.map((strategy) => (
-              <option key={strategy.id} value={strategy.id.toString()}>
-                {strategy.name} ({strategy.strategyType === 'simple_ma' ? '双均线' : strategy.strategyType})
-              </option>
-            ))}
+            {strategies.map((strategy) => {
+              const strategyTypeName = strategy.strategyType === 'simple_ma' ? '双均线' :
+                                      strategy.strategyType === 'macd' ? 'MACD' :
+                                      strategy.strategyType;
+              const isSupported = strategy.strategyType === 'simple_ma';
+              return (
+                <option key={strategy.id} value={strategy.id.toString()} disabled={!isSupported}>
+                  {strategy.name} ({strategyTypeName}) {!isSupported && '[暂不支持回测]'}
+                </option>
+              );
+            })}
           </select>
           <button
             onClick={handleSaveAsStrategy}
@@ -189,6 +229,11 @@ const BacktestPanel: React.FC<BacktestPanelProps> = ({ stockCode }) => {
           <div className="text-xs text-gray-400">
             已加载策略: <span className="font-semibold text-blue-400">{selectedStrategy.name}</span>
             {selectedStrategy.description && ` - ${selectedStrategy.description}`}
+            {selectedStrategy.strategyType !== 'simple_ma' && (
+              <div className="mt-1 text-yellow-400">
+                ⚠️ 当前策略类型暂不支持回测，仅支持查看和编辑参数
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -196,7 +241,7 @@ const BacktestPanel: React.FC<BacktestPanelProps> = ({ stockCode }) => {
       {/* 参数配置 */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
         <div>
-          <label htmlFor="shortPeriod" className="block text-sm font-medium text-gray-300">短周期均线 (MA):</label>
+          <label htmlFor="shortPeriod" className="block text-sm font-medium text-gray-300">{getShortPeriodLabel()}:</label>
           <input
             type="number"
             id="shortPeriod"
@@ -207,7 +252,7 @@ const BacktestPanel: React.FC<BacktestPanelProps> = ({ stockCode }) => {
           />
         </div>
         <div>
-          <label htmlFor="longPeriod" className="block text-sm font-medium text-gray-300">长周期均线 (MA):</label>
+          <label htmlFor="longPeriod" className="block text-sm font-medium text-gray-300">{getLongPeriodLabel()}:</label>
           <input
             type="number"
             id="longPeriod"
@@ -253,9 +298,11 @@ const BacktestPanel: React.FC<BacktestPanelProps> = ({ stockCode }) => {
       <button
         onClick={handleBacktest}
         className="w-full py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
-        disabled={loading}
+        disabled={loading || (selectedStrategy && selectedStrategy.strategyType !== 'simple_ma')}
       >
-        {loading ? '回测中...' : '开始回测'}
+        {loading ? '回测中...' :
+         selectedStrategy && selectedStrategy.strategyType !== 'simple_ma' ?
+         '此策略类型暂不支持回测' : '开始回测'}
       </button>
 
       {error && <div className="mt-4 text-red-400">错误: {error}</div>}
