@@ -74,6 +74,31 @@ type StockDataForAlert struct {
 	HistoricalLow      float64 `json:"historicalLow"`  // 历史最低价
 }
 
+// parseAlertConditions 兼容两种 JSON 格式：
+// 1) 标准对象：{"logic":"AND","conditions":[{...}]}
+// 2) 历史模板数组：[{...}]
+func parseAlertConditions(jsonStr string) (repositories.PriceAlertConditions, error) {
+	var conditions repositories.PriceAlertConditions
+	if err := json.Unmarshal([]byte(jsonStr), &conditions); err == nil {
+		// 若缺省 logic，默认 AND
+		if conditions.Logic == "" {
+			conditions.Logic = "AND"
+		}
+		return conditions, nil
+	}
+
+	// 尝试数组格式
+	var arr []repositories.PriceAlertCondition
+	if err := json.Unmarshal([]byte(jsonStr), &arr); err == nil {
+		return repositories.PriceAlertConditions{
+			Logic:      "AND",
+			Conditions: arr,
+		}, nil
+	}
+
+	return repositories.PriceAlertConditions{}, fmt.Errorf("conditions JSON 格式不支持")
+}
+
 // CreateAlert 创建价格预警
 func (s *PriceAlertService) CreateAlert(req *CreateAlertRequest) error {
 	// 验证请求
@@ -177,8 +202,8 @@ func (s *PriceAlertService) CreateAlertFromTemplate(templateID string, stockCode
 	}
 
 	// 解析模板条件
-	var conditions repositories.PriceAlertConditions
-	if err := json.Unmarshal([]byte(template.Conditions), &conditions); err != nil {
+	conditions, err := parseAlertConditions(template.Conditions)
+	if err != nil {
 		return fmt.Errorf("解析模板条件失败: %w", err)
 	}
 
@@ -255,8 +280,8 @@ func (s *PriceAlertService) CheckAlert(alert *repositories.PriceThresholdAlert, 
 	}
 
 	// 解析预警条件
-	var conditions repositories.PriceAlertConditions
-	if err := json.Unmarshal([]byte(alert.Conditions), &conditions); err != nil {
+	conditions, err := parseAlertConditions(alert.Conditions)
+	if err != nil {
 		return false, "", fmt.Errorf("解析预警条件失败: %w", err)
 	}
 
@@ -509,6 +534,6 @@ func (s *PriceAlertService) validateAlertRequest(req *CreateAlertRequest) error 
 
 // isValidConditionsJSON 验证预警条件JSON格式
 func (s *PriceAlertService) isValidConditionsJSON(jsonStr string) bool {
-	var conditions repositories.PriceAlertConditions
-	return json.Unmarshal([]byte(jsonStr), &conditions) == nil
+	_, err := parseAlertConditions(jsonStr)
+	return err == nil
 }
