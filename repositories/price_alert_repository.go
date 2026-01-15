@@ -1,13 +1,14 @@
 package repositories
 
 import (
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
 	"stock-analyzer-wails/models"
+
+	"gorm.io/gorm"
 )
 
 // PriceAlertCondition 价格预警条件结构
@@ -67,216 +68,147 @@ type PriceAlertTriggerHistory struct {
 
 // PriceAlertRepository 价格预警数据访问层
 type PriceAlertRepository struct {
-	db *sql.DB
+	db *gorm.DB
 }
 
 // NewPriceAlertRepository 创建价格预警Repository
-func NewPriceAlertRepository(db *sql.DB) *PriceAlertRepository {
+func NewPriceAlertRepository(db *gorm.DB) *PriceAlertRepository {
 	return &PriceAlertRepository{db: db}
 }
 
 // CreateAlert 创建价格预警
 func (r *PriceAlertRepository) CreateAlert(alert *PriceThresholdAlert) error {
-	// alert.Conditions 本身就是 JSON 字符串（PriceAlertConditions），这里不要二次 Marshal，
-	// 否则会把 JSON 变成带引号的字符串，导致后续解析/触发检查失败。
-	conditionsJSON := alert.Conditions
+	entity := models.PriceThresholdAlertEntity{
+		StockCode:         alert.StockCode,
+		StockName:         alert.StockName,
+		AlertType:         alert.AlertType,
+		Conditions:        alert.Conditions,
+		IsActive:          alert.IsActive,
+		Sensitivity:       alert.Sensitivity,
+		CooldownHours:     alert.CooldownHours,
+		PostTriggerAction: alert.PostTriggerAction,
+		EnableSound:       alert.EnableSound,
+		EnableDesktop:     alert.EnableDesktop,
+		TemplateID:        alert.TemplateID,
+		CreatedAt:         time.Now(),
+		UpdatedAt:         time.Now(),
+	}
 
-	result, err := r.db.Exec(`
-		INSERT INTO price_threshold_alerts (
-			stock_code, stock_name, alert_type, conditions, is_active,
-			sensitivity, cooldown_hours, post_trigger_action, enable_sound,
-			enable_desktop, template_id
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`, alert.StockCode, alert.StockName, alert.AlertType, conditionsJSON,
-		alert.IsActive, alert.Sensitivity, alert.CooldownHours, alert.PostTriggerAction,
-		alert.EnableSound, alert.EnableDesktop, alert.TemplateID)
-
-	if err != nil {
+	if err := r.db.Create(&entity).Error; err != nil {
 		return fmt.Errorf("创建预警失败: %w", err)
 	}
 
-	id, _ := result.LastInsertId()
-	alert.ID = id
+	alert.ID = int64(entity.ID)
 	return nil
 }
 
 // GetAlertByID 根据ID获取预警
 func (r *PriceAlertRepository) GetAlertByID(id int64) (*PriceThresholdAlert, error) {
-	alert := &PriceThresholdAlert{}
-
-	var conditions sql.NullString
-	var lastTriggeredAt sql.NullTime
-
-	err := r.db.QueryRow(`
-		SELECT id, stock_code, stock_name, alert_type, conditions, is_active,
-			   sensitivity, cooldown_hours, post_trigger_action, enable_sound,
-			   enable_desktop, template_id, created_at, updated_at, last_triggered_at
-		FROM price_threshold_alerts WHERE id = ?
-	`, id).Scan(
-		&alert.ID, &alert.StockCode, &alert.StockName, &alert.AlertType,
-		&conditions, &alert.IsActive, &alert.Sensitivity, &alert.CooldownHours,
-		&alert.PostTriggerAction, &alert.EnableSound, &alert.EnableDesktop,
-		&alert.TemplateID, &alert.CreatedAt, &alert.UpdatedAt, &lastTriggeredAt,
-	)
-
-	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("预警不存在")
-	}
-	if err != nil {
+	var entity models.PriceThresholdAlertEntity
+	if err := r.db.First(&entity, id).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, fmt.Errorf("预警不存在")
+		}
 		return nil, fmt.Errorf("查询预警失败: %w", err)
 	}
 
-	if conditions.Valid {
-		alert.Conditions = normalizePriceAlertConditions(conditions.String)
-	}
-
-	if lastTriggeredAt.Valid {
-		alert.LastTriggeredAt = lastTriggeredAt.Time
-	}
-
-	return alert, nil
+	return r.entityToAlert(&entity), nil
 }
 
-// normalizePriceAlertConditions 兼容历史数据：早期版本会把 JSON 字符串再次 Marshal，
-// 导致数据库里存的是带引号的 JSON（例如 "\"{...}\""）。这里做一次解包回退。
+// normalizePriceAlertConditions 兼容历史数据
 func normalizePriceAlertConditions(raw string) string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return raw
 	}
 
-	// 1) 如果本身就是合法的 PriceAlertConditions JSON，直接返回
 	var cond PriceAlertConditions
 	if json.Unmarshal([]byte(raw), &cond) == nil {
 		return raw
 	}
 
-	// 2) 尝试把它当作 JSON 字符串解包成 inner JSON
 	var inner string
 	if json.Unmarshal([]byte(raw), &inner) == nil {
 		inner = strings.TrimSpace(inner)
 		if inner != "" {
-			// inner 有可能就是我们想要的 JSON
 			if json.Unmarshal([]byte(inner), &cond) == nil {
 				return inner
 			}
-			// 即使解析失败，也尽量返回 inner，便于前端/后端继续排查
 			return inner
 		}
 	}
 
-	// 3) 保底：返回原始值
 	return raw
 }
 
 // GetAllAlerts 获取所有预警
 func (r *PriceAlertRepository) GetAllAlerts() ([]*PriceThresholdAlert, error) {
-	query := `
-		SELECT id, stock_code, stock_name, alert_type, conditions, is_active,
-			   sensitivity, cooldown_hours, post_trigger_action, enable_sound,
-			   enable_desktop, template_id, created_at, updated_at, last_triggered_at
-		FROM price_threshold_alerts ORDER BY created_at DESC
-	`
-
-	rows, err := r.db.Query(query)
-	if err != nil {
+	var entities []models.PriceThresholdAlertEntity
+	if err := r.db.Order("created_at DESC").Find(&entities).Error; err != nil {
 		return nil, fmt.Errorf("查询所有预警失败: %w", err)
 	}
-	defer rows.Close()
 
 	var alerts []*PriceThresholdAlert
-	for rows.Next() {
-		alert, err := r.scanAlert(rows)
-		if err != nil {
-			return nil, err
-		}
-		alerts = append(alerts, alert)
+	for _, entity := range entities {
+		alerts = append(alerts, r.entityToAlert(&entity))
 	}
-
 	return alerts, nil
 }
 
 // GetActiveAlerts 获取所有活跃的预警
 func (r *PriceAlertRepository) GetActiveAlerts() ([]*PriceThresholdAlert, error) {
-	query := `
-		SELECT id, stock_code, stock_name, alert_type, conditions, is_active,
-			   sensitivity, cooldown_hours, post_trigger_action, enable_sound,
-			   enable_desktop, template_id, created_at, updated_at, last_triggered_at
-		FROM price_threshold_alerts WHERE is_active = 1 ORDER BY created_at DESC
-	`
-
-	rows, err := r.db.Query(query)
-	if err != nil {
+	var entities []models.PriceThresholdAlertEntity
+	if err := r.db.Where("is_active = ?", true).Order("created_at DESC").Find(&entities).Error; err != nil {
 		return nil, fmt.Errorf("查询活跃预警失败: %w", err)
 	}
-	defer rows.Close()
 
 	var alerts []*PriceThresholdAlert
-	for rows.Next() {
-		alert, err := r.scanAlert(rows)
-		if err != nil {
-			return nil, err
-		}
-		alerts = append(alerts, alert)
+	for _, entity := range entities {
+		alerts = append(alerts, r.entityToAlert(&entity))
 	}
-
 	return alerts, nil
 }
 
 // GetAlertsByStockCode 根据股票代码获取预警
 func (r *PriceAlertRepository) GetAlertsByStockCode(stockCode string) ([]*PriceThresholdAlert, error) {
-	query := `
-		SELECT id, stock_code, stock_name, alert_type, conditions, is_active,
-			   sensitivity, cooldown_hours, post_trigger_action, enable_sound,
-			   enable_desktop, template_id, created_at, updated_at, last_triggered_at
-		FROM price_threshold_alerts WHERE stock_code = ? ORDER BY created_at DESC
-	`
-
-	rows, err := r.db.Query(query, stockCode)
-	if err != nil {
+	var entities []models.PriceThresholdAlertEntity
+	if err := r.db.Where("stock_code = ?", stockCode).Order("created_at DESC").Find(&entities).Error; err != nil {
 		return nil, fmt.Errorf("查询股票预警失败: %w", err)
 	}
-	defer rows.Close()
 
 	var alerts []*PriceThresholdAlert
-	for rows.Next() {
-		alert, err := r.scanAlert(rows)
-		if err != nil {
-			return nil, err
-		}
-		alerts = append(alerts, alert)
+	for _, entity := range entities {
+		alerts = append(alerts, r.entityToAlert(&entity))
 	}
-
 	return alerts, nil
 }
 
 // UpdateAlert 更新预警
 func (r *PriceAlertRepository) UpdateAlert(alert *PriceThresholdAlert) error {
-	// 同 CreateAlert：conditions 已是 JSON 字符串，避免二次 Marshal
-	conditionsJSON := alert.Conditions
-
-	_, err := r.db.Exec(`
-		UPDATE price_threshold_alerts
-		SET stock_code = ?, stock_name = ?, alert_type = ?, conditions = ?,
-		    is_active = ?, sensitivity = ?, cooldown_hours = ?,
-		    post_trigger_action = ?, enable_sound = ?, enable_desktop = ?,
-		    template_id = ?, updated_at = CURRENT_TIMESTAMP
-		WHERE id = ?
-	`, alert.StockCode, alert.StockName, alert.AlertType, conditionsJSON,
-		alert.IsActive, alert.Sensitivity, alert.CooldownHours, alert.PostTriggerAction,
-		alert.EnableSound, alert.EnableDesktop, alert.TemplateID, alert.ID)
-
-	if err != nil {
-		return fmt.Errorf("更新预警失败: %w", err)
+	updates := map[string]interface{}{
+		"stock_code":          alert.StockCode,
+		"stock_name":          alert.StockName,
+		"alert_type":          alert.AlertType,
+		"conditions":          alert.Conditions,
+		"is_active":           alert.IsActive,
+		"sensitivity":         alert.Sensitivity,
+		"cooldown_hours":      alert.CooldownHours,
+		"post_trigger_action": alert.PostTriggerAction,
+		"enable_sound":        alert.EnableSound,
+		"enable_desktop":      alert.EnableDesktop,
+		"template_id":         alert.TemplateID,
+		"updated_at":          time.Now(),
 	}
 
+	if err := r.db.Model(&models.PriceThresholdAlertEntity{}).Where("id = ?", alert.ID).Updates(updates).Error; err != nil {
+		return fmt.Errorf("更新预警失败: %w", err)
+	}
 	return nil
 }
 
 // DeleteAlert 删除预警
 func (r *PriceAlertRepository) DeleteAlert(id int64) error {
-	_, err := r.db.Exec(`DELETE FROM price_threshold_alerts WHERE id = ?`, id)
-	if err != nil {
+	if err := r.db.Delete(&models.PriceThresholdAlertEntity{}, id).Error; err != nil {
 		return fmt.Errorf("删除预警失败: %w", err)
 	}
 	return nil
@@ -284,11 +216,11 @@ func (r *PriceAlertRepository) DeleteAlert(id int64) error {
 
 // ToggleAlertStatus 切换预警状态
 func (r *PriceAlertRepository) ToggleAlertStatus(id int64, isActive bool) error {
-	_, err := r.db.Exec(`
-		UPDATE price_threshold_alerts SET is_active = ?, updated_at = CURRENT_TIMESTAMP
-		WHERE id = ?
-	`, isActive, id)
-	if err != nil {
+	if err := r.db.Model(&models.PriceThresholdAlertEntity{}).Where("id = ?", id).
+		Updates(map[string]interface{}{
+			"is_active":  isActive,
+			"updated_at": time.Now(),
+		}).Error; err != nil {
 		return fmt.Errorf("切换预警状态失败: %w", err)
 	}
 	return nil
@@ -296,11 +228,9 @@ func (r *PriceAlertRepository) ToggleAlertStatus(id int64, isActive bool) error 
 
 // UpdateLastTriggeredTime 更新最后触发时间
 func (r *PriceAlertRepository) UpdateLastTriggeredTime(id int64) error {
-	_, err := r.db.Exec(`
-		UPDATE price_threshold_alerts SET last_triggered_at = CURRENT_TIMESTAMP
-		WHERE id = ?
-	`, id)
-	if err != nil {
+	now := time.Now()
+	if err := r.db.Model(&models.PriceThresholdAlertEntity{}).Where("id = ?", id).
+		Update("last_triggered_at", now).Error; err != nil {
 		return fmt.Errorf("更新最后触发时间失败: %w", err)
 	}
 	return nil
@@ -314,7 +244,7 @@ func (r *PriceAlertRepository) IsInCooldown(id int64, cooldownHours int) (bool, 
 	}
 
 	if alert.LastTriggeredAt.IsZero() {
-		return false, nil // 从未触发过，不在冷却期
+		return false, nil
 	}
 
 	cooldownDuration := time.Duration(cooldownHours) * time.Hour
@@ -325,59 +255,47 @@ func (r *PriceAlertRepository) IsInCooldown(id int64, cooldownHours int) (bool, 
 
 // SaveTriggerHistory 保存预警触发历史
 func (r *PriceAlertRepository) SaveTriggerHistory(history *PriceAlertTriggerHistory) error {
-	_, err := r.db.Exec(`
-		INSERT INTO price_alert_trigger_history (
-			alert_id, stock_code, stock_name, alert_type,
-			trigger_price, trigger_message, triggered_at
-		) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-	`, history.AlertID, history.StockCode, history.StockName, history.AlertType,
-		history.TriggerPrice, history.TriggerMessage)
-
-	if err != nil {
-		return fmt.Errorf("保存触发历史失败: %w", err)
+	entity := models.PriceAlertTriggerHistoryEntity{
+		AlertID:        uint(history.AlertID),
+		StockCode:      history.StockCode,
+		StockName:      history.StockName,
+		AlertType:      history.AlertType,
+		TriggerPrice:   history.TriggerPrice,
+		TriggerMessage: history.TriggerMessage,
+		TriggeredAt:    time.Now(),
 	}
 
+	if err := r.db.Create(&entity).Error; err != nil {
+		return fmt.Errorf("保存触发历史失败: %w", err)
+	}
 	return nil
 }
 
 // GetTriggerHistory 获取预警触发历史
 func (r *PriceAlertRepository) GetTriggerHistory(stockCode string, limit int) ([]*PriceAlertTriggerHistory, error) {
-	var rows *sql.Rows
-	var err error
+	var entities []models.PriceAlertTriggerHistoryEntity
+	query := r.db.Order("triggered_at DESC").Limit(limit)
 
 	if stockCode != "" {
-		rows, err = r.db.Query(`
-			SELECT id, alert_id, stock_code, stock_name, alert_type,
-				   trigger_price, trigger_message, triggered_at
-			FROM price_alert_trigger_history
-			WHERE stock_code = ?
-			ORDER BY triggered_at DESC LIMIT ?
-		`, stockCode, limit)
-	} else {
-		rows, err = r.db.Query(`
-			SELECT id, alert_id, stock_code, stock_name, alert_type,
-				   trigger_price, trigger_message, triggered_at
-			FROM price_alert_trigger_history
-			ORDER BY triggered_at DESC LIMIT ?
-		`, limit)
+		query = query.Where("stock_code = ?", stockCode)
 	}
 
-	if err != nil {
+	if err := query.Find(&entities).Error; err != nil {
 		return nil, fmt.Errorf("查询触发历史失败: %w", err)
 	}
-	defer rows.Close()
 
 	var histories []*PriceAlertTriggerHistory
-	for rows.Next() {
-		history := &PriceAlertTriggerHistory{}
-		err := rows.Scan(
-			&history.ID, &history.AlertID, &history.StockCode, &history.StockName,
-			&history.AlertType, &history.TriggerPrice, &history.TriggerMessage, &history.TriggeredAt,
-		)
-		if err != nil {
-			return nil, err
-		}
-		histories = append(histories, history)
+	for _, entity := range entities {
+		histories = append(histories, &PriceAlertTriggerHistory{
+			ID:             int64(entity.ID),
+			AlertID:        int64(entity.AlertID),
+			StockCode:      entity.StockCode,
+			StockName:      entity.StockName,
+			AlertType:      entity.AlertType,
+			TriggerPrice:   entity.TriggerPrice,
+			TriggerMessage: entity.TriggerMessage,
+			TriggeredAt:    entity.TriggeredAt,
+		})
 	}
 
 	return histories, nil
@@ -385,105 +303,94 @@ func (r *PriceAlertRepository) GetTriggerHistory(stockCode string, limit int) ([
 
 // GetAllTemplates 获取所有预警模板
 func (r *PriceAlertRepository) GetAllTemplates() ([]*PriceAlertTemplate, error) {
-	query := `
-		SELECT id, name, description, alert_type, conditions, created_at
-		FROM price_alert_templates ORDER BY created_at ASC
-	`
-
-	rows, err := r.db.Query(query)
-	if err != nil {
+	var entities []models.PriceAlertTemplateEntity
+	if err := r.db.Order("created_at ASC").Find(&entities).Error; err != nil {
 		return nil, fmt.Errorf("查询预警模板失败: %w", err)
 	}
-	defer rows.Close()
 
 	var templates []*PriceAlertTemplate
-	for rows.Next() {
-		template := &PriceAlertTemplate{}
-		err := rows.Scan(
-			&template.ID, &template.Name, &template.Description, &template.AlertType,
-			&template.Conditions, &template.CreatedAt,
-		)
-		if err != nil {
-			return nil, err
-		}
-		templates = append(templates, template)
+	for _, entity := range entities {
+		templates = append(templates, &PriceAlertTemplate{
+			ID:          entity.ID,
+			Name:        entity.Name,
+			Description: entity.Description,
+			AlertType:   entity.AlertType,
+			Conditions:  entity.Conditions,
+			CreatedAt:   entity.CreatedAt,
+		})
 	}
-
 	return templates, nil
 }
 
 // GetTemplateByID 根据ID获取预警模板
 func (r *PriceAlertRepository) GetTemplateByID(id string) (*PriceAlertTemplate, error) {
-	template := &PriceAlertTemplate{}
-
-	err := r.db.QueryRow(`
-		SELECT id, name, description, alert_type, conditions, created_at
-		FROM price_alert_templates WHERE id = ?
-	`, id).Scan(
-		&template.ID, &template.Name, &template.Description, &template.AlertType,
-		&template.Conditions, &template.CreatedAt,
-	)
-
-	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("模板不存在")
-	}
-	if err != nil {
+	var entity models.PriceAlertTemplateEntity
+	if err := r.db.First(&entity, "id = ?", id).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, fmt.Errorf("模板不存在")
+		}
 		return nil, fmt.Errorf("查询模板失败: %w", err)
 	}
 
-	return template, nil
+	return &PriceAlertTemplate{
+		ID:          entity.ID,
+		Name:        entity.Name,
+		Description: entity.Description,
+		AlertType:   entity.AlertType,
+		Conditions:  entity.Conditions,
+		CreatedAt:   entity.CreatedAt,
+	}, nil
 }
 
 // CreateTemplate 创建预警模板
 func (r *PriceAlertRepository) CreateTemplate(template *PriceAlertTemplate) error {
-	_, err := r.db.Exec(`
-		INSERT INTO price_alert_templates (id, name, description, alert_type, conditions)
-		VALUES (?, ?, ?, ?, ?)
-	`, template.ID, template.Name, template.Description, template.AlertType, template.Conditions)
-
-	if err != nil {
-		return fmt.Errorf("创建模板失败: %w", err)
+	entity := models.PriceAlertTemplateEntity{
+		ID:          template.ID,
+		Name:        template.Name,
+		Description: template.Description,
+		AlertType:   template.AlertType,
+		Conditions:  template.Conditions,
+		CreatedAt:   time.Now(),
 	}
 
+	if err := r.db.Create(&entity).Error; err != nil {
+		return fmt.Errorf("创建模板失败: %w", err)
+	}
 	return nil
 }
 
 // DeleteTemplate 删除预警模板
 func (r *PriceAlertRepository) DeleteTemplate(id string) error {
-	_, err := r.db.Exec(`DELETE FROM price_alert_templates WHERE id = ?`, id)
-	if err != nil {
+	if err := r.db.Delete(&models.PriceAlertTemplateEntity{}, "id = ?", id).Error; err != nil {
 		return fmt.Errorf("删除模板失败: %w", err)
 	}
 	return nil
 }
 
-// scanAlert 扫描一行数据到Alert结构体
-func (r *PriceAlertRepository) scanAlert(rows *sql.Rows) (*PriceThresholdAlert, error) {
-	alert := &PriceThresholdAlert{}
-
-	var conditions sql.NullString
-	var lastTriggeredAt sql.NullTime
-
-	err := rows.Scan(
-		&alert.ID, &alert.StockCode, &alert.StockName, &alert.AlertType,
-		&conditions, &alert.IsActive, &alert.Sensitivity, &alert.CooldownHours,
-		&alert.PostTriggerAction, &alert.EnableSound, &alert.EnableDesktop,
-		&alert.TemplateID, &alert.CreatedAt, &alert.UpdatedAt, &lastTriggeredAt,
-	)
-
-	if err != nil {
-		return nil, err
+// entityToAlert 辅助方法：Entity转Alert
+func (r *PriceAlertRepository) entityToAlert(entity *models.PriceThresholdAlertEntity) *PriceThresholdAlert {
+	alert := &PriceThresholdAlert{
+		ID:                int64(entity.ID),
+		StockCode:         entity.StockCode,
+		StockName:         entity.StockName,
+		AlertType:         entity.AlertType,
+		Conditions:        normalizePriceAlertConditions(entity.Conditions),
+		IsActive:          entity.IsActive,
+		Sensitivity:       entity.Sensitivity,
+		CooldownHours:     entity.CooldownHours,
+		PostTriggerAction: entity.PostTriggerAction,
+		EnableSound:       entity.EnableSound,
+		EnableDesktop:     entity.EnableDesktop,
+		TemplateID:        entity.TemplateID,
+		CreatedAt:         entity.CreatedAt,
+		UpdatedAt:         entity.UpdatedAt,
 	}
 
-	if conditions.Valid {
-		alert.Conditions = normalizePriceAlertConditions(conditions.String)
+	if entity.LastTriggeredAt != nil {
+		alert.LastTriggeredAt = *entity.LastTriggeredAt
 	}
 
-	if lastTriggeredAt.Valid {
-		alert.LastTriggeredAt = lastTriggeredAt.Time
-	}
-
-	return alert, nil
+	return alert
 }
 
 // ToModelsPriceAlert 转换为models.PriceAlert（兼容旧的Alert类型）

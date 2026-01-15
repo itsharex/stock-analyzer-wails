@@ -2,7 +2,6 @@ package services
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"math/rand"
@@ -13,6 +12,8 @@ import (
 	"time"
 
 	"stock-analyzer-wails/internal/logger"
+	"stock-analyzer-wails/models"
+
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"go.uber.org/zap"
@@ -41,29 +42,29 @@ func (s *KLineSyncService) SetContext(ctx context.Context) {
 
 // KLineSyncProgress K线同步进度
 type KLineSyncProgress struct {
-	IsRunning       bool    `json:"isRunning"`       // 是否正在运行
-	CurrentIndex    int     `json:"currentIndex"`    // 当前处理索引
-	TotalCount      int     `json:"totalCount"`      // 总数
-	CurrentCode     string  `json:"currentCode"`     // 当前股票代码
-	CurrentName     string  `json:"currentName"`     // 当前股票名称
-	SuccessCount    int     `json:"successCount"`    // 成功数量
-	FailedCount     int     `json:"failedCount"`     // 失败数量
-	TotalRecords    int     `json:"totalRecords"`    // 总记录数
-	RecordsPerSec   float64 `json:"recordsPerSec"`   // 每秒记录数
-	StartTime       string  `json:"startTime"`       // 开始时间
-	ElapsedSeconds  int     `json:"elapsedSeconds"`  // 已用时间（秒）
-	EstimatedSeconds int    `json:"estimatedSeconds"` // 预计剩余时间（秒）
+	IsRunning        bool    `json:"isRunning"`        // 是否正在运行
+	CurrentIndex     int     `json:"currentIndex"`     // 当前处理索引
+	TotalCount       int     `json:"totalCount"`       // 总数
+	CurrentCode      string  `json:"currentCode"`      // 当前股票代码
+	CurrentName      string  `json:"currentName"`      // 当前股票名称
+	SuccessCount     int     `json:"successCount"`     // 成功数量
+	FailedCount      int     `json:"failedCount"`      // 失败数量
+	TotalRecords     int     `json:"totalRecords"`     // 总记录数
+	RecordsPerSec    float64 `json:"recordsPerSec"`    // 每秒记录数
+	StartTime        string  `json:"startTime"`        // 开始时间
+	ElapsedSeconds   int     `json:"elapsedSeconds"`   // 已用时间（秒）
+	EstimatedSeconds int     `json:"estimatedSeconds"` // 预计剩余时间（秒）
 }
 
 // KLineSyncResult K线同步结果
 type KLineSyncResult struct {
-	Success       bool   `json:"success"`
-	TotalCount    int    `json:"totalCount"`
-	SuccessCount  int    `json:"successCount"`
-	FailedCount   int    `json:"failedCount"`
-	TotalRecords  int    `json:"totalRecords"`
-	Duration      int    `json:"duration"`      // 耗时（秒）
-	Message       string `json:"message"`
+	Success      bool   `json:"success"`
+	TotalCount   int    `json:"totalCount"`
+	SuccessCount int    `json:"successCount"`
+	FailedCount  int    `json:"failedCount"`
+	TotalRecords int    `json:"totalRecords"`
+	Duration     int    `json:"duration"` // 耗时（秒）
+	Message      string `json:"message"`
 }
 
 // KLineSyncTask K线同步任务
@@ -130,9 +131,9 @@ func (s *KLineSyncService) StartKLineSync(days int) (*KLineSyncResult, error) {
 
 	// 初始化进度
 	progress := &KLineSyncProgress{
-		IsRunning:     true,
-		TotalCount:    len(tasks),
-		StartTime:     startTime.Format("2006-01-02 15:04:05"),
+		IsRunning:  true,
+		TotalCount: len(tasks),
+		StartTime:  startTime.Format("2006-01-02 15:04:05"),
 	}
 
 	// 顺序处理每只股票
@@ -236,27 +237,25 @@ func (s *KLineSyncService) StartKLineSync(days int) (*KLineSyncResult, error) {
 // getActiveStocks 获取所有活跃股票
 func (s *KLineSyncService) getActiveStocks() ([]*KLineSyncTask, error) {
 	db := s.dbService.GetDB()
+	var stocks []models.StockEntity
 
-	rows, err := db.Query(`
-		SELECT code, name, market FROM stocks WHERE is_active = 1 ORDER BY code
-	`)
+	err := db.Model(&models.StockEntity{}).
+		Select("code, name, market").
+		Where("is_active = 1").
+		Order("code").
+		Find(&stocks).Error
+
 	if err != nil {
 		return nil, fmt.Errorf("查询活跃股票失败: %w", err)
 	}
-	defer rows.Close()
 
-	var tasks []*KLineSyncTask
-	for rows.Next() {
-		var code, name, market string
-		if err := rows.Scan(&code, &name, &market); err != nil {
-			logger.Error("扫描股票记录失败", zap.Error(err))
-			continue
+	tasks := make([]*KLineSyncTask, len(stocks))
+	for i, stock := range stocks {
+		tasks[i] = &KLineSyncTask{
+			Code:   stock.Code,
+			Name:   stock.Name,
+			Market: stock.Market,
 		}
-		tasks = append(tasks, &KLineSyncTask{
-			Code:   code,
-			Name:   name,
-			Market: market,
-		})
 	}
 
 	return tasks, nil
@@ -382,14 +381,20 @@ func (s *KLineSyncService) recordSyncHistory(task *KLineSyncTask, days int, tota
 		status = "failed"
 	}
 
-	_, err := db.Exec(`
-		INSERT INTO sync_history (
-			stock_code, stock_name, sync_type, start_date, end_date, status,
-			records_added, records_updated, duration, error_msg
-		) VALUES (?, ?, 'kline', ?, ?, ?, ?, ?, 0, ?)
-	`, task.Code, task.Name, startDate, endDate, status, added, updated, errorMsg)
+	history := models.SyncHistoryEntity{
+		StockCode:      task.Code,
+		StockName:      task.Name,
+		SyncType:       "kline",
+		StartDate:      startDate,
+		EndDate:        endDate,
+		Status:         status,
+		RecordsAdded:   added,
+		RecordsUpdated: updated,
+		Duration:       0,
+		ErrorMsg:       errorMsg,
+	}
 
-	return err
+	return db.Create(&history).Error
 }
 
 // updateProgress 更新进度信息
@@ -447,47 +452,33 @@ func (s *KLineSyncService) GetSyncProgress() (*KLineSyncProgress, error) {
 // GetKLineSyncHistory 获取K线同步历史记录
 func (s *KLineSyncService) GetKLineSyncHistory(limit int) ([]map[string]interface{}, error) {
 	db := s.dbService.GetDB()
+	var entities []models.SyncHistoryEntity
 
-	rows, err := db.Query(`
-		SELECT id, stock_code, stock_name, sync_type, start_date, end_date,
-		       status, records_added, records_updated, duration, error_msg, created_at
-		FROM sync_history
-		WHERE sync_type = 'kline'
-		ORDER BY created_at DESC
-		LIMIT ?
-	`, limit)
+	err := db.Model(&models.SyncHistoryEntity{}).
+		Where("sync_type = ?", "kline").
+		Order("created_at DESC").
+		Limit(limit).
+		Find(&entities).Error
+
 	if err != nil {
 		return nil, fmt.Errorf("查询K线同步历史失败: %w", err)
 	}
-	defer rows.Close()
 
-	records := make([]map[string]interface{}, 0)
-	for rows.Next() {
-		var id int
-		var stockCode, stockName, syncType, startDate, endDate, status string
-		var recordsAdded, recordsUpdated, duration int
-		var errorMsg sql.NullString
-		var createdAt string
-
-		if err := rows.Scan(&id, &stockCode, &stockName, &syncType, &startDate, &endDate,
-			&status, &recordsAdded, &recordsUpdated, &duration, &errorMsg, &createdAt); err != nil {
-			logger.Error("扫描同步历史记录失败", zap.Error(err))
-			continue
-		}
-
+	records := make([]map[string]interface{}, 0, len(entities))
+	for _, e := range entities {
 		record := map[string]interface{}{
-			"id":             id,
-			"stockCode":      stockCode,
-			"stockName":      stockName,
-			"syncType":       syncType,
-			"startDate":      startDate,
-			"endDate":        endDate,
-			"status":         status,
-			"recordsAdded":   recordsAdded,
-			"recordsUpdated": recordsUpdated,
-			"duration":       duration,
-			"errorMsg":       errorMsg.String,
-			"createdAt":      createdAt,
+			"id":             e.ID,
+			"stockCode":      e.StockCode,
+			"stockName":      e.StockName,
+			"syncType":       e.SyncType,
+			"startDate":      e.StartDate,
+			"endDate":        e.EndDate,
+			"status":         e.Status,
+			"recordsAdded":   e.RecordsAdded,
+			"recordsUpdated": e.RecordsUpdated,
+			"duration":       e.Duration,
+			"errorMsg":       e.ErrorMsg,
+			"createdAt":      e.CreatedAt.Format("2006-01-02 15:04:05"),
 		}
 		records = append(records, record)
 	}

@@ -1,23 +1,22 @@
 package repositories
 
 import (
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"time"
 
 	"stock-analyzer-wails/models"
 
-	_ "modernc.org/sqlite"
+	"gorm.io/gorm"
 )
 
 // StrategyRepository 策略仓库
 type StrategyRepository struct {
-	db *sql.DB
+	db *gorm.DB
 }
 
 // NewStrategyRepository 创建策略仓库
-func NewStrategyRepository(db *sql.DB) *StrategyRepository {
+func NewStrategyRepository(db *gorm.DB) *StrategyRepository {
 	return &StrategyRepository{db: db}
 }
 
@@ -36,25 +35,25 @@ func (r *StrategyRepository) Create(strategy *models.StrategyConfig) error {
 		}
 	}
 
-	now := time.Now().Format("2006-01-02 15:04:05")
+	now := time.Now()
 
-	result, err := r.db.Exec(`
-		INSERT INTO strategy_config (name, description, strategy_type, parameters, last_backtest_result, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
-	`, strategy.Name, strategy.Description, strategy.StrategyType, string(parametersJSON), string(backtestJSON), now, now)
+	entity := models.StrategyConfigEntity{
+		Name:               strategy.Name,
+		Description:        strategy.Description,
+		StrategyType:       strategy.StrategyType,
+		Parameters:         string(parametersJSON),
+		LastBacktestResult: string(backtestJSON),
+		CreatedAt:          now,
+		UpdatedAt:          now,
+	}
 
-	if err != nil {
+	if err := r.db.Create(&entity).Error; err != nil {
 		return fmt.Errorf("插入策略失败: %w", err)
 	}
 
-	id, err := result.LastInsertId()
-	if err != nil {
-		return fmt.Errorf("获取插入ID失败: %w", err)
-	}
-
-	strategy.ID = id
-	strategy.CreatedAt = now
-	strategy.UpdatedAt = now
+	strategy.ID = int64(entity.ID)
+	strategy.CreatedAt = now.Format("2006-01-02 15:04:05")
+	strategy.UpdatedAt = now.Format("2006-01-02 15:04:05")
 
 	return nil
 }
@@ -74,26 +73,28 @@ func (r *StrategyRepository) Update(strategy *models.StrategyConfig) error {
 		}
 	}
 
-	now := time.Now().Format("2006-01-02 15:04:05")
+	now := time.Now()
 
-	_, err = r.db.Exec(`
-		UPDATE strategy_config
-		SET name = ?, description = ?, strategy_type = ?, parameters = ?, last_backtest_result = ?, updated_at = ?
-		WHERE id = ?
-	`, strategy.Name, strategy.Description, strategy.StrategyType, string(parametersJSON), string(backtestJSON), now, strategy.ID)
+	updates := map[string]interface{}{
+		"name":                 strategy.Name,
+		"description":          strategy.Description,
+		"strategy_type":        strategy.StrategyType,
+		"parameters":           string(parametersJSON),
+		"last_backtest_result": string(backtestJSON),
+		"updated_at":           now,
+	}
 
-	if err != nil {
+	if err := r.db.Model(&models.StrategyConfigEntity{}).Where("id = ?", strategy.ID).Updates(updates).Error; err != nil {
 		return fmt.Errorf("更新策略失败: %w", err)
 	}
 
-	strategy.UpdatedAt = now
+	strategy.UpdatedAt = now.Format("2006-01-02 15:04:05")
 	return nil
 }
 
 // Delete 删除策略
 func (r *StrategyRepository) Delete(id int64) error {
-	_, err := r.db.Exec(`DELETE FROM strategy_config WHERE id = ?`, id)
-	if err != nil {
+	if err := r.db.Delete(&models.StrategyConfigEntity{}, id).Error; err != nil {
 		return fmt.Errorf("删除策略失败: %w", err)
 	}
 	return nil
@@ -101,68 +102,64 @@ func (r *StrategyRepository) Delete(id int64) error {
 
 // GetByID 根据 ID 获取策略
 func (r *StrategyRepository) GetByID(id int64) (*models.StrategyConfig, error) {
-	var strategy models.StrategyConfig
-	var parametersJSON, backtestJSON sql.NullString
-
-	err := r.db.QueryRow(`
-		SELECT id, name, description, strategy_type, parameters, last_backtest_result, created_at, updated_at
-		FROM strategy_config
-		WHERE id = ?
-	`, id).Scan(&strategy.ID, &strategy.Name, &strategy.Description, &strategy.StrategyType, &parametersJSON, &backtestJSON, &strategy.CreatedAt, &strategy.UpdatedAt)
-
-	if err == sql.ErrNoRows {
-		return nil, nil
-	}
-	if err != nil {
+	var entity models.StrategyConfigEntity
+	if err := r.db.First(&entity, id).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
 		return nil, fmt.Errorf("查询策略失败: %w", err)
 	}
 
-	if parametersJSON.Valid {
-		if err := json.Unmarshal([]byte(parametersJSON.String), &strategy.Parameters); err != nil {
+	strategy := &models.StrategyConfig{
+		ID:           int64(entity.ID),
+		Name:         entity.Name,
+		Description:  entity.Description,
+		StrategyType: entity.StrategyType,
+		CreatedAt:    entity.CreatedAt.Format("2006-01-02 15:04:05"),
+		UpdatedAt:    entity.UpdatedAt.Format("2006-01-02 15:04:05"),
+	}
+
+	if entity.Parameters != "" {
+		if err := json.Unmarshal([]byte(entity.Parameters), &strategy.Parameters); err != nil {
 			return nil, fmt.Errorf("反序列化参数失败: %w", err)
 		}
 	}
 
-	if backtestJSON.Valid && backtestJSON.String != "" {
-		if err := json.Unmarshal([]byte(backtestJSON.String), &strategy.LastBacktestResult); err != nil {
+	if entity.LastBacktestResult != "" {
+		if err := json.Unmarshal([]byte(entity.LastBacktestResult), &strategy.LastBacktestResult); err != nil {
 			return nil, fmt.Errorf("反序列化回测结果失败: %w", err)
 		}
 	}
 
-	return &strategy, nil
+	return strategy, nil
 }
 
 // GetAll 获取所有策略
 func (r *StrategyRepository) GetAll() ([]models.StrategyConfig, error) {
-	rows, err := r.db.Query(`
-		SELECT id, name, description, strategy_type, parameters, last_backtest_result, created_at, updated_at
-		FROM strategy_config
-		ORDER BY updated_at DESC
-	`)
-
-	if err != nil {
+	var entities []models.StrategyConfigEntity
+	if err := r.db.Order("updated_at DESC").Find(&entities).Error; err != nil {
 		return nil, fmt.Errorf("查询策略列表失败: %w", err)
 	}
-	defer rows.Close()
 
-	// 初始化切片，确保即使没有数据也返回空数组而不是 nil
 	strategies := make([]models.StrategyConfig, 0)
-	for rows.Next() {
-		var strategy models.StrategyConfig
-		var parametersJSON, backtestJSON sql.NullString
-
-		if err := rows.Scan(&strategy.ID, &strategy.Name, &strategy.Description, &strategy.StrategyType, &parametersJSON, &backtestJSON, &strategy.CreatedAt, &strategy.UpdatedAt); err != nil {
-			return nil, fmt.Errorf("扫描策略数据失败: %w", err)
+	for _, entity := range entities {
+		strategy := models.StrategyConfig{
+			ID:           int64(entity.ID),
+			Name:         entity.Name,
+			Description:  entity.Description,
+			StrategyType: entity.StrategyType,
+			CreatedAt:    entity.CreatedAt.Format("2006-01-02 15:04:05"),
+			UpdatedAt:    entity.UpdatedAt.Format("2006-01-02 15:04:05"),
 		}
 
-		if parametersJSON.Valid {
-			if err := json.Unmarshal([]byte(parametersJSON.String), &strategy.Parameters); err != nil {
+		if entity.Parameters != "" {
+			if err := json.Unmarshal([]byte(entity.Parameters), &strategy.Parameters); err != nil {
 				return nil, fmt.Errorf("反序列化参数失败: %w", err)
 			}
 		}
 
-		if backtestJSON.Valid && backtestJSON.String != "" {
-			if err := json.Unmarshal([]byte(backtestJSON.String), &strategy.LastBacktestResult); err != nil {
+		if entity.LastBacktestResult != "" {
+			if err := json.Unmarshal([]byte(entity.LastBacktestResult), &strategy.LastBacktestResult); err != nil {
 				return nil, fmt.Errorf("反序列化回测结果失败: %w", err)
 			}
 		}
@@ -180,15 +177,13 @@ func (r *StrategyRepository) UpdateBacktestResult(id int64, backtestResult map[s
 		return fmt.Errorf("序列化回测结果失败: %w", err)
 	}
 
-	now := time.Now().Format("2006-01-02 15:04:05")
+	now := time.Now()
 
-	_, err = r.db.Exec(`
-		UPDATE strategy_config
-		SET last_backtest_result = ?, updated_at = ?
-		WHERE id = ?
-	`, string(backtestJSON), now, id)
-
-	if err != nil {
+	if err := r.db.Model(&models.StrategyConfigEntity{}).Where("id = ?", id).
+		Updates(map[string]interface{}{
+			"last_backtest_result": string(backtestJSON),
+			"updated_at":           now,
+		}).Error; err != nil {
 		return fmt.Errorf("更新回测结果失败: %w", err)
 	}
 

@@ -1,7 +1,6 @@
 package repositories
 
 import (
-	"database/sql"
 	"fmt"
 	"time"
 
@@ -9,6 +8,7 @@ import (
 	"stock-analyzer-wails/models"
 
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 )
 
 // SyncHistoryRepository 定义同步历史持久化接口
@@ -22,11 +22,11 @@ type SyncHistoryRepository interface {
 
 // SQLiteSyncHistoryRepository 基于 SQLite 的实现
 type SQLiteSyncHistoryRepository struct {
-	db *sql.DB
+	db *gorm.DB
 }
 
 // NewSQLiteSyncHistoryRepository 构造函数
-func NewSQLiteSyncHistoryRepository(db *sql.DB) *SQLiteSyncHistoryRepository {
+func NewSQLiteSyncHistoryRepository(db *gorm.DB) *SQLiteSyncHistoryRepository {
 	return &SQLiteSyncHistoryRepository{db: db}
 }
 
@@ -34,27 +34,25 @@ func NewSQLiteSyncHistoryRepository(db *sql.DB) *SQLiteSyncHistoryRepository {
 func (r *SQLiteSyncHistoryRepository) Add(history *models.SyncHistory) error {
 	start := time.Now()
 
-	query := `
-		INSERT INTO sync_history (stock_code, stock_name, sync_type, start_date, end_date, 
-			status, records_added, records_updated, duration, error_msg, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-	`
-	_, err := r.db.Exec(query,
-		history.StockCode,
-		history.StockName,
-		history.SyncType,
-		history.StartDate,
-		history.EndDate,
-		history.Status,
-		history.RecordsAdded,
-		history.RecordsUpdated,
-		history.Duration,
-		history.ErrorMsg,
-		history.CreatedAt,
-	)
-	if err != nil {
+	entity := models.SyncHistoryEntity{
+		StockCode:      history.StockCode,
+		StockName:      history.StockName,
+		SyncType:       history.SyncType,
+		StartDate:      history.StartDate,
+		EndDate:        history.EndDate,
+		Status:         history.Status,
+		RecordsAdded:   history.RecordsAdded,
+		RecordsUpdated: history.RecordsUpdated,
+		Duration:       history.Duration,
+		ErrorMsg:       history.ErrorMsg,
+		CreatedAt:      time.Now(),
+	}
+
+	if err := r.db.Create(&entity).Error; err != nil {
 		return fmt.Errorf("添加同步历史记录失败: %w", err)
 	}
+
+	history.ID = int(entity.ID)
 
 	logger.Info("成功添加同步历史记录",
 		zap.String("module", "repositories.sync_history"),
@@ -70,45 +68,27 @@ func (r *SQLiteSyncHistoryRepository) Add(history *models.SyncHistory) error {
 func (r *SQLiteSyncHistoryRepository) GetAll(limit int, offset int) ([]*models.SyncHistory, error) {
 	start := time.Now()
 
-	query := `
-		SELECT id, stock_code, stock_name, sync_type, start_date, end_date, 
-			status, records_added, records_updated, duration, error_msg, created_at
-		FROM sync_history
-		ORDER BY created_at DESC
-		LIMIT ? OFFSET ?
-	`
-	rows, err := r.db.Query(query, limit, offset)
-	if err != nil {
+	var entities []models.SyncHistoryEntity
+	if err := r.db.Order("created_at DESC").Limit(limit).Offset(offset).Find(&entities).Error; err != nil {
 		return nil, fmt.Errorf("查询同步历史记录失败: %w", err)
 	}
-	defer rows.Close()
 
 	histories := make([]*models.SyncHistory, 0)
-	for rows.Next() {
-		var history models.SyncHistory
-		err := rows.Scan(
-			&history.ID,
-			&history.StockCode,
-			&history.StockName,
-			&history.SyncType,
-			&history.StartDate,
-			&history.EndDate,
-			&history.Status,
-			&history.RecordsAdded,
-			&history.RecordsUpdated,
-			&history.Duration,
-			&history.ErrorMsg,
-			&history.CreatedAt,
-		)
-		if err != nil {
-			logger.Error("扫描同步历史数据失败", zap.Error(err))
-			continue
-		}
-		histories = append(histories, &history)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("遍历同步历史结果集失败: %w", err)
+	for _, entity := range entities {
+		histories = append(histories, &models.SyncHistory{
+			ID:             int(entity.ID),
+			StockCode:      entity.StockCode,
+			StockName:      entity.StockName,
+			SyncType:       entity.SyncType,
+			StartDate:      entity.StartDate,
+			EndDate:        entity.EndDate,
+			Status:         entity.Status,
+			RecordsAdded:   entity.RecordsAdded,
+			RecordsUpdated: entity.RecordsUpdated,
+			Duration:       entity.Duration,
+			ErrorMsg:       entity.ErrorMsg,
+			CreatedAt:      entity.CreatedAt,
+		})
 	}
 
 	logger.Debug("成功获取同步历史记录",
@@ -124,46 +104,27 @@ func (r *SQLiteSyncHistoryRepository) GetAll(limit int, offset int) ([]*models.S
 func (r *SQLiteSyncHistoryRepository) GetByStockCode(code string, limit int) ([]*models.SyncHistory, error) {
 	start := time.Now()
 
-	query := `
-		SELECT id, stock_code, stock_name, sync_type, start_date, end_date, 
-			status, records_added, records_updated, duration, error_msg, created_at
-		FROM sync_history
-		WHERE stock_code = ?
-		ORDER BY created_at DESC
-		LIMIT ?
-	`
-	rows, err := r.db.Query(query, code, limit)
-	if err != nil {
+	var entities []models.SyncHistoryEntity
+	if err := r.db.Where("stock_code = ?", code).Order("created_at DESC").Limit(limit).Find(&entities).Error; err != nil {
 		return nil, fmt.Errorf("查询股票同步历史记录失败: %w", err)
 	}
-	defer rows.Close()
 
 	histories := make([]*models.SyncHistory, 0)
-	for rows.Next() {
-		var history models.SyncHistory
-		err := rows.Scan(
-			&history.ID,
-			&history.StockCode,
-			&history.StockName,
-			&history.SyncType,
-			&history.StartDate,
-			&history.EndDate,
-			&history.Status,
-			&history.RecordsAdded,
-			&history.RecordsUpdated,
-			&history.Duration,
-			&history.ErrorMsg,
-			&history.CreatedAt,
-		)
-		if err != nil {
-			logger.Error("扫描同步历史数据失败", zap.Error(err))
-			continue
-		}
-		histories = append(histories, &history)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("遍历同步历史结果集失败: %w", err)
+	for _, entity := range entities {
+		histories = append(histories, &models.SyncHistory{
+			ID:             int(entity.ID),
+			StockCode:      entity.StockCode,
+			StockName:      entity.StockName,
+			SyncType:       entity.SyncType,
+			StartDate:      entity.StartDate,
+			EndDate:        entity.EndDate,
+			Status:         entity.Status,
+			RecordsAdded:   entity.RecordsAdded,
+			RecordsUpdated: entity.RecordsUpdated,
+			Duration:       entity.Duration,
+			ErrorMsg:       entity.ErrorMsg,
+			CreatedAt:      entity.CreatedAt,
+		})
 	}
 
 	logger.Debug("成功获取股票同步历史记录",
@@ -180,38 +141,33 @@ func (r *SQLiteSyncHistoryRepository) GetByStockCode(code string, limit int) ([]
 func (r *SQLiteSyncHistoryRepository) GetCount() (int, error) {
 	start := time.Now()
 
-	var count int
-	query := `SELECT COUNT(*) FROM sync_history`
-	err := r.db.QueryRow(query).Scan(&count)
-	if err != nil {
+	var count int64
+	if err := r.db.Model(&models.SyncHistoryEntity{}).Count(&count).Error; err != nil {
 		return 0, fmt.Errorf("查询同步历史记录总数失败: %w", err)
 	}
 
 	logger.Debug("成功获取同步历史记录总数",
 		zap.String("module", "repositories.sync_history"),
 		zap.String("op", "get_sync_history_count"),
-		zap.Int("count", count),
+		zap.Int64("count", count),
 		zap.Int64("duration_ms", time.Since(start).Milliseconds()),
 	)
-	return count, nil
+	return int(count), nil
 }
 
 // ClearAll 清除所有同步历史记录
 func (r *SQLiteSyncHistoryRepository) ClearAll() error {
 	start := time.Now()
 
-	query := `DELETE FROM sync_history`
-	result, err := r.db.Exec(query)
-	if err != nil {
-		return fmt.Errorf("清除同步历史记录失败: %w", err)
+	result := r.db.Exec("DELETE FROM sync_history")
+	if result.Error != nil {
+		return fmt.Errorf("清除同步历史记录失败: %w", result.Error)
 	}
-
-	rowsAffected, _ := result.RowsAffected()
 
 	logger.Info("成功清除同步历史记录",
 		zap.String("module", "repositories.sync_history"),
 		zap.String("op", "clear_all_sync_history"),
-		zap.Int64("rows_affected", rowsAffected),
+		zap.Int64("rows_affected", result.RowsAffected),
 		zap.Int64("duration_ms", time.Since(start).Milliseconds()),
 	)
 	return nil

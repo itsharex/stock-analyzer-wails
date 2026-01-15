@@ -5,11 +5,14 @@ import (
 	"fmt"
 	"net/http"
 	"stock-analyzer-wails/internal/logger"
+	"stock-analyzer-wails/models"
 	"strconv"
 	"strings"
 	"time"
 
 	"go.uber.org/zap"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // 东方财富API字段定义
@@ -245,61 +248,6 @@ func (s *StockMarketService) SyncAllStocks() (*SyncStocksResult, error) {
 
 	// 获取数据库连接
 	db := s.dbService.GetDB()
-	tx, err := db.Begin()
-	if err != nil {
-		return nil, fmt.Errorf("开启事务失败: %w", err)
-	}
-	defer func() {
-		if r := recover(); r != nil {
-			_ = tx.Rollback()
-			panic(r)
-		}
-	}()
-
-	// 准备upsert语句
-	upsertSQL := `
-		INSERT INTO stocks (
-			code, name, market, full_code, type, is_active,
-			price, change_rate, change_amount, volume, amount,
-			amplitude, high, low, open, pre_close, turnover,
-			volume_ratio, pe, warrant_ratio, 
-			industry, region, board, total_mv, circ_mv,
-			updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-		ON CONFLICT(code) DO UPDATE SET
-			name = excluded.name,
-			market = excluded.market,
-			full_code = excluded.full_code,
-			type = excluded.type,
-			is_active = excluded.is_active,
-			price = excluded.price,
-			change_rate = excluded.change_rate,
-			change_amount = excluded.change_amount,
-			volume = excluded.volume,
-			amount = excluded.amount,
-			amplitude = excluded.amplitude,
-			high = excluded.high,
-			low = excluded.low,
-			open = excluded.open,
-			pre_close = excluded.pre_close,
-			turnover = excluded.turnover,
-			volume_ratio = excluded.volume_ratio,
-			pe = excluded.pe,
-			warrant_ratio = excluded.warrant_ratio,
-			industry = excluded.industry,
-			region = excluded.region,
-			board = excluded.board,
-			total_mv = excluded.total_mv,
-			circ_mv = excluded.circ_mv,
-			updated_at = CURRENT_TIMESTAMP
-	`
-
-	stmt, err := tx.Prepare(upsertSQL)
-	if err != nil {
-		_ = tx.Rollback()
-		return nil, fmt.Errorf("准备upsert语句失败: %w", err)
-	}
-	defer stmt.Close()
 
 	// 循环分页获取所有股票
 	totalProcessed := 0
@@ -307,123 +255,101 @@ func (s *StockMarketService) SyncAllStocks() (*SyncStocksResult, error) {
 	totalUpdated := 0
 	totalCount := 0
 
-	for {
-		url := fmt.Sprintf(
-			"https://push2.eastmoney.com/api/qt/clist/get?pn=%d&pz=%d&fs=%s&fields=%s",
-			pn, pz, fs, fields,
-		)
-
-		logger.Info("开始同步市场股票", zap.String("url", url), zap.Int("page", pn))
-
-		// 请求接口
-		resp, err := s.client.Get(url)
-		if err != nil {
-			logger.Error("请求东方财富API失败", zap.Error(err))
-			_ = tx.Rollback()
-			return nil, fmt.Errorf("请求东方财富API失败: %w", err)
-		}
-		defer resp.Body.Close()
-
-		// 解析响应
-		var apiResp EastMoneyResponse
-		if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
-			logger.Error("解析API响应失败", zap.Error(err))
-			_ = tx.Rollback()
-			return nil, fmt.Errorf("解析API响应失败: %w", err)
-		}
-
-		if apiResp.RC != 0 {
-			_ = tx.Rollback()
-			return nil, fmt.Errorf("API返回错误: rc=%d", apiResp.RC)
-		}
-
-		// 第一次请求时获取总数
-		if totalCount == 0 {
-			totalCount = apiResp.Data.Total
-			logger.Info("获取到股票总数", zap.Int("total", totalCount))
-		}
-
-		// 如果没有数据，退出循环
-		if len(apiResp.Data.Diff) == 0 {
-			logger.Info("本页无数据，同步完成", zap.Int("page", pn))
-			break
-		}
-
-		// 处理当前页的数据
-		processed := 0
-		now := time.Now().Format("2006-01-02 15:04:05")
-
-		for _, item := range apiResp.Data.Diff {
-			// 解析股票数据
-			stockData := s.parseStockItem(item, now)
-			if stockData == nil {
-				continue
-			}
-
-			// 执行upsert
-			_, err := stmt.Exec(
-				stockData.Code,
-				stockData.Name,
-				stockData.Market,
-				stockData.FullCode,
-				stockData.Type,
-				stockData.IsActive,
-				stockData.Price,
-				stockData.ChangeRate,
-				stockData.ChangeAmount,
-				stockData.Volume,
-				stockData.Amount,
-				stockData.Amplitude,
-				stockData.High,
-				stockData.Low,
-				stockData.Open,
-				stockData.PreClose,
-				stockData.Turnover,
-				stockData.VolumeRatio,
-				stockData.PE,
-				stockData.WarrantRatio,
-				stockData.Industry,
-				stockData.Region,
-				stockData.Board,
-				stockData.TotalMV,
-				stockData.CircMV,
+	err := db.Transaction(func(tx *gorm.DB) error {
+		for {
+			url := fmt.Sprintf(
+				"https://push2.eastmoney.com/api/qt/clist/get?pn=%d&pz=%d&fs=%s&fields=%s",
+				pn, pz, fs, fields,
 			)
 
+			logger.Info("开始同步市场股票", zap.String("url", url), zap.Int("page", pn))
+
+			// 请求接口
+			resp, err := s.client.Get(url)
 			if err != nil {
-				logger.Error("插入股票数据失败", zap.String("code", stockData.Code), zap.Error(err))
-				continue
+				logger.Error("请求东方财富API失败", zap.Error(err))
+				return fmt.Errorf("请求东方财富API失败: %w", err)
+			}
+			defer resp.Body.Close()
+
+			// 解析响应
+			var apiResp EastMoneyResponse
+			if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+				logger.Error("解析API响应失败", zap.Error(err))
+				return fmt.Errorf("解析API响应失败: %w", err)
 			}
 
-			processed++
-			// 第一条记录算插入，其他算更新
-			if totalProcessed == 0 && processed == 1 {
-				totalInserted++
-			} else {
-				totalUpdated++
+			if apiResp.RC != 0 {
+				return fmt.Errorf("API返回错误: rc=%d", apiResp.RC)
 			}
+
+			// 第一次请求时获取总数
+			if totalCount == 0 {
+				totalCount = apiResp.Data.Total
+				logger.Info("获取到股票总数", zap.Int("total", totalCount))
+			}
+
+			// 如果没有数据，退出循环
+			if len(apiResp.Data.Diff) == 0 {
+				logger.Info("本页无数据，同步完成", zap.Int("page", pn))
+				break
+			}
+
+			// 处理当前页的数据
+			var stocks []models.StockEntity
+			now := time.Now()
+
+			for _, item := range apiResp.Data.Diff {
+				// 解析股票数据
+				stockEntity := s.parseStockItemToEntity(item, now)
+				if stockEntity == nil {
+					continue
+				}
+				stocks = append(stocks, *stockEntity)
+			}
+
+			if len(stocks) > 0 {
+				// 使用 CreateInBatches 进行批量插入/更新
+				result := tx.Clauses(clause.OnConflict{
+					Columns:   []clause.Column{{Name: "code"}},
+					UpdateAll: true,
+				}).CreateInBatches(stocks, 100)
+
+				if result.Error != nil {
+					logger.Error("批量插入股票数据失败", zap.Error(result.Error))
+					return fmt.Errorf("批量插入股票数据失败: %w", result.Error)
+				}
+
+				processed := len(stocks)
+				totalProcessed += processed
+				// GORM 无法准确区分插入和更新，这里简单累加
+				if pn == 1 {
+					totalInserted += processed
+				} else {
+					totalUpdated += processed
+				}
+			}
+
+			logger.Info("本页数据处理完成",
+				zap.Int("page", pn),
+				zap.Int("processed", len(stocks)),
+				zap.Int("totalProcessed", totalProcessed),
+			)
+
+			// 检查是否已经获取完所有数据
+			if totalProcessed >= totalCount {
+				logger.Info("已获取全部股票数据", zap.Int("total", totalCount))
+				break
+			}
+
+			// 下一页
+			pn++
 		}
+		return nil
+	})
 
-		totalProcessed += processed
-		logger.Info("本页数据处理完成",
-			zap.Int("page", pn),
-			zap.Int("processed", processed),
-			zap.Int("totalProcessed", totalProcessed),
-		)
-
-		// 检查是否已经获取完所有数据
-		if totalProcessed >= totalCount {
-			logger.Info("已获取全部股票数据", zap.Int("total", totalCount))
-			break
-		}
-
-		// 下一页
-		pn++
-	}
-
-	// 提交事务
-	if err := tx.Commit(); err != nil {
-		_ = tx.Rollback()
-		return nil, fmt.Errorf("提交事务失败: %w", err)
+	if err != nil {
+		return nil, err
 	}
 
 	duration := time.Since(startTime).Seconds()
@@ -446,8 +372,8 @@ func (s *StockMarketService) SyncAllStocks() (*SyncStocksResult, error) {
 	}, nil
 }
 
-// parseStockItem 解析股票数据项
-func (s *StockMarketService) parseStockItem(item interface{}, updatedAt string) *StockMarketData {
+// parseStockItemToEntity 解析股票数据项为实体
+func (s *StockMarketService) parseStockItemToEntity(item interface{}, updatedAt time.Time) *models.StockEntity {
 	data, ok := item.(map[string]interface{})
 	if !ok {
 		return nil
@@ -532,7 +458,7 @@ func (s *StockMarketService) parseStockItem(item interface{}, updatedAt string) 
 		return "-"
 	}
 
-	stock := &StockMarketData{
+	stock := &models.StockEntity{
 		Code:         code,
 		Name:         name,
 		Market:       market,
@@ -571,113 +497,79 @@ func (s *StockMarketService) parseStockItem(item interface{}, updatedAt string) 
 
 // GetStocksList 获取股票列表（分页）
 func (s *StockMarketService) GetStocksList(page int, pageSize int, search string, industry string) ([]StockMarketData, int, error) {
-	offset := (page - 1) * pageSize
-
 	db := s.dbService.GetDB()
+	var entities []models.StockEntity
+	var total int64
 
-	// 构建查询条件
-	whereClause := "WHERE 1=1"
-	args := []interface{}{}
+	tx := db.Model(&models.StockEntity{})
 
 	if search != "" {
-		whereClause += " AND (code LIKE ? OR name LIKE ?)"
-		args = append(args, "%"+search+"%", "%"+search+"%")
+		tx = tx.Where("code LIKE ? OR name LIKE ?", "%"+search+"%", "%"+search+"%")
 	}
 
 	if industry != "" {
-		whereClause += " AND industry = ?"
-		args = append(args, industry)
+		tx = tx.Where("industry = ?", industry)
 	}
 
-	// 查询总数
-	var total int
-	countSQL := "SELECT COUNT(*) FROM stocks " + whereClause
-	err := db.QueryRow(countSQL, args...).Scan(&total)
-	if err != nil {
+	if err := tx.Count(&total).Error; err != nil {
 		return nil, 0, fmt.Errorf("查询总数失败: %w", err)
 	}
 
-	// 查询列表
-	querySQL := `
-		SELECT id, code, name, market, full_code, type, is_active,
-		       price, change_rate, change_amount, volume, amount,
-		       amplitude, high, low, open, pre_close, turnover,
-		       volume_ratio, pe, warrant_ratio, 
-		       COALESCE(industry, ''), COALESCE(region, ''), COALESCE(board, ''), COALESCE(total_mv, 0), COALESCE(circ_mv, 0),
-		       updated_at
-		FROM stocks ` + whereClause + `
-		ORDER BY code ASC
-		LIMIT ? OFFSET ?
-	`
-
-	args = append(args, pageSize, offset)
-
-	rows, err := db.Query(querySQL, args...)
-	if err != nil {
+	offset := (page - 1) * pageSize
+	if err := tx.Order("code ASC").Limit(pageSize).Offset(offset).Find(&entities).Error; err != nil {
 		return nil, 0, fmt.Errorf("查询股票列表失败: %w", err)
 	}
-	defer rows.Close()
 
-	stocks := []StockMarketData{}
-	for rows.Next() {
-		var stock StockMarketData
-		err := rows.Scan(
-			&stock.ID,
-			&stock.Code,
-			&stock.Name,
-			&stock.Market,
-			&stock.FullCode,
-			&stock.Type,
-			&stock.IsActive,
-			&stock.Price,
-			&stock.ChangeRate,
-			&stock.ChangeAmount,
-			&stock.Volume,
-			&stock.Amount,
-			&stock.Amplitude,
-			&stock.High,
-			&stock.Low,
-			&stock.Open,
-			&stock.PreClose,
-			&stock.Turnover,
-			&stock.VolumeRatio,
-			&stock.PE,
-			&stock.WarrantRatio,
-			&stock.Industry,
-			&stock.Region,
-			&stock.Board,
-			&stock.TotalMV,
-			&stock.CircMV,
-			&stock.UpdatedAt,
-		)
-		if err != nil {
-			logger.Error("扫描股票数据失败", zap.Error(err))
-			continue
+	stocks := make([]StockMarketData, len(entities))
+	for i, e := range entities {
+		stocks[i] = StockMarketData{
+			ID:           int64(e.ID),
+			Code:         e.Code,
+			Name:         e.Name,
+			Market:       e.Market,
+			FullCode:     e.FullCode,
+			Type:         e.Type,
+			IsActive:     e.IsActive,
+			Price:        e.Price,
+			ChangeRate:   e.ChangeRate,
+			ChangeAmount: e.ChangeAmount,
+			Volume:       e.Volume,
+			Amount:       e.Amount,
+			Amplitude:    e.Amplitude,
+			High:         e.High,
+			Low:          e.Low,
+			Open:         e.Open,
+			PreClose:     e.PreClose,
+			Turnover:     e.Turnover,
+			VolumeRatio:  e.VolumeRatio,
+			PE:           e.PE,
+			WarrantRatio: e.WarrantRatio,
+			Industry:     e.Industry,
+			Region:       e.Region,
+			Board:        e.Board,
+			TotalMV:      e.TotalMV,
+			CircMV:       e.CircMV,
+			UpdatedAt:    e.UpdatedAt.Format("2006-01-02 15:04:05"),
 		}
-		stocks = append(stocks, stock)
 	}
 
-	return stocks, total, nil
+	return stocks, int(total), nil
 }
 
 // GetAllStockCodes 获取所有活跃股票代码
 func (s *StockMarketService) GetAllStockCodes() ([]string, error) {
 	db := s.dbService.GetDB()
-	// 只查询当前在交易的股票
-	rows, err := db.Query("SELECT code FROM stocks WHERE is_active = 1 ORDER BY code ASC")
+	var codes []string
+
+	err := db.Model(&models.StockEntity{}).
+		Where("is_active = 1").
+		Order("code ASC").
+		Pluck("code", &codes).Error
+
 	if err != nil {
 		return nil, fmt.Errorf("查询股票代码失败: %w", err)
 	}
-	defer rows.Close()
 
-	var codes []string
-	for rows.Next() {
-		var code string
-		if err := rows.Scan(&code); err != nil {
-			continue
-		}
-		codes = append(codes, code)
-	}
 	return codes, nil
 }
 
@@ -686,35 +578,36 @@ func (s *StockMarketService) GetSyncStats() (map[string]interface{}, error) {
 	db := s.dbService.GetDB()
 
 	// 查询总数量
-	var totalCount int
-	err := db.QueryRow("SELECT COUNT(*) FROM stocks").Scan(&totalCount)
-	if err != nil {
+	var totalCount int64
+	if err := db.Model(&models.StockEntity{}).Count(&totalCount).Error; err != nil {
 		return nil, fmt.Errorf("查询总数量失败: %w", err)
 	}
 
 	// 查询最近更新时间
-	var lastUpdate string
-	err = db.QueryRow("SELECT updated_at FROM stocks ORDER BY updated_at DESC LIMIT 1").Scan(&lastUpdate)
-	if err != nil {
-		lastUpdate = "未同步"
+	var lastUpdate time.Time
+	err := db.Model(&models.StockEntity{}).Select("updated_at").Order("updated_at DESC").Limit(1).Scan(&lastUpdate).Error
+	lastUpdateStr := "未同步"
+	if err == nil && !lastUpdate.IsZero() {
+		lastUpdateStr = lastUpdate.Format("2006-01-02 15:04:05")
 	}
 
 	// 按市场统计
+	type MarketStat struct {
+		Market string
+		Count  int
+	}
+	var stats []MarketStat
 	marketStats := make(map[string]int)
-	rows, err := db.Query("SELECT market, COUNT(*) as count FROM stocks GROUP BY market")
-	if err == nil {
-		defer rows.Close()
-		for rows.Next() {
-			var market string
-			var count int
-			rows.Scan(&market, &count)
-			marketStats[market] = count
+
+	if err := db.Model(&models.StockEntity{}).Select("market, COUNT(*) as count").Group("market").Scan(&stats).Error; err == nil {
+		for _, s := range stats {
+			marketStats[s.Market] = s.Count
 		}
 	}
 
 	return map[string]interface{}{
 		"totalCount":  totalCount,
-		"lastUpdate":  lastUpdate,
+		"lastUpdate":  lastUpdateStr,
 		"marketStats": marketStats,
 	}, nil
 }

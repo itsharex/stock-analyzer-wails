@@ -1123,21 +1123,16 @@ func (a *App) StartMassScan() {
 		}
 
 		db := a.dbService.GetDB()
-		rows, err := db.Query("SELECT code FROM stocks WHERE is_active = 1 ORDER BY code ASC")
+		var codes []string
+		err := db.Model(&models.StockEntity{}).
+			Where("is_active = 1").
+			Order("code ASC").
+			Pluck("code", &codes).Error
+
 		if err != nil {
 			logger.Error("获取股票代码失败", zap.Error(err))
 			runtime.EventsEmit(a.ctx, "scan_error", fmt.Sprintf("获取股票列表失败: %v", err))
 			return
-		}
-		defer rows.Close()
-
-		var codes []string
-		for rows.Next() {
-			var code string
-			if err := rows.Scan(&code); err != nil {
-				continue
-			}
-			codes = append(codes, code)
 		}
 
 		total := len(codes)

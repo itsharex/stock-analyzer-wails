@@ -46,3 +46,5 @@ AGENTS.md
 
 # Local runtime config (do NOT commit secrets)
 config.yaml
+.trae
+.cursor
