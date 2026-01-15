@@ -1,6 +1,7 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useCallback } from 'react'
 import { createChart, ColorType, IChartApi } from 'lightweight-charts'
 import type { KLineData, TechnicalDrawing } from '../types'
+import { useResizeObserver } from '../hooks/useResizeObserver'
 
 interface KLineChartProps {
   data: KLineData[]
@@ -14,6 +15,7 @@ interface KLineChartProps {
 function KLineChart({ data, drawings = [], height = 600, showMACD = false, showKDJ = false, showRSI = false }: KLineChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
+  const lastWidthRef = useRef<number>(0)
 
   useEffect(() => {
     if (!chartContainerRef.current) return
@@ -142,23 +144,30 @@ function KLineChart({ data, drawings = [], height = 600, showMACD = false, showK
 
     candlestickSeries.setData(formattedData)
     volumeSeries.setData(volumeData)
+    chart.timeScale().fitContent()
 
     chart.timeScale().fitContent()
     chartRef.current = chart
 
-    const handleResize = () => {
-      if (chartContainerRef.current) {
-        chart.applyOptions({ width: chartContainerRef.current.clientWidth })
-      }
-    }
-
-    window.addEventListener('resize', handleResize)
-
     return () => {
-      window.removeEventListener('resize', handleResize)
       chart.remove()
     }
   }, [data, drawings, height, showMACD, showKDJ, showRSI])
+
+  const onSize = useCallback((w: number, h: number) => {
+    const width = Math.max(1, Math.floor(w))
+    const heightProp = typeof height === 'number' ? height : Math.floor(h)
+    chartRef.current?.applyOptions({ width, height: Math.max(1, heightProp || 0) })
+    if (chartRef.current) {
+      const prev = lastWidthRef.current
+      lastWidthRef.current = width
+      if (prev === 0 || Math.abs(width - prev) > 12) {
+        chartRef.current.timeScale().fitContent()
+      }
+    }
+  }, [height])
+
+  useResizeObserver(chartContainerRef, onSize)
 
   return <div ref={chartContainerRef} className="w-full" />
 }

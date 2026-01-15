@@ -1,6 +1,7 @@
 import { useCallback } from 'react'
-import type { StockData, AnalysisReport, AppConfig, KLineData, TechnicalAnalysisResult, IntradayResponse, MoneyFlowResponse, HealthCheckResult, EntryStrategyResult, StockDetail, BacktestResult } from '../types'
+import type { StockData, AnalysisReport, AppConfig, KLineData, TechnicalAnalysisResult, IntradayResponse, MoneyFlowResponse, HealthCheckResult, EntryStrategyResult, StockDetail, BacktestResult, StrategySignal } from '../types'
 import { StreamIntradayData } from '../../wailsjs/go/main/App'
+import { StopIntradayStream as StopIntradayStreamAPI } from '../../wailsjs/go/main/App'
 
 export const useWailsAPI = () => {
   const getStockData = useCallback(async (code: string): Promise<StockData> => {
@@ -18,14 +19,18 @@ const getIntradayData = useCallback(async (code: string): Promise<IntradayRespon
     return window.go.main.App.GetIntradayData(code)
   }, [])
 
-	const getMoneyFlowData = useCallback(async (code: string): Promise<MoneyFlowResponse> => {
+  const getMoneyFlowData = useCallback(async (code: string): Promise<MoneyFlowResponse> => {
 	    // @ts-ignore
 	    return window.go.main.App.GetMoneyFlowData(code)
 	  }, [])
 	
-	  const streamIntradayData = useCallback(async (code: string): Promise<void> => {
-	    return StreamIntradayData(code)
-	  }, [])
+  const streamIntradayData = useCallback(async (code: string): Promise<void> => {
+    return StreamIntradayData(code)
+  }, [])
+
+  const stopIntradayStream = useCallback(async (code: string): Promise<void> => {
+    return StopIntradayStreamAPI(code)
+  }, [])
 
   const getStockDetail = useCallback(async (code: string): Promise<StockDetail> => {
     // @ts-ignore
@@ -138,6 +143,11 @@ const getIntradayData = useCallback(async (code: string): Promise<IntradayRespon
     return window.go.main.App.BacktestMACD(code, fastPeriod, slowPeriod, signalPeriod, initialCapital, startDate, endDate)
   }, [])
 
+  const BacktestRSI = useCallback(async (code: string, period: number, buyThreshold: number, sellThreshold: number, initialCapital: number, startDate: string, endDate: string): Promise<BacktestResult> => {
+    // @ts-ignore
+    return window.go.main.App.BacktestRSI(code, period, buyThreshold, sellThreshold, initialCapital, startDate, endDate)
+  }, [])
+
   const SyncStockData = useCallback(async (code: string, startDate: string, endDate: string): Promise<any> => {
     // @ts-ignore
     return window.go.main.App.SyncStockData(code, startDate, endDate)
@@ -229,9 +239,14 @@ const getIntradayData = useCallback(async (code: string): Promise<IntradayRespon
     return window.go.main.App.SyncAllStocks()
   }, [])
 
-  const getStocksList = useCallback(async (page: number, pageSize: number, search: string): Promise<any> => {
+  const getStocksList = useCallback(async (page: number, pageSize: number, search: string = '', industry: string = ''): Promise<any> => {
     // @ts-ignore
-    return window.go.main.App.GetStocksList(page, pageSize, search)
+    return window.go.main.App.GetStocksList(page, pageSize, search, industry)
+  }, [])
+
+  const getIndustries = useCallback(async (): Promise<any> => {
+    // @ts-ignore
+    return window.go.main.App.GetIndustries()
   }, [])
 
   const getSyncStats = useCallback(async (): Promise<any> => {
@@ -338,11 +353,36 @@ const getIntradayData = useCallback(async (code: string): Promise<IntradayRespon
     return window.go.main.App.PriceAlertCreateAlertFromTemplate(templateId, stockCode, stockName, paramsJson)
   }, [])
 
-		return {
-		    getStockData,
+		const GetLatestSignals = useCallback(async (limit: number): Promise<StrategySignal[]> => {
+    // @ts-ignore
+    return window.go.main.App.GetLatestSignals(limit)
+  }, [])
+
+  const GetSignalsByStockCode = useCallback(async (code: string): Promise<StrategySignal[]> => {
+    // @ts-ignore
+    return window.go.main.App.GetSignalsByStockCode(code)
+  }, [])
+
+  const StartMassScan = useCallback(async (): Promise<void> => {
+    // @ts-ignore
+    return window.go.main.App.StartMassScan()
+  }, [])
+
+  const StartFullMarketSync = useCallback(async (): Promise<void> => {
+    // @ts-ignore
+    return window.go.main.App.StartFullMarketSync()
+  }, [])
+
+  return {
+    GetLatestSignals,
+    GetSignalsByStockCode,
+    StartMassScan,
+    StartFullMarketSync,
+    getStockData,
 		    getIntradayData,
 		    getMoneyFlowData,
-		    streamIntradayData,
+    streamIntradayData,
+    stopIntradayStream,
 		    getStockDetail,
 	    getStockHealthCheck,
     batchAnalyzeStocks,
@@ -366,6 +406,7 @@ const getIntradayData = useCallback(async (code: string): Promise<IntradayRespon
     removePosition,
     BacktestSimpleMA,
     BacktestMACD,
+    BacktestRSI,
     SyncStockData,
     GetDataSyncStats,
     BatchSyncStockData,
@@ -379,6 +420,7 @@ const getIntradayData = useCallback(async (code: string): Promise<IntradayRespon
     // Market Stock API
     syncAllStocks,
     getStocksList,
+    getIndustries,
     getSyncStats,
     // Strategy Management API
     CreateStrategy,

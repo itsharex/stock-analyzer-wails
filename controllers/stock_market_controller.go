@@ -29,8 +29,8 @@ type GetStocksListRequest struct {
 }
 
 // GetStocksList 获取股票列表
-func (c *StockMarketController) GetStocksList(page int, pageSize int, search string) (interface{}, error) {
-	stocks, total, err := c.stockMarketService.GetStocksList(page, pageSize, search)
+func (c *StockMarketController) GetStocksList(page int, pageSize int, search string, industry string) (interface{}, error) {
+	stocks, total, err := c.stockMarketService.GetStocksList(page, pageSize, search, industry)
 	if err != nil {
 		return nil, err
 	}
@@ -41,6 +41,11 @@ func (c *StockMarketController) GetStocksList(page int, pageSize int, search str
 		"page":   page,
 		"pageSize": pageSize,
 	}, nil
+}
+
+// GetIndustries 获取行业列表
+func (c *StockMarketController) GetIndustries() ([]services.IndustryInfo, error) {
+	return c.stockMarketService.GetIndustries()
 }
 
 // GetSyncStats 获取同步统计信息

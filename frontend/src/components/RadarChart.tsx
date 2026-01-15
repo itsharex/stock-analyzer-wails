@@ -21,6 +21,7 @@ const dimensionMap: Record<string, string> = {
 };
 
 export default function RadarChart({ data }: RadarChartProps) {
+  if (!data || !data.scores) return null;
   const chartData = Object.entries(data.scores).map(([key, value]) => ({
     subject: dimensionMap[key] || key,
     A: value,

@@ -18,16 +18,23 @@ interface BacktestPanelProps {
 }
 
 const BacktestPanel: React.FC<BacktestPanelProps> = ({ stockCode }) => {
-  const { BacktestSimpleMA, BacktestMACD, GetAllStrategies, CreateStrategy, UpdateStrategyBacktestResult } = useWailsAPI();
+  const { BacktestSimpleMA, BacktestMACD, BacktestRSI, GetAllStrategies, CreateStrategy, UpdateStrategyBacktestResult } = useWailsAPI();
 
   const [shortPeriod, setShortPeriod] = useState<number>(5);
   const [longPeriod, setLongPeriod] = useState<number>(20);
   const [signalPeriod, setSignalPeriod] = useState<number>(9);
+  
+  // RSI 参数
+  const [rsiPeriod, setRsiPeriod] = useState<number>(14);
+  const [rsiBuyThreshold, setRsiBuyThreshold] = useState<number>(30);
+  const [rsiSellThreshold, setRsiSellThreshold] = useState<number>(70);
+
   const [initialCapital, setInitialCapital] = useState<number>(100000);
   const [startDate, setStartDate] = useState<string>('2023-01-01');
   const [endDate, setEndDate] = useState<string>('2023-12-31');
 
   // 策略相关状态
+  const [activeStrategyType, setActiveStrategyType] = useState<string>('simple_ma');
   const [strategies, setStrategies] = useState<StrategyConfig[]>([]);
   const [selectedStrategy, setSelectedStrategy] = useState<StrategyConfig | null>(null);
   const [showSaveModal, setShowSaveModal] = useState(false);
@@ -62,9 +69,13 @@ const BacktestPanel: React.FC<BacktestPanelProps> = ({ stockCode }) => {
     try {
       let result;
       
-      if (selectedStrategy && selectedStrategy.strategyType === 'macd') {
+      // 使用 activeStrategyType 判断策略类型
+      if (activeStrategyType === 'macd') {
         // MACD策略回测
         result = await BacktestMACD(stockCode, shortPeriod, longPeriod, signalPeriod, initialCapital, startDate, endDate);
+      } else if (activeStrategyType === 'rsi') {
+        // RSI策略回测
+        result = await BacktestRSI(stockCode, rsiPeriod, rsiBuyThreshold, rsiSellThreshold, initialCapital, startDate, endDate);
       } else {
         // 默认使用双均线策略回测
         result = await BacktestSimpleMA(stockCode, shortPeriod, longPeriod, initialCapital, startDate, endDate);
@@ -73,7 +84,7 @@ const BacktestPanel: React.FC<BacktestPanelProps> = ({ stockCode }) => {
       setBacktestResult(result);
 
       // 如果是从策略库执行的，更新策略的回测结果
-      if (selectedStrategy && (selectedStrategy.strategyType === 'simple_ma' || selectedStrategy.strategyType === 'macd')) {
+      if (selectedStrategy && ['simple_ma', 'macd', 'rsi'].includes(selectedStrategy.strategyType)) {
         try {
           await UpdateStrategyBacktestResult(selectedStrategy.id, {
             totalReturn: result.totalReturn,
@@ -101,12 +112,14 @@ const BacktestPanel: React.FC<BacktestPanelProps> = ({ stockCode }) => {
   const handleSelectStrategy = (strategyId: string) => {
     if (strategyId === '') {
       setSelectedStrategy(null);
+      // 保持当前的 activeStrategyType 或重置为默认，这里保持不变比较好
       return;
     }
 
     const strategy = strategies.find(s => s.id === parseInt(strategyId));
     if (strategy) {
       setSelectedStrategy(strategy);
+      setActiveStrategyType(strategy.strategyType);
 
       // 根据策略类型应用不同的参数
       if (strategy.strategyType === 'simple_ma') {
@@ -127,6 +140,17 @@ const BacktestPanel: React.FC<BacktestPanelProps> = ({ stockCode }) => {
         }
         if (strategy.parameters.signalPeriod) {
           setSignalPeriod(Number(strategy.parameters.signalPeriod));
+        }
+      } else if (strategy.strategyType === 'rsi') {
+        // RSI 策略参数
+        if (strategy.parameters.period) {
+          setRsiPeriod(Number(strategy.parameters.period));
+        }
+        if (strategy.parameters.buyThreshold) {
+          setRsiBuyThreshold(Number(strategy.parameters.buyThreshold));
+        }
+        if (strategy.parameters.sellThreshold) {
+          setRsiSellThreshold(Number(strategy.parameters.sellThreshold));
         }
       }
 
@@ -150,8 +174,8 @@ const BacktestPanel: React.FC<BacktestPanelProps> = ({ stockCode }) => {
     }
 
     try {
-      // 根据当前选择或默认的策略类型来确定保存类型
-      const strategyType = selectedStrategy ? selectedStrategy.strategyType : 'simple_ma';
+      // 使用当前的 activeStrategyType
+      const strategyType = activeStrategyType;
       
       // 根据策略类型构建不同的参数
       let parameters: any = {
@@ -164,6 +188,13 @@ const BacktestPanel: React.FC<BacktestPanelProps> = ({ stockCode }) => {
           fastPeriod: shortPeriod,
           slowPeriod: longPeriod,
           signalPeriod: signalPeriod,
+        };
+      } else if (strategyType === 'rsi') {
+        parameters = {
+          ...parameters,
+          period: rsiPeriod,
+          buyThreshold: rsiBuyThreshold,
+          sellThreshold: rsiSellThreshold,
         };
       } else {
         parameters = {
@@ -198,21 +229,6 @@ const BacktestPanel: React.FC<BacktestPanelProps> = ({ stockCode }) => {
     capital: value,
   })) || [];
 
-  // 根据策略类型获取参数标签
-  const getShortPeriodLabel = () => {
-    if (selectedStrategy) {
-      return selectedStrategy.strategyType === 'macd' ? '快线周期' : '短周期均线 (MA)';
-    }
-    return '短周期均线 (MA)';
-  };
-
-  const getLongPeriodLabel = () => {
-    if (selectedStrategy) {
-      return selectedStrategy.strategyType === 'macd' ? '慢线周期' : '长周期均线 (MA)';
-    }
-    return '长周期均线 (MA)';
-  };
-
   return (
     <div className="p-4 bg-gray-800 text-gray-100 rounded-lg shadow-lg">
       <h2 className="text-2xl font-bold mb-4">回测面板 - {stockCode}</h2>
@@ -229,12 +245,13 @@ const BacktestPanel: React.FC<BacktestPanelProps> = ({ stockCode }) => {
             onChange={(e) => handleSelectStrategy(e.target.value)}
             className="flex-1 px-3 py-2 rounded-md bg-gray-600 border border-gray-500 text-gray-100 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
           >
-            <option value="">手动输入参数</option>
+            <option value="">手动输入参数 (默认双均线，可切换)</option>
             {strategies.map((strategy) => {
               const strategyTypeName = strategy.strategyType === 'simple_ma' ? '双均线' :
                                       strategy.strategyType === 'macd' ? 'MACD' :
+                                      strategy.strategyType === 'rsi' ? 'RSI' :
                                       strategy.strategyType;
-              const isSupported = strategy.strategyType === 'simple_ma' || strategy.strategyType === 'macd';
+              const isSupported = ['simple_ma', 'macd', 'rsi'].includes(strategy.strategyType);
               return (
                 <option key={strategy.id} value={strategy.id.toString()} disabled={!isSupported}>
                   {strategy.name} ({strategyTypeName}) {!isSupported && '[暂不支持回测]'}
@@ -259,44 +276,158 @@ const BacktestPanel: React.FC<BacktestPanelProps> = ({ stockCode }) => {
         )}
       </div>
 
+      {/* 策略类型切换 (仅当未选择策略库策略时可用，或者切换时清除选择) */}
+      <div className="mb-6 flex space-x-4">
+        <label className="flex items-center space-x-2 cursor-pointer">
+          <input
+            type="radio"
+            value="simple_ma"
+            checked={activeStrategyType === 'simple_ma'}
+            onChange={() => {
+              setActiveStrategyType('simple_ma');
+              setSelectedStrategy(null);
+            }}
+            className="form-radio text-blue-600"
+          />
+          <span className="text-gray-300">双均线策略</span>
+        </label>
+        <label className="flex items-center space-x-2 cursor-pointer">
+          <input
+            type="radio"
+            value="macd"
+            checked={activeStrategyType === 'macd'}
+            onChange={() => {
+              setActiveStrategyType('macd');
+              setSelectedStrategy(null);
+            }}
+            className="form-radio text-blue-600"
+          />
+          <span className="text-gray-300">MACD 策略</span>
+        </label>
+        <label className="flex items-center space-x-2 cursor-pointer">
+          <input
+            type="radio"
+            value="rsi"
+            checked={activeStrategyType === 'rsi'}
+            onChange={() => {
+              setActiveStrategyType('rsi');
+              setSelectedStrategy(null);
+            }}
+            className="form-radio text-blue-600"
+          />
+          <span className="text-gray-300">RSI 策略</span>
+        </label>
+      </div>
+
       {/* 参数配置 */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-        <div>
-          <label htmlFor="shortPeriod" className="block text-sm font-medium text-gray-300">{getShortPeriodLabel()}:</label>
-          <input
-            type="number"
-            id="shortPeriod"
-            value={shortPeriod}
-            onChange={(e) => setShortPeriod(parseInt(e.target.value))}
-            className="mt-1 block w-full rounded-md bg-gray-700 border-gray-600 text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-            min="1"
-          />
-        </div>
-        <div>
-          <label htmlFor="longPeriod" className="block text-sm font-medium text-gray-300">{getLongPeriodLabel()}:</label>
-          <input
-            type="number"
-            id="longPeriod"
-            value={longPeriod}
-            onChange={(e) => setLongPeriod(parseInt(e.target.value))}
-            className="mt-1 block w-full rounded-md bg-gray-700 border-gray-600 text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-            min="1"
-          />
-        </div>
-        {/* MACD策略的信号线周期参数 */}
-        {(!selectedStrategy || selectedStrategy.strategyType === 'macd') && (
-          <div>
-            <label htmlFor="signalPeriod" className="block text-sm font-medium text-gray-300">信号线周期 (DEA):</label>
-            <input
-              type="number"
-              id="signalPeriod"
-              value={signalPeriod}
-              onChange={(e) => setSignalPeriod(parseInt(e.target.value))}
-              className="mt-1 block w-full rounded-md bg-gray-700 border-gray-600 text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500"
-              min="1"
-            />
-          </div>
+        {/* 根据 activeStrategyType 渲染不同的参数输入 */}
+        {activeStrategyType === 'simple_ma' && (
+          <>
+            <div>
+              <label htmlFor="shortPeriod" className="block text-sm font-medium text-gray-300">短周期均线 (MA):</label>
+              <input
+                type="number"
+                id="shortPeriod"
+                value={shortPeriod}
+                onChange={(e) => setShortPeriod(parseInt(e.target.value))}
+                className="mt-1 block w-full rounded-md bg-gray-700 border-gray-600 text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                min="1"
+              />
+            </div>
+            <div>
+              <label htmlFor="longPeriod" className="block text-sm font-medium text-gray-300">长周期均线 (MA):</label>
+              <input
+                type="number"
+                id="longPeriod"
+                value={longPeriod}
+                onChange={(e) => setLongPeriod(parseInt(e.target.value))}
+                className="mt-1 block w-full rounded-md bg-gray-700 border-gray-600 text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                min="1"
+              />
+            </div>
+          </>
         )}
+
+        {activeStrategyType === 'macd' && (
+          <>
+            <div>
+              <label htmlFor="fastPeriod" className="block text-sm font-medium text-gray-300">快线周期:</label>
+              <input
+                type="number"
+                id="fastPeriod"
+                value={shortPeriod}
+                onChange={(e) => setShortPeriod(parseInt(e.target.value))}
+                className="mt-1 block w-full rounded-md bg-gray-700 border-gray-600 text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                min="1"
+              />
+            </div>
+            <div>
+              <label htmlFor="slowPeriod" className="block text-sm font-medium text-gray-300">慢线周期:</label>
+              <input
+                type="number"
+                id="slowPeriod"
+                value={longPeriod}
+                onChange={(e) => setLongPeriod(parseInt(e.target.value))}
+                className="mt-1 block w-full rounded-md bg-gray-700 border-gray-600 text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                min="1"
+              />
+            </div>
+            <div>
+              <label htmlFor="signalPeriod" className="block text-sm font-medium text-gray-300">信号线周期 (DEA):</label>
+              <input
+                type="number"
+                id="signalPeriod"
+                value={signalPeriod}
+                onChange={(e) => setSignalPeriod(parseInt(e.target.value))}
+                className="mt-1 block w-full rounded-md bg-gray-700 border-gray-600 text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                min="1"
+              />
+            </div>
+          </>
+        )}
+
+        {activeStrategyType === 'rsi' && (
+          <>
+            <div>
+              <label htmlFor="rsiPeriod" className="block text-sm font-medium text-gray-300">RSI 周期:</label>
+              <input
+                type="number"
+                id="rsiPeriod"
+                value={rsiPeriod}
+                onChange={(e) => setRsiPeriod(parseInt(e.target.value))}
+                className="mt-1 block w-full rounded-md bg-gray-700 border-gray-600 text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                min="1"
+              />
+            </div>
+            <div>
+              <label htmlFor="rsiBuyThreshold" className="block text-sm font-medium text-gray-300">买入阈值 (超卖):</label>
+              <input
+                type="number"
+                id="rsiBuyThreshold"
+                value={rsiBuyThreshold}
+                onChange={(e) => setRsiBuyThreshold(parseInt(e.target.value))}
+                className="mt-1 block w-full rounded-md bg-gray-700 border-gray-600 text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                min="0"
+                max="100"
+              />
+            </div>
+            <div>
+              <label htmlFor="rsiSellThreshold" className="block text-sm font-medium text-gray-300">卖出阈值 (超买):</label>
+              <input
+                type="number"
+                id="rsiSellThreshold"
+                value={rsiSellThreshold}
+                onChange={(e) => setRsiSellThreshold(parseInt(e.target.value))}
+                className="mt-1 block w-full rounded-md bg-gray-700 border-gray-600 text-gray-100 shadow-sm focus:border-blue-500 focus:ring-blue-500"
+                min="0"
+                max="100"
+              />
+            </div>
+          </>
+        )}
+
+        {/* 通用参数 */}
         <div>
           <label htmlFor="initialCapital" className="block text-sm font-medium text-gray-300">初始资金:</label>
           <input

@@ -4,7 +4,7 @@ import { useWailsAPI } from '../hooks/useWailsAPI';
 import { StockMarketData, SyncStocksResult } from '../types';
 
 const StockListPage: React.FC = () => {
-  const { getStocksList, syncAllStocks, getSyncStats } = useWailsAPI();
+  const { getStocksList, syncAllStocks, getSyncStats, getIndustries } = useWailsAPI();
 
   const [stocks, setStocks] = useState<StockMarketData[]>([]);
   const [total, setTotal] = useState<number>(0);
@@ -15,12 +15,14 @@ const StockListPage: React.FC = () => {
   const [syncing, setSyncing] = useState<boolean>(false);
   const [syncResult, setSyncResult] = useState<SyncStocksResult | null>(null);
   const [lastSyncTime, setLastSyncTime] = useState<string>('-');
+  const [industries, setIndustries] = useState<Array<{code: string, name: string}>>([]);
+  const [selectedIndustry, setSelectedIndustry] = useState<string>('');
 
   // 加载股票列表
-  const loadStocks = async (currentPage: number, searchQuery: string) => {
+  const loadStocks = async (currentPage: number, searchQuery: string, industryFilter: string) => {
     setLoading(true);
     try {
-      const result = await getStocksList(currentPage, pageSize, searchQuery);
+      const result = await getStocksList(currentPage, pageSize, searchQuery, industryFilter);
       if (result) {
         setStocks(result.stocks || []);
         setTotal(result.total || 0);
@@ -29,6 +31,16 @@ const StockListPage: React.FC = () => {
       console.error('加载股票列表失败:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // 加载行业列表
+  const loadIndustries = async () => {
+    try {
+      const list = await getIndustries();
+      setIndustries(list || []);
+    } catch (err) {
+      console.error('加载行业列表失败:', err);
     }
   };
 
@@ -52,7 +64,7 @@ const StockListPage: React.FC = () => {
       const result = await syncAllStocks();
       setSyncResult(result);
       // 同步完成后重新加载列表
-      await loadStocks(page, search);
+      await loadStocks(page, search, selectedIndustry);
       await loadSyncStats();
     } catch (err) {
       console.error('同步失败:', err);
@@ -65,7 +77,15 @@ const StockListPage: React.FC = () => {
   // 处理搜索
   const handleSearch = () => {
     setPage(1);
-    loadStocks(1, search);
+    loadStocks(1, search, selectedIndustry);
+  };
+
+  // 处理行业筛选
+  const handleIndustryChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const value = e.target.value;
+    setSelectedIndustry(value);
+    setPage(1);
+    loadStocks(1, search, value);
   };
 
   // 处理回车搜索
@@ -95,6 +115,12 @@ const StockListPage: React.FC = () => {
     return value.toFixed(0);
   };
 
+  // 格式化市值
+  const formatMarketValue = (value: number | null | undefined): string => {
+    if (value == null || value === 0) return '-';
+    return `${(value / 100000000).toFixed(2)}亿`;
+  };
+
   // 获取涨跌颜色
   const getChangeColor = (value: number | null | undefined): string => {
     if (value == null || value === 0) return 'text-gray-400';
@@ -105,8 +131,9 @@ const StockListPage: React.FC = () => {
 
   // 初始加载
   useEffect(() => {
-    loadStocks(page, search);
+    loadStocks(page, search, selectedIndustry);
     loadSyncStats();
+    loadIndustries();
   }, []);
 
   return (
@@ -142,8 +169,22 @@ const StockListPage: React.FC = () => {
         </div>
       )}
 
-      {/* 搜索框 */}
-      <div className="mb-6 flex items-center gap-4">
+      {/* 搜索框和筛选 */}
+      <div className="mb-6 flex flex-wrap items-center gap-4">
+        {/* 行业筛选 */}
+        <select
+          value={selectedIndustry}
+          onChange={handleIndustryChange}
+          className="px-4 py-2 bg-gray-800 border border-gray-700 rounded-lg text-gray-100 focus:outline-none focus:border-blue-500"
+        >
+          <option value="">所有行业</option>
+          {industries.map((ind) => (
+            <option key={ind.code} value={ind.name}>
+              {ind.name}
+            </option>
+          ))}
+        </select>
+
         <div className="flex-1 relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
           <input
@@ -161,12 +202,13 @@ const StockListPage: React.FC = () => {
         >
           搜索
         </button>
-        {search && (
+        {(search || selectedIndustry) && (
           <button
             onClick={() => {
               setSearch('');
+              setSelectedIndustry('');
               setPage(1);
-              loadStocks(1, '');
+              loadStocks(1, '', '');
             }}
             className="px-6 py-2 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded-md font-medium transition-colors"
           >
@@ -190,11 +232,15 @@ const StockListPage: React.FC = () => {
                   <tr>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">代码</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">名称</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">行业</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">地区/板块</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">最新价</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">涨跌幅</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">涨跌额</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">成交量</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">成交额</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">总市值</th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">流通市值</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">振幅</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">最高价</th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">最低价</th>
@@ -210,6 +256,10 @@ const StockListPage: React.FC = () => {
                     <tr key={stock.id} className="hover:bg-gray-700 transition-colors">
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-400">{stock.code}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">{stock.name}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">{stock.industry || '-'}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
+                        {stock.region || '-'}{stock.board ? ` / ${stock.board}` : ''}
+                      </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-100">{formatNumber(stock.price)}</td>
                       <td className={`px-6 py-4 whitespace-nowrap text-sm font-medium ${getChangeColor(stock.changeRate)}`}>
                         {formatPercent(stock.changeRate)}
@@ -219,6 +269,8 @@ const StockListPage: React.FC = () => {
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">{formatVolume(stock.volume)}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">{formatVolume(stock.amount)}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">{formatMarketValue(stock.totalMV)}</td>
+                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">{formatMarketValue(stock.circMV)}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">{formatPercent(stock.amplitude)}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">{formatNumber(stock.high)}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">{formatNumber(stock.low)}</td>
@@ -244,7 +296,7 @@ const StockListPage: React.FC = () => {
                 <button
                   onClick={() => {
                     setPage(1);
-                    loadStocks(1, search);
+                    loadStocks(1, search, selectedIndustry);
                   }}
                   disabled={page === 1}
                   className="px-3 py-1 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
@@ -254,7 +306,7 @@ const StockListPage: React.FC = () => {
                 <button
                   onClick={() => {
                     setPage(page - 1);
-                    loadStocks(page - 1, search);
+                    loadStocks(page - 1, search, selectedIndustry);
                   }}
                   disabled={page === 1}
                   className="px-3 py-1 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
@@ -267,7 +319,7 @@ const StockListPage: React.FC = () => {
                 <button
                   onClick={() => {
                     setPage(page + 1);
-                    loadStocks(page + 1, search);
+                    loadStocks(page + 1, search, selectedIndustry);
                   }}
                   disabled={page >= Math.ceil(total / pageSize)}
                   className="px-3 py-1 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
@@ -277,7 +329,7 @@ const StockListPage: React.FC = () => {
                 <button
                   onClick={() => {
                     setPage(Math.ceil(total / pageSize));
-                    loadStocks(Math.ceil(total / pageSize), search);
+                    loadStocks(Math.ceil(total / pageSize), search, selectedIndustry);
                   }}
                   disabled={page >= Math.ceil(total / pageSize)}
                   className="px-3 py-1 bg-gray-700 hover:bg-gray-600 text-gray-300 rounded disabled:opacity-50 disabled:cursor-not-allowed transition-colors"

@@ -12,12 +12,13 @@ import StrategyLibraryPage from './pages/StrategyLibraryPage'
 import StockListPage from './pages/StockListPage'
 import KLineSyncPage from './pages/KLineSyncPage'
 import PriceAlertPage from './pages/PriceAlertPage'
+import DecisionPioneerPage from './pages/DecisionPioneerPage'
 import { AlertToast } from './components/AlertToast'
 import { AlertCenter } from './components/AlertCenter'
 import { useWailsAPI } from './hooks/useWailsAPI'
 import type { StockData, AnalysisReport as AnalysisReportType, AppConfig } from './types'
 
-type NavItem = 'analysis' | 'watchlist' | 'alerts' | 'settings' | 'backtest' | 'datasync' | 'synchistory' | 'strategylibrary' | 'strategy' | 'stocklist' | 'klinesync' | 'pricealert'
+type NavItem = 'analysis' | 'watchlist' | 'alerts' | 'settings' | 'backtest' | 'datasync' | 'synchistory' | 'strategylibrary' | 'strategy' | 'stocklist' | 'klinesync' | 'pricealert' | 'decision'
 
 
 function App() {
@@ -241,6 +242,19 @@ function App() {
                   <span className="text-lg">📚</span>
                   <span className="text-sm">策略库</span>
                 </button>
+                <button
+                  onClick={() => {
+                    setActiveTab('decision')
+                  }}
+                  className={`w-full flex items-center space-x-2 px-4 py-2 rounded-lg transition-all duration-200 ${
+                    activeTab === 'decision'
+                      ? 'bg-blue-600 text-white'
+                      : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                  }`}
+                >
+                  <span className="text-lg">🧭</span>
+                  <span className="text-sm">决策先锋</span>
+                </button>
               </div>
             )}
           </div>
@@ -350,6 +364,7 @@ function App() {
              activeTab === 'synchistory' ? '同步历史记录' :
              activeTab === 'klinesync' ? 'K线数据同步' :
              activeTab === 'strategylibrary' ? '策略库管理' :
+             activeTab === 'decision' ? '决策先锋' :
              activeTab === 'pricealert' ? '价格预警中心' :
              '系统参数配置'}
           </h2>
@@ -368,8 +383,8 @@ function App() {
           </div>
         </header>
 
-        {/* 内容滚动区 */}
-        <div className="flex-1 overflow-y-auto p-4 lg:p-6">
+          {/* 内容滚动区 */}
+          <div className="flex-1 overflow-y-auto p-4 lg:p-6">
           {activeTab === 'analysis' ? (
             <div className="w-full grid grid-cols-1 lg:grid-cols-4 gap-6">
               <div className="lg:col-span-1 space-y-8">
@@ -453,6 +468,8 @@ function App() {
             <BacktestPage />
           ) : activeTab === 'strategylibrary' ? (
             <StrategyLibraryPage />
+          ) : activeTab === 'decision' ? (
+            <DecisionPioneerPage />
           ) : activeTab === 'datasync' ? (
             <DataSyncPage />
           ) : activeTab === 'synchistory' ? (

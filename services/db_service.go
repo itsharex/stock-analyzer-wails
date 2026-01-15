@@ -337,6 +337,11 @@ func (s *DBService) initTables() error {
 			volume_ratio REAL, -- 量比
 			pe REAL, -- 市盈率
 			warrant_ratio REAL, -- 委比(%)
+			industry TEXT, -- 所属行业
+			region TEXT, -- 地区
+			board TEXT, -- 板块
+			total_mv REAL, -- 总市值
+			circ_mv REAL, -- 流通市值
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			UNIQUE(code)
 		);
@@ -350,6 +355,19 @@ func (s *DBService) initTables() error {
 			zap.Error(err),
 		)
 		return fmt.Errorf("创建 stocks 表失败: %w", err)
+	}
+
+	// 尝试添加新字段（为了兼容旧数据库）
+	migrationSQLs := []string{
+		"ALTER TABLE stocks ADD COLUMN industry TEXT",
+		"ALTER TABLE stocks ADD COLUMN region TEXT",
+		"ALTER TABLE stocks ADD COLUMN board TEXT",
+		"ALTER TABLE stocks ADD COLUMN total_mv REAL",
+		"ALTER TABLE stocks ADD COLUMN circ_mv REAL",
+	}
+
+	for _, sql := range migrationSQLs {
+		_, _ = tx.Exec(sql) // 忽略错误（如果字段已存在会报错）
 	}
 
 	// 创建 stocks 表的索引
@@ -538,6 +556,82 @@ func (s *DBService) initTables() error {
 			zap.Error(err),
 		)
 		return fmt.Errorf("创建 price_alert_trigger_history.triggered_at 索引失败: %w", err)
+	}
+
+	// 12. Stock Money Flow History 表
+	_, err = tx.Exec(`
+		CREATE TABLE IF NOT EXISTS stock_money_flow_hist (
+			code          TEXT NOT NULL,
+			trade_date    TEXT NOT NULL,
+			main_net      REAL DEFAULT 0,
+			super_net     REAL DEFAULT 0,
+			big_net       REAL DEFAULT 0,
+			mid_net       REAL DEFAULT 0,
+			small_net     REAL DEFAULT 0,
+			close_price   REAL DEFAULT 0,
+			chg_pct       REAL DEFAULT 0,
+			PRIMARY KEY (code, trade_date)
+		);
+	`)
+	if err != nil {
+		_ = tx.Rollback()
+		logger.Error("创建 stock_money_flow_hist 表失败",
+			zap.String("module", "services.db"),
+			zap.String("op", "initTables"),
+			zap.String("table", "stock_money_flow_hist"),
+			zap.Error(err),
+		)
+		return fmt.Errorf("创建 stock_money_flow_hist 表失败: %w", err)
+	}
+
+	// 创建索引
+	_, err = tx.Exec(`CREATE INDEX IF NOT EXISTS idx_flow_date ON stock_money_flow_hist (code, trade_date DESC);`)
+	if err != nil {
+		_ = tx.Rollback()
+		logger.Error("创建 stock_money_flow_hist 索引失败",
+			zap.String("module", "services.db"),
+			zap.String("op", "initTables"),
+			zap.String("index", "idx_flow_date"),
+			zap.Error(err),
+		)
+		return fmt.Errorf("创建 stock_money_flow_hist 索引失败: %w", err)
+	}
+
+	// 13. Stock Strategy Signals 表
+	_, err = tx.Exec(`
+		CREATE TABLE IF NOT EXISTS stock_strategy_signals (
+			id            INTEGER PRIMARY KEY AUTOINCREMENT,
+			code          TEXT NOT NULL,
+			trade_date    TEXT NOT NULL,
+			signal_type   TEXT NOT NULL, -- 'B' for Buy, 'S' for Sell
+			strategy_name TEXT NOT NULL,
+			score         REAL DEFAULT 0,
+			details       TEXT, -- JSON or description
+			ai_score      INTEGER DEFAULT 0, -- AI 评分
+			ai_reason     TEXT, -- AI 分析理由
+			created_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
+			UNIQUE(code, trade_date, strategy_name)
+		);
+	`)
+	if err != nil {
+		_ = tx.Rollback()
+		logger.Error("创建 stock_strategy_signals 表失败",
+			zap.String("module", "services.db"),
+			zap.String("op", "initTables"),
+			zap.String("table", "stock_strategy_signals"),
+			zap.Error(err),
+		)
+		return fmt.Errorf("创建 stock_strategy_signals 表失败: %w", err)
+	}
+
+	// 尝试添加新字段 (兼容旧表)
+	migrationSQLs = append(migrationSQLs, 
+		"ALTER TABLE stock_strategy_signals ADD COLUMN ai_score INTEGER DEFAULT 0",
+		"ALTER TABLE stock_strategy_signals ADD COLUMN ai_reason TEXT",
+	)
+	
+	for _, sql := range migrationSQLs {
+		_, _ = tx.Exec(sql) // 忽略错误
 	}
 
 	// 提交事务

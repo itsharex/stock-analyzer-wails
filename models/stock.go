@@ -11,24 +11,24 @@ var ErrInvalidInput = errors.New("输入参数无效")
 
 // StockData 股票数据结构
 type StockData struct {
-	Code      string  `json:"code"`      // 股票代码
-	Name      string  `json:"name"`      // 股票名称
-	Price     float64 `json:"price"`     // 最新价
-	Change    float64 `json:"change"`    // 涨跌额
-	ChangeRate float64 `json:"changeRate"` // 涨跌幅(%)
-	Volume    int64   `json:"volume"`    // 成交量(手)
-	Amount    float64 `json:"amount"`    // 成交额
-	High      float64 `json:"high"`      // 最高价
-	Low       float64 `json:"low"`       // 最低价
-	Open      float64 `json:"open"`      // 今开
-	PreClose  float64 `json:"preClose"`  // 昨收
-	Amplitude float64 `json:"amplitude"` // 振幅(%)
-	Turnover  float64 `json:"turnover"`  // 换手率(%)
-	PE        float64 `json:"pe"`        // 市盈率
-	PB        float64 `json:"pb"`        // 市净率
-	TotalMV   float64 `json:"totalMV"`   // 总市值
-	CircMV    float64 `json:"circMV"`    // 流通市值
-	VolumeRatio float64 `json:"volumeRatio"` // 量比
+	Code         string  `json:"code"`         // 股票代码
+	Name         string  `json:"name"`         // 股票名称
+	Price        float64 `json:"price"`        // 最新价
+	Change       float64 `json:"change"`       // 涨跌额
+	ChangeRate   float64 `json:"changeRate"`   // 涨跌幅(%)
+	Volume       int64   `json:"volume"`       // 成交量(手)
+	Amount       float64 `json:"amount"`       // 成交额
+	High         float64 `json:"high"`         // 最高价
+	Low          float64 `json:"low"`          // 最低价
+	Open         float64 `json:"open"`         // 今开
+	PreClose     float64 `json:"preClose"`     // 昨收
+	Amplitude    float64 `json:"amplitude"`    // 振幅(%)
+	Turnover     float64 `json:"turnover"`     // 换手率(%)
+	PE           float64 `json:"pe"`           // 市盈率
+	PB           float64 `json:"pb"`           // 市净率
+	TotalMV      float64 `json:"totalMV"`      // 总市值
+	CircMV       float64 `json:"circMV"`       // 流通市值
+	VolumeRatio  float64 `json:"volumeRatio"`  // 量比
 	WarrantRatio float64 `json:"warrantRatio"` // 委比
 }
 
@@ -47,47 +47,47 @@ type KLineData struct {
 
 // IntradayData 分时数据点
 type IntradayData struct {
-	Time      string  `json:"time"`      // 时间 (HH:MM)
-	Price     float64 `json:"price"`     // 价格
-	AvgPrice  float64 `json:"avgPrice"`  // 均价
-	Volume    int64   `json:"volume"`    // 成交量
-	PreClose  float64 `json:"preClose"`  // 昨收价
+	Time     string  `json:"time"`     // 时间 (HH:MM)
+	Price    float64 `json:"price"`    // 价格
+	AvgPrice float64 `json:"avgPrice"` // 均价
+	Volume   int64   `json:"volume"`   // 成交量
+	PreClose float64 `json:"preClose"` // 昨收价
 }
 
 // IntradayResponse 分时数据响应结构
 type IntradayResponse struct {
-	Data      []IntradayData `json:"data"`
-	PreClose  float64        `json:"preClose"`
+	Data     []IntradayData `json:"data"`
+	PreClose float64        `json:"preClose"`
 }
 
 // MoneyFlowData 资金流向数据点
-type MoneyFlowData struct {
-	Time       string  `json:"time"`       // 时间 (HH:MM)
-		Main    float64 `json:"main"`    // 主力净流入
-		Retail  float64 `json:"retail"`  // 散户净流入
-		Super   float64 `json:"super"`   // 超大单净流入
-		Big     float64 `json:"big"`     // 大单净流入
-		Medium  float64 `json:"medium"`  // 中单净流入
-		Small   float64 `json:"small"`   // 小单净流入
+type MoneyFlowData2 struct {
+	Time   string  `json:"time"`   // 时间 (HH:MM)
+	Main   float64 `json:"main"`   // 主力净流入
+	Retail float64 `json:"retail"` // 散户净流入
+	Super  float64 `json:"super"`  // 超大单净流入
+	Big    float64 `json:"big"`    // 大单净流入
+	Medium float64 `json:"medium"` // 中单净流入
+	Small  float64 `json:"small"`  // 小单净流入
 }
 
-	// MoneyFlowResponse 资金流向响应结构
-	type MoneyFlowResponse struct {
-		Data        []MoneyFlowData `json:"data"`
-		TodayMain   float64         `json:"todayMain"`   // 今日主力净流入总额
-		TodayRetail float64         `json:"todayRetail"` // 今日散户净流入总额
-		Status      string          `json:"status"`      // 智能识别状态: "主力建仓", "散户追高", "机构洗盘", "平稳运行"
-		Description string          `json:"description"` // 状态详细描述
-	}
+// MoneyFlowResponse 资金流向响应结构
+type MoneyFlowResponse struct {
+	Data        []MoneyFlowData2 `json:"data"`
+	TodayMain   float64          `json:"todayMain"`   // 今日主力净流入总额
+	TodayRetail float64          `json:"todayRetail"` // 今日散户净流入总额
+	Status      string           `json:"status"`      // 智能识别状态: "主力建仓", "散户追高", "机构洗盘", "平稳运行"
+	Description string           `json:"description"` // 状态详细描述
+}
 
 // HealthCheckResult 股票深度体检结果
 type HealthCheckResult struct {
-	Score       int            `json:"score"`       // 综合评分 (0-100)
-	Status      string         `json:"status"`      // "健康", "亚健康", "风险"
-	Items       []HealthItem   `json:"items"`       // 体检项
-	Summary     string         `json:"summary"`     // AI 总结
-	RiskLevel   string         `json:"riskLevel"`   // 风险等级: "低", "中", "高"
-	UpdatedAt   string         `json:"updatedAt"`   // 更新时间
+	Score     int          `json:"score"`     // 综合评分 (0-100)
+	Status    string       `json:"status"`    // "健康", "亚健康", "风险"
+	Items     []HealthItem `json:"items"`     // 体检项
+	Summary   string       `json:"summary"`   // AI 总结
+	RiskLevel string       `json:"riskLevel"` // 风险等级: "低", "中", "高"
+	UpdatedAt string       `json:"updatedAt"` // 更新时间
 }
 
 // HealthItem 体检子项
@@ -126,12 +126,12 @@ type AnalysisReport struct {
 
 // TechnicalAnalysisResult 深度技术分析结果（包含绘图数据和风险评估）
 type TechnicalAnalysisResult struct {
-	Analysis     string            `json:"analysis"`
+	Analysis     string             `json:"analysis"`
 	Drawings     []TechnicalDrawing `json:"drawings"`
-	RiskScore    int               `json:"riskScore"`    // 0-100
-	ActionAdvice string            `json:"actionAdvice"` // "买入", "卖出", "观望", "减持", "增持"
-	RadarData    *RadarData        `json:"radarData,omitempty"` // 多维度评分雷达图数据
-	TradePlan    *TradePlan        `json:"tradePlan,omitempty"` // 智能交易计划
+	RiskScore    int                `json:"riskScore"`           // 0-100
+	ActionAdvice string             `json:"actionAdvice"`        // "买入", "卖出", "观望", "减持", "增持"
+	RadarData    *RadarData         `json:"radarData,omitempty"` // 多维度评分雷达图数据
+	TradePlan    *TradePlan         `json:"tradePlan,omitempty"` // 智能交易计划
 }
 
 // RadarData 多维度评分雷达图数据
@@ -164,12 +164,12 @@ type TechnicalDrawing struct {
 type PriceAlert struct {
 	StockCode     string    `json:"stockCode"`
 	StockName     string    `json:"stockName"`
-	Type          string    `json:"type"`      // support (支撑), resistance (压力)
-	Price         float64   `json:"price"`     // 触发价格
-	Label         string    `json:"label"`     // 标签描述
-	Role          string    `json:"role"`      // 触发时的AI角色
-	IsActive      bool      `json:"isActive"`  // 是否激活
-	LastTriggered time.Time `json:"-"`         // 上次触发时间，避免频繁骚扰
+	Type          string    `json:"type"`     // support (支撑), resistance (压力)
+	Price         float64   `json:"price"`    // 触发价格
+	Label         string    `json:"label"`    // 标签描述
+	Role          string    `json:"role"`     // 触发时的AI角色
+	IsActive      bool      `json:"isActive"` // 是否激活
+	LastTriggered time.Time `json:"-"`        // 上次触发时间，避免频繁骚扰
 }
 
 // AlertConfig 预警系统配置
@@ -181,28 +181,28 @@ type AlertConfig struct {
 
 // AlertHistory 告警历史记录
 type AlertHistory struct {
-	ID        string    `json:"id"`
-	StockCode string    `json:"stockCode"`
-	StockName string    `json:"stockName"`
-	Type      string    `json:"type"`      // support, resistance
-	Price     float64   `json:"price"`     // 触发时的价格
-	AlertPrice float64  `json:"alertPrice"` // 预警设定的价格
-	Message   string    `json:"message"`
-	Time      time.Time `json:"time"`
+	ID         string    `json:"id"`
+	StockCode  string    `json:"stockCode"`
+	StockName  string    `json:"stockName"`
+	Type       string    `json:"type"`       // support, resistance
+	Price      float64   `json:"price"`      // 触发时的价格
+	AlertPrice float64   `json:"alertPrice"` // 预警设定的价格
+	Message    string    `json:"message"`
+	Time       time.Time `json:"time"`
 }
 
 // EntryStrategyResult 智能建仓方案结构
 type EntryStrategyResult struct {
-		Recommendation    string        `json:"recommendation"`    // 总体建议
-		EntryPriceRange   string        `json:"entryPriceRange"`   // 建议买入价格区间
-		InitialPosition   string        `json:"initialPosition"`   // 建议首仓比例
-		StopLossPrice     float64       `json:"stopLossPrice"`     // 止损价
-		TakeProfitPrice   float64       `json:"takeProfitPrice"`   // 目标止盈价
-		CoreReasons       []CoreReason  `json:"coreReasons"`       // 核心建仓理由
-		RiskRewardRatio   float64       `json:"riskRewardRatio"`   // 预估盈亏比
-		ActionPlan        string        `json:"actionPlan"`        // 具体操作步骤
-		TrailingStopConfig *TrailingStopConfig `json:"trailingStopConfig,omitempty"` // 移动止损配置
-	}
+	Recommendation     string              `json:"recommendation"`               // 总体建议
+	EntryPriceRange    string              `json:"entryPriceRange"`              // 建议买入价格区间
+	InitialPosition    string              `json:"initialPosition"`              // 建议首仓比例
+	StopLossPrice      float64             `json:"stopLossPrice"`                // 止损价
+	TakeProfitPrice    float64             `json:"takeProfitPrice"`              // 目标止盈价
+	CoreReasons        []CoreReason        `json:"coreReasons"`                  // 核心建仓理由
+	RiskRewardRatio    float64             `json:"riskRewardRatio"`              // 预估盈亏比
+	ActionPlan         string              `json:"actionPlan"`                   // 具体操作步骤
+	TrailingStopConfig *TrailingStopConfig `json:"trailingStopConfig,omitempty"` // 移动止损配置
+}
 
 func (r *EntryStrategyResult) UnmarshalJSON(data []byte) error {
 	type Alias EntryStrategyResult
@@ -258,9 +258,9 @@ func (r *EntryStrategyResult) UnmarshalJSON(data []byte) error {
 
 // CoreReason 核心建仓理由
 type CoreReason struct {
-	Type        string `json:"type"`        // fundamental, technical, money_flow
+	Type        string `json:"type"` // fundamental, technical, money_flow
 	Description string `json:"description"`
-	Threshold   string `json:"threshold"`   // 逻辑失效的触发阈值
+	Threshold   string `json:"threshold"` // 逻辑失效的触发阈值
 }
 
 // TrailingStopConfig 移动止损个性化配置
@@ -285,14 +285,14 @@ type Position struct {
 
 // EastMoneyResponse 东方财富API响应结构
 type EastMoneyResponse struct {
-	RC   int    `json:"rc"`
-	RT   int    `json:"rt"`
-	SVRT int    `json:"svrt"`
-	LT   int    `json:"lt"`
-	Full int    `json:"full"`
+	RC   int `json:"rc"`
+	RT   int `json:"rt"`
+	SVRT int `json:"svrt"`
+	LT   int `json:"lt"`
+	Full int `json:"full"`
 	Data struct {
-		Total int           `json:"total"`
-		Diff  []StockDiff   `json:"diff"`
+		Total int         `json:"total"`
+		Diff  []StockDiff `json:"diff"`
 	} `json:"data"`
 }
 
@@ -345,37 +345,35 @@ func (sd *StockDiff) ToStockData() *StockData {
 	}
 }
 
-
 // TradeRecord 单笔交易记录
 type TradeRecord struct {
-	Time      string  `json:"time"`      // 交易时间
-	Type      string  `json:"type"`      // 交易类型: "BUY" 或 "SELL"
-	Price     float64 `json:"price"`     // 交易价格
-	Volume    int64   `json:"volume"`    // 交易数量
-	Amount    float64 `json:"amount"`    // 交易金额
+	Time       string  `json:"time"`       // 交易时间
+	Type       string  `json:"type"`       // 交易类型: "BUY" 或 "SELL"
+	Price      float64 `json:"price"`      // 交易价格
+	Volume     int64   `json:"volume"`     // 交易数量
+	Amount     float64 `json:"amount"`     // 交易金额
 	Commission float64 `json:"commission"` // 佣金
-	Tax       float64 `json:"tax"`       // 印花税 (仅卖出)
-	Profit    float64 `json:"profit"`    // 单笔交易盈亏
+	Tax        float64 `json:"tax"`        // 印花税 (仅卖出)
+	Profit     float64 `json:"profit"`     // 单笔交易盈亏
 }
 
 // BacktestResult 回测结果结构
 type BacktestResult struct {
-	StrategyName    string        `json:"strategyName"`    // 策略名称
-	StockCode       string        `json:"stockCode"`       // 股票代码
-	StartDate       string        `json:"startDate"`       // 回测开始日期
-	EndDate         string        `json:"endDate"`         // 回测结束日期
-	InitialCapital  float64       `json:"initialCapital"`  // 初始资金
-	FinalCapital    float64       `json:"finalCapital"`    // 最终资金
-	TotalReturn     float64       `json:"totalReturn"`     // 总收益率
+	StrategyName     string        `json:"strategyName"`     // 策略名称
+	StockCode        string        `json:"stockCode"`        // 股票代码
+	StartDate        string        `json:"startDate"`        // 回测开始日期
+	EndDate          string        `json:"endDate"`          // 回测结束日期
+	InitialCapital   float64       `json:"initialCapital"`   // 初始资金
+	FinalCapital     float64       `json:"finalCapital"`     // 最终资金
+	TotalReturn      float64       `json:"totalReturn"`      // 总收益率
 	AnnualizedReturn float64       `json:"annualizedReturn"` // 年化收益率
-	MaxDrawdown     float64       `json:"maxDrawdown"`     // 最大回撤
-	WinRate         float64       `json:"winRate"`         // 胜率
-	TradeCount      int           `json:"tradeCount"`      // 交易次数
-	Trades          []TradeRecord `json:"trades"`          // 交易记录
-	EquityCurve     []float64     `json:"equityCurve"`     // 净值曲线 (每日资产总值)
-	EquityDates     []string      `json:"equityDates"`     // 净值曲线对应的日期
+	MaxDrawdown      float64       `json:"maxDrawdown"`      // 最大回撤
+	WinRate          float64       `json:"winRate"`          // 胜率
+	TradeCount       int           `json:"tradeCount"`       // 交易次数
+	Trades           []TradeRecord `json:"trades"`           // 交易记录
+	EquityCurve      []float64     `json:"equityCurve"`      // 净值曲线 (每日资产总值)
+	EquityDates      []string      `json:"equityDates"`      // 净值曲线对应的日期
 }
-
 
 // KLineCacheRecord 用于存储到 SQLite 的 K 线缓存记录
 type KLineCacheRecord struct {
@@ -393,31 +391,31 @@ type KLineCacheRecord struct {
 
 // SyncProgress 数据同步进度信息
 type SyncProgress struct {
-	StockCode      string `json:"stock_code"`
-	Status         string `json:"status"` // "pending", "syncing", "completed", "failed"
-	TotalRecords   int    `json:"total_records"`
-	SyncedRecords  int    `json:"synced_records"`
-	Message        string `json:"message"`
-	StartDate      string `json:"start_date"`
-	EndDate        string `json:"end_date"`
-	ErrorMessage   string `json:"error_message,omitempty"`
+	StockCode     string `json:"stock_code"`
+	Status        string `json:"status"` // "pending", "syncing", "completed", "failed"
+	TotalRecords  int    `json:"total_records"`
+	SyncedRecords int    `json:"synced_records"`
+	Message       string `json:"message"`
+	StartDate     string `json:"start_date"`
+	EndDate       string `json:"end_date"`
+	ErrorMessage  string `json:"error_message,omitempty"`
 }
 
 // SyncResult 数据同步结果
 type SyncResult struct {
-	StockCode     string `json:"stock_code"`
-	Success       bool   `json:"success"`
-	RecordsAdded  int    `json:"records_added"`
-	RecordsUpdated int   `json:"records_updated"`
-	Message       string `json:"message"`
-	ErrorMessage  string `json:"error_message,omitempty"`
+	StockCode      string `json:"stock_code"`
+	Success        bool   `json:"success"`
+	RecordsAdded   int    `json:"records_added"`
+	RecordsUpdated int    `json:"records_updated"`
+	Message        string `json:"message"`
+	ErrorMessage   string `json:"error_message,omitempty"`
 }
 
 // DataSyncStats 数据同步统计信息
 type DataSyncStats struct {
-	TotalStocks    int      `json:"total_stocks"`
-	SyncedStocks   int      `json:"synced_stocks"`
-	TotalRecords   int64    `json:"total_records"`
-	StockList      []string `json:"stock_list"`
-	LastSyncTime   string   `json:"last_sync_time"`
+	TotalStocks  int      `json:"total_stocks"`
+	SyncedStocks int      `json:"synced_stocks"`
+	TotalRecords int64    `json:"total_records"`
+	StockList    []string `json:"stock_list"`
+	LastSyncTime string   `json:"last_sync_time"`
 }

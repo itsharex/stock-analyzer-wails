@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -34,6 +35,8 @@ type StockService struct {
 	streams      map[string]context.CancelFunc
 	emitIntraday func(ctx context.Context, code string, trends []string)
 	dbService    *DBService // 数据库服务
+	warnMu       sync.Mutex
+	lastWarnAt   map[string]time.Time
 }
 
 // SetDBService 注入数据库服务。
@@ -63,13 +66,30 @@ func NewStockService() *StockService {
 				ResponseHeaderTimeout: 10 * time.Second,
 			},
 		},
-		streams: make(map[string]context.CancelFunc),
+		streams:    make(map[string]context.CancelFunc),
+		lastWarnAt: make(map[string]time.Time),
 	}
 	// 默认事件推送实现（生产环境）
 	s.emitIntraday = func(ctx context.Context, code string, trends []string) {
 		runtime.EventsEmit(ctx, "intradayDataUpdate:"+code, trends)
 	}
 	return s
+}
+
+func (s *StockService) logWarnThrottled(code string, msg string, fields ...zap.Field) {
+	now := time.Now()
+	s.warnMu.Lock()
+	prev := s.lastWarnAt[code]
+	shouldWarn := now.Sub(prev) >= 60*time.Second
+	if shouldWarn {
+		s.lastWarnAt[code] = now
+	}
+	s.warnMu.Unlock()
+	if shouldWarn {
+		logger.Warn(msg, fields...)
+	} else {
+		logger.Debug(msg, fields...)
+	}
 }
 
 // Startup is called at application startup
@@ -515,7 +535,7 @@ func (s *StockService) StreamIntradayData(code string) {
 			return
 		}
 
-		sseURL := fmt.Sprintf("https://42.push2.eastmoney.com/api/qt/stock/trends2/sse?secid=%s&fields1=f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13&fields2=f51,f52,f53,f54,f55,f56,f57,f58&ndays=1&iscr=0&ut=fa5fd1943c7b386f172d6893dbfba10b", secid)
+		sseURL := fmt.Sprintf("https://push2.eastmoney.com/api/qt/stock/trends2/sse?secid=%s&fields1=f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13&fields2=f51,f52,f53,f54,f55,f56,f57,f58&ndays=1&iscr=0&ut=fa5fd1943c7b386f172d6893dbfba10b", secid)
 
 		retry := 0
 		for {
@@ -561,7 +581,7 @@ func (s *StockService) StreamIntradayData(code string) {
 					)
 					return
 				}
-				logger.Warn("连接 SSE 接口失败，准备重试",
+				s.logWarnThrottled(code, "连接 SSE 接口失败，准备重试",
 					zap.String("module", "services.stock"),
 					zap.String("op", "StreamIntradayData"),
 					zap.String("code", code),
@@ -583,7 +603,7 @@ func (s *StockService) StreamIntradayData(code string) {
 				if resp.StatusCode != http.StatusOK {
 					// 尽量读一点 body 帮助定位（例如被限流、被 WAF 拦截、返回错误 JSON 等）
 					b, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-					logger.Warn("SSE 接口返回非 200，准备重试",
+					s.logWarnThrottled(code, "SSE 接口返回非 200，准备重试",
 						zap.String("module", "services.stock"),
 						zap.String("op", "StreamIntradayData"),
 						zap.String("code", code),
@@ -627,8 +647,8 @@ func (s *StockService) StreamIntradayData(code string) {
 							} `json:"data"`
 						}
 						if err := json.Unmarshal([]byte(jsonStr), &sseData); err != nil {
-							// 解析失败通常是服务端偶发推送了非预期格式；这里用 debug 级别避免刷屏。
-							logger.Debug("SSE data JSON 解析失败（将忽略该条）",
+							// 解析失败通常是服务端偶发推送了非预期格式；这里用 throttled warn 避免刷屏。
+							s.logWarnThrottled(code, "SSE data JSON 解析失败（将忽略该条）",
 								zap.String("module", "services.stock"),
 								zap.String("op", "StreamIntradayData"),
 								zap.String("code", code),
@@ -643,7 +663,7 @@ func (s *StockService) StreamIntradayData(code string) {
 					}
 				}
 
-				if err := scanner.Err(); err != nil && err != io.EOF {
+				if err := scanner.Err(); err != nil {
 					if sseCtx.Err() != nil {
 						logger.Info("SSE 读取结束（已取消）",
 							zap.String("module", "services.stock"),
@@ -654,7 +674,19 @@ func (s *StockService) StreamIntradayData(code string) {
 						)
 						return
 					}
-					logger.Warn("读取 SSE 流发生错误，准备重试",
+					if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+						logger.Info("SSE 读取结束（远端关闭/EOF），准备重试",
+							zap.String("module", "services.stock"),
+							zap.String("op", "StreamIntradayData"),
+							zap.String("code", code),
+							zap.String("url", sseURL),
+							zap.Int("retry", retry),
+							zap.Error(err),
+							zap.Int64("duration_ms", time.Since(attemptStart).Milliseconds()),
+						)
+						return
+					}
+					s.logWarnThrottled(code, "读取 SSE 流发生错误，准备重试",
 						zap.String("module", "services.stock"),
 						zap.String("op", "StreamIntradayData"),
 						zap.String("code", code),
@@ -871,7 +903,7 @@ func (s *StockService) getSecID(code string) string {
 	}
 	if code[0] == '6' {
 		return "1." + code
-	} else if code[0] == '0' || code[0] == '3' {
+	} else if code[0] == '0' || code[0] == '3' || code[0] == '8' || code[0] == '4' {
 		return "0." + code
 	}
 	return ""
@@ -903,13 +935,13 @@ func (s *StockService) GetMoneyFlowData(code string) (*models.MoneyFlowResponse,
 		return nil, err
 	}
 
-	flowData := make([]models.MoneyFlowData, 0)
+	flowData := make([]models.MoneyFlowData2, 0)
 	for _, line := range result.Data.Flows {
 		parts := strings.Split(line, ",")
 		if len(parts) < 11 {
 			continue
 		}
-		flowData = append(flowData, models.MoneyFlowData{
+		flowData = append(flowData, models.MoneyFlowData2{
 			Time:   parts[0],
 			Main:   s.parsePrice(parts[1]),
 			Retail: s.parsePrice(parts[4]),

@@ -14,102 +14,102 @@ import (
 
 // 东方财富API字段定义
 const (
-	FieldCode           = "f12"  // f12:股票代码
-	FieldMarket         = "f13"  // f13:市场
-	FieldName           = "f14"  // f14:股票名称
-	FieldPrice          = "f2"   // f2:最新价
-	FieldChangeRate     = "f3"   // f3:涨跌幅
-	FieldChangeAmount   = "f4"   // f4:涨跌额
-	FieldVolume         = "f5"   // f5:总手（VOL）/成交量
-	FieldAmount         = "f6"   // f6:成交额
-	FieldAmplitude      = "f7"   // f7:振幅
-	FieldTurnover       = "f8"   // f8:换手率
-	FieldPE             = "f9"   // f9:市盈率(动态)
-	FieldVolumeRatio    = "f10"  // f10:量比
-	Field5MinChangeRate = "f11"  // f11:5分钟涨跌幅
-	FieldHigh           = "f15"  // f15:今日最高
-	FieldLow            = "f16"  // f16:今日最低
-	FieldOpen           = "f17"  // f17:今开
-	FieldPreClose       = "f18"  // f18:昨收
-	FieldMarketCap      = "f20"  // f20:总市值
-	FieldCircCap        = "f21"  // f21:流通市值
-	FieldRiseSpeed      = "f22"  // f22:涨速
-	FieldPB             = "f23"  // f23:市净率
-	Field60DayChange    = "f24"  // f24:60日涨跌幅
-	FieldYTDChange      = "f25"  // f25:年初至今涨跌幅
-	FieldListDate       = "f26"  // f26:上市时间
-	FieldPreSettlePrice = "f28"  // f28:昨日结算价
-	FieldLastVol        = "f30"  // f30:每天最后一笔交易的成交量
-	FieldBuyPrice       = "f31"  // f31:现汇买入价
-	FieldSellPrice      = "f32"  // f32:现汇卖出价
-	FieldWarrantRatio   = "f33"  // f33:委比
-	FieldBuyVol         = "f34"  // f34:外盘
-	FieldSellVol        = "f35"  // f35:内盘
-	FieldAOE            = "f37"  // f37:净资产收益率加权（AOE）最近季度
-	FieldTotalShare      = "f38"  // f38:总股本
-	FieldCircAShare     = "f39"  // f39:流通A股（万股）
-	FieldTotalRevenue   = "f40"  // f40:总营收（最近季度）
-	FieldRevenueYOY     = "f41"  // f41:总营收同比
-	FieldTotalProfit    = "f44"  // f44:总利润（最近季度）
-	FieldNetProfit      = "f45"  // f45:净利润（最近季度）
-	FieldProfitGrowth   = "f46"  // f46:净利润增长率（%）（同比）（最近季度）
-	FieldUndividedProfit = "f48" // f48:每股未分配利润
-	FieldGrossMargin    = "f49"  // f49:毛利率（最近季度）
-	FieldTotalAssets    = "f50"  // f50:总资产（最近季度）
-	FieldDebtRatio      = "f57"  // f57:负债率
-	FieldEquity         = "f58"  // f58:股东权益
-	FieldMainNetInflow  = "f62"  // f62:今日主力净流入
-	FieldSuperBuy       = "f64"  // f64:超大单流入
-	FieldSuperSell      = "f65"  // f65:超大单流出
-	FieldSuperNetInflow = "f66"  // f66:今日超大单净流入
-	FieldSuperNetRatio  = "f69"  // f69:超大单净比
-	FieldBigBuy         = "f70"  // f70:大单流入
-	FieldBigSell        = "f71"  // f71:大单流出
-	FieldBigNetInflow   = "f72"  // f72:今日大单净流入
-	FieldBigNetRatio    = "f75"  // f75:大单净比
-	FieldMidBuy         = "f76"  // f76:中单流入
-	FieldMidSell        = "f77"  // f77:中单流出
-	FieldMidNetInflow   = "f78"  // f78:今日中单净流入
-	FieldMidNetRatio    = "f81"  // f81:中单净比（%）
-	FieldSmallBuy       = "f82"  // f82:小单流入
-	FieldSmallSell      = "f83"  // f83:小单流出
-	FieldSmallNetInflow = "f84"  // f84:进入小单净流入
-	FieldSmallNetRatio  = "f87"  // f87:小单净比
-	FieldIndustry       = "f100" // f100:行业
-	FieldRegion         = "f102" // f102:地区板块
-	FieldRemark         = "f103" // f103:备注
-	FieldRiseCount      = "f104" // f104:上涨家数
-	FieldFallCount      = "f105" // f105:下跌家数
-	FieldFlatCount      = "f106" // f106:平盘家数
-	FieldEPS1           = "f112" // f112:每股收益（一）
+	FieldCode             = "f12"  // f12:股票代码
+	FieldMarket           = "f13"  // f13:市场
+	FieldName             = "f14"  // f14:股票名称
+	FieldPrice            = "f2"   // f2:最新价
+	FieldChangeRate       = "f3"   // f3:涨跌幅
+	FieldChangeAmount     = "f4"   // f4:涨跌额
+	FieldVolume           = "f5"   // f5:总手（VOL）/成交量
+	FieldAmount           = "f6"   // f6:成交额
+	FieldAmplitude        = "f7"   // f7:振幅
+	FieldTurnover         = "f8"   // f8:换手率
+	FieldPE               = "f9"   // f9:市盈率(动态)
+	FieldVolumeRatio      = "f10"  // f10:量比
+	Field5MinChangeRate   = "f11"  // f11:5分钟涨跌幅
+	FieldHigh             = "f15"  // f15:今日最高
+	FieldLow              = "f16"  // f16:今日最低
+	FieldOpen             = "f17"  // f17:今开
+	FieldPreClose         = "f18"  // f18:昨收
+	FieldMarketCap        = "f20"  // f20:总市值
+	FieldCircCap          = "f21"  // f21:流通市值
+	FieldRiseSpeed        = "f22"  // f22:涨速
+	FieldPB               = "f23"  // f23:市净率
+	Field60DayChange      = "f24"  // f24:60日涨跌幅
+	FieldYTDChange        = "f25"  // f25:年初至今涨跌幅
+	FieldListDate         = "f26"  // f26:上市时间
+	FieldPreSettlePrice   = "f28"  // f28:昨日结算价
+	FieldLastVol          = "f30"  // f30:每天最后一笔交易的成交量
+	FieldBuyPrice         = "f31"  // f31:现汇买入价
+	FieldSellPrice        = "f32"  // f32:现汇卖出价
+	FieldWarrantRatio     = "f33"  // f33:委比
+	FieldBuyVol           = "f34"  // f34:外盘
+	FieldSellVol          = "f35"  // f35:内盘
+	FieldAOE              = "f37"  // f37:净资产收益率加权（AOE）最近季度
+	FieldTotalShare       = "f38"  // f38:总股本
+	FieldCircAShare       = "f39"  // f39:流通A股（万股）
+	FieldTotalRevenue     = "f40"  // f40:总营收（最近季度）
+	FieldRevenueYOY       = "f41"  // f41:总营收同比
+	FieldTotalProfit      = "f44"  // f44:总利润（最近季度）
+	FieldNetProfit        = "f45"  // f45:净利润（最近季度）
+	FieldProfitGrowth     = "f46"  // f46:净利润增长率（%）（同比）（最近季度）
+	FieldUndividedProfit  = "f48"  // f48:每股未分配利润
+	FieldGrossMargin      = "f49"  // f49:毛利率（最近季度）
+	FieldTotalAssets      = "f50"  // f50:总资产（最近季度）
+	FieldDebtRatio        = "f57"  // f57:负债率
+	FieldEquity           = "f58"  // f58:股东权益
+	FieldMainNetInflow    = "f62"  // f62:今日主力净流入
+	FieldSuperBuy         = "f64"  // f64:超大单流入
+	FieldSuperSell        = "f65"  // f65:超大单流出
+	FieldSuperNetInflow   = "f66"  // f66:今日超大单净流入
+	FieldSuperNetRatio    = "f69"  // f69:超大单净比
+	FieldBigBuy           = "f70"  // f70:大单流入
+	FieldBigSell          = "f71"  // f71:大单流出
+	FieldBigNetInflow     = "f72"  // f72:今日大单净流入
+	FieldBigNetRatio      = "f75"  // f75:大单净比
+	FieldMidBuy           = "f76"  // f76:中单流入
+	FieldMidSell          = "f77"  // f77:中单流出
+	FieldMidNetInflow     = "f78"  // f78:今日中单净流入
+	FieldMidNetRatio      = "f81"  // f81:中单净比（%）
+	FieldSmallBuy         = "f82"  // f82:小单流入
+	FieldSmallSell        = "f83"  // f83:小单流出
+	FieldSmallNetInflow   = "f84"  // f84:进入小单净流入
+	FieldSmallNetRatio    = "f87"  // f87:小单净比
+	FieldIndustry         = "f100" // f100:行业
+	FieldRegion           = "f102" // f102:地区板块
+	FieldRemark           = "f103" // f103:备注
+	FieldRiseCount        = "f104" // f104:上涨家数
+	FieldFallCount        = "f105" // f105:下跌家数
+	FieldFlatCount        = "f106" // f106:平盘家数
+	FieldEPS1             = "f112" // f112:每股收益（一）
 	FieldNetAssetPerShare = "f113" // f113:每股净资产
-	FieldPEStatic       = "f114" // f114:市盈率（静）
-	FieldPETTM          = "f115" // f115:市盈率（TTM）
-	FieldTradeTime      = "f124" // f124:交易时间
-	FieldLeaderStock    = "f128" // f128:板块领涨股
-	FieldNetProfitTTM   = "f129" // f129:净利润TTM
-	FieldPSTTM          = "f130" // f130:市销率TTM
-	FieldPCTTM          = "f131" // f131:市现率TTM
-	FieldRevenueTTM     = "f132" // f132:总营业收入TTM
-	FieldDividendRate   = "f133" // f133:股息率
-	FieldIndustryCount  = "f134" // f134:行业板块的成分股数
-	FieldNetAssets      = "f135" // f135:净资产
-	FieldNetProfitTTM2  = "f138" // f138:净利润TTM
-	FieldMain5DayNet    = "f164" // f164:5日主力净额
-	FieldSuper5DayNet   = "f166" // f166:5日超大单净额
-	FieldBig5DayNet     = "f168" // f168:5日大单净额
-	FieldMid5DayNet     = "f170" // f170:5日中单净额
-	FieldSmall5DayNet   = "f172" // f172:5日小单净额
-	FieldMain10DayNet   = "f174" // f174:10日主力净额
-	FieldSuper10DayNet  = "f176" // f176:10日超大单净额
-	FieldBig10DayNet    = "f178" // f178:10日大单净额
-	FieldMid10DayNet    = "f180" // f180:10日中单净额
-	FieldSmall10DayNet  = "f182" // f182:10日小单净额
-	FieldBondBuyCode    = "f348" // f348:可转债申购代码
-	FieldBondBuyDate    = "f243" // f243:可转债申购日期
-	FieldLimitUpPrice   = "f350" // f350:涨停价
-	FieldLimitDownPrice = "f351" // f351:跌停价
-	FieldAvgPrice       = "f352" // f352:均价
+	FieldPEStatic         = "f114" // f114:市盈率（静）
+	FieldPETTM            = "f115" // f115:市盈率（TTM）
+	FieldTradeTime        = "f124" // f124:交易时间
+	FieldLeaderStock      = "f128" // f128:板块领涨股
+	FieldNetProfitTTM     = "f129" // f129:净利润TTM
+	FieldPSTTM            = "f130" // f130:市销率TTM
+	FieldPCTTM            = "f131" // f131:市现率TTM
+	FieldRevenueTTM       = "f132" // f132:总营业收入TTM
+	FieldDividendRate     = "f133" // f133:股息率
+	FieldIndustryCount    = "f134" // f134:行业板块的成分股数
+	FieldNetAssets        = "f135" // f135:净资产
+	FieldNetProfitTTM2    = "f138" // f138:净利润TTM
+	FieldMain5DayNet      = "f164" // f164:5日主力净额
+	FieldSuper5DayNet     = "f166" // f166:5日超大单净额
+	FieldBig5DayNet       = "f168" // f168:5日大单净额
+	FieldMid5DayNet       = "f170" // f170:5日中单净额
+	FieldSmall5DayNet     = "f172" // f172:5日小单净额
+	FieldMain10DayNet     = "f174" // f174:10日主力净额
+	FieldSuper10DayNet    = "f176" // f176:10日超大单净额
+	FieldBig10DayNet      = "f178" // f178:10日大单净额
+	FieldMid10DayNet      = "f180" // f180:10日中单净额
+	FieldSmall10DayNet    = "f182" // f182:10日小单净额
+	FieldBondBuyCode      = "f348" // f348:可转债申购代码
+	FieldBondBuyDate      = "f243" // f243:可转债申购日期
+	FieldLimitUpPrice     = "f350" // f350:涨停价
+	FieldLimitDownPrice   = "f351" // f351:跌停价
+	FieldAvgPrice         = "f352" // f352:均价
 )
 
 // StockMarketService 市场股票服务
@@ -128,12 +128,53 @@ func NewStockMarketService(dbService *DBService) *StockMarketService {
 	}
 }
 
-// SyncStocksRequest 同步股票请求
-type SyncStocksRequest struct {
-	PN      int      `json:"pn"`      // 页码
-	PZ      int      `json:"pz"`      // 每页数量
-	FS      string   `json:"fs"`      // 市场范围
-	Fields  []string `json:"fields"`  // 返回字段
+// IndustryInfo 行业信息
+type IndustryInfo struct {
+	Code string `json:"code"`
+	Name string `json:"name"`
+}
+
+// GetIndustries 获取行业列表
+func (s *StockMarketService) GetIndustries() ([]IndustryInfo, error) {
+	url := "https://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=200&po=1&np=1&ut=bd1d9ddb04089700cf9c27f6f7426281&fltt=2&invt=2&fid=f3&fs=m:90+t:2&fields=f12,f14"
+
+	resp, err := s.client.Get(url)
+	if err != nil {
+		logger.Error("请求行业列表失败", zap.Error(err))
+		return nil, fmt.Errorf("请求行业列表失败: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// 定义专用响应结构体
+	type IndustryListResponse struct {
+		RC   int `json:"rc"`
+		Data struct {
+			Diff []struct {
+				F12 string `json:"f12"` // 代码
+				F14 string `json:"f14"` // 名称
+			} `json:"diff"`
+		} `json:"data"`
+	}
+
+	var apiResp IndustryListResponse
+	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+		logger.Error("解析行业列表失败", zap.Error(err))
+		return nil, fmt.Errorf("解析行业列表失败: %w", err)
+	}
+
+	if apiResp.RC != 0 {
+		return nil, fmt.Errorf("API返回错误: rc=%d", apiResp.RC)
+	}
+
+	industries := make([]IndustryInfo, 0)
+	for _, item := range apiResp.Data.Diff {
+		industries = append(industries, IndustryInfo{
+			Code: item.F12,
+			Name: item.F14,
+		})
+	}
+
+	return industries, nil
 }
 
 // StockMarketData 市场股票数据
@@ -145,41 +186,46 @@ type StockMarketData struct {
 	FullCode string `json:"fullCode"` // 市场代码 + 股票代码，如 SH600000
 	Type     string `json:"type"`     // 主板, 创业板, 科创板, 北交所
 	// 实时行情数据
-	Price         float64 `json:"price"`         // 最新价
-	ChangeRate    float64 `json:"changeRate"`    // 涨跌幅(%)
-	ChangeAmount  float64 `json:"changeAmount"`  // 涨跌额
-	Volume        float64 `json:"volume"`        // 成交量(手)
-	Amount        float64 `json:"amount"`        // 成交额
-	Amplitude     float64 `json:"amplitude"`     // 振幅(%)
-	High          float64 `json:"high"`         // 最高价
-	Low           float64 `json:"low"`          // 最低价
-	Open          float64 `json:"open"`         // 开盘价
-	PreClose      float64 `json:"preClose"`      // 昨收
-	Turnover      float64 `json:"turnover"`      // 换手率(%)
-	VolumeRatio   float64 `json:"volumeRatio"`   // 量比
-	PE            float64 `json:"pe"`            // 市盈率
-	WarrantRatio  float64 `json:"warrantRatio"`  // 委比(%)
-	IsActive      int     `json:"isActive"`      // 是否在交易
-	UpdatedAt     string  `json:"updatedAt"`     // 最后更新时间
+	Price        float64 `json:"price"`        // 最新价
+	ChangeRate   float64 `json:"changeRate"`   // 涨跌幅(%)
+	ChangeAmount float64 `json:"changeAmount"` // 涨跌额
+	Volume       float64 `json:"volume"`       // 成交量(手)
+	Amount       float64 `json:"amount"`       // 成交额
+	Amplitude    float64 `json:"amplitude"`    // 振幅(%)
+	High         float64 `json:"high"`         // 最高价
+	Low          float64 `json:"low"`          // 最低价
+	Open         float64 `json:"open"`         // 开盘价
+	PreClose     float64 `json:"preClose"`     // 昨收
+	Turnover     float64 `json:"turnover"`     // 换手率(%)
+	VolumeRatio  float64 `json:"volumeRatio"`  // 量比
+	PE           float64 `json:"pe"`           // 市盈率
+	WarrantRatio float64 `json:"warrantRatio"` // 委比(%)
+	Industry     string  `json:"industry"`     // 所属行业
+	Region       string  `json:"region"`       // 地区
+	Board        string  `json:"board"`        // 板块
+	TotalMV      float64 `json:"totalMV"`      // 总市值
+	CircMV       float64 `json:"circMV"`       // 流通市值
+	IsActive     int     `json:"isActive"`     // 是否在交易
+	UpdatedAt    string  `json:"updatedAt"`    // 最后更新时间
 }
 
 // SyncStocksResult 同步结果
 type SyncStocksResult struct {
-	Total      int     `json:"total"`      // 总记录数
-	Processed  int     `json:"processed"`  // 已处理记录数
-	Inserted   int     `json:"inserted"`   // 新增记录数
-	Updated    int     `json:"updated"`    // 更新记录数
-	Duration   float64 `json:"duration"`   // 耗时（秒）
-	Message    string  `json:"message"`    // 消息
+	Total     int     `json:"total"`     // 总记录数
+	Processed int     `json:"processed"` // 已处理记录数
+	Inserted  int     `json:"inserted"`  // 新增记录数
+	Updated   int     `json:"updated"`   // 更新记录数
+	Duration  float64 `json:"duration"`  // 耗时（秒）
+	Message   string  `json:"message"`   // 消息
 }
 
 // 东方财富API响应结构
 type EastMoneyResponse struct {
-	RC   int    `json:"rc"`
-	RT   int    `json:"rt"`
-	SVR  int    `json:"svr"`
-	LT   int    `json:"lt"`
-	Full int    `json:"full"`
+	RC   int `json:"rc"`
+	RT   int `json:"rt"`
+	SVR  int `json:"svr"`
+	LT   int `json:"lt"`
+	Full int `json:"full"`
 	Data struct {
 		Total int                    `json:"total"`
 		Diff  map[string]interface{} `json:"diff"`
@@ -195,7 +241,7 @@ func (s *StockMarketService) SyncAllStocks() (*SyncStocksResult, error) {
 	pz := 5000 // 每页5000条
 	fs := "m:0+t:6,m:0+t:80,m:1+t:2,m:1+t:23,m:0+t:81+s:2048"
 	// 只请求数据库表需要的字段
-	fields := "f12,f13,f14,f2,f3,f4,f5,f6,f7,f8,f9,f10,f15,f16,f17,f18,f33"
+	fields := "f12,f13,f14,f2,f3,f4,f5,f6,f7,f8,f9,f10,f15,f16,f17,f18,f33,f100,f102,f103,f20,f21"
 
 	// 获取数据库连接
 	db := s.dbService.GetDB()
@@ -216,8 +262,10 @@ func (s *StockMarketService) SyncAllStocks() (*SyncStocksResult, error) {
 			code, name, market, full_code, type, is_active,
 			price, change_rate, change_amount, volume, amount,
 			amplitude, high, low, open, pre_close, turnover,
-			volume_ratio, pe, warrant_ratio, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+			volume_ratio, pe, warrant_ratio, 
+			industry, region, board, total_mv, circ_mv,
+			updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 		ON CONFLICT(code) DO UPDATE SET
 			name = excluded.name,
 			market = excluded.market,
@@ -238,6 +286,11 @@ func (s *StockMarketService) SyncAllStocks() (*SyncStocksResult, error) {
 			volume_ratio = excluded.volume_ratio,
 			pe = excluded.pe,
 			warrant_ratio = excluded.warrant_ratio,
+			industry = excluded.industry,
+			region = excluded.region,
+			board = excluded.board,
+			total_mv = excluded.total_mv,
+			circ_mv = excluded.circ_mv,
 			updated_at = CURRENT_TIMESTAMP
 	`
 
@@ -329,6 +382,11 @@ func (s *StockMarketService) SyncAllStocks() (*SyncStocksResult, error) {
 				stockData.VolumeRatio,
 				stockData.PE,
 				stockData.WarrantRatio,
+				stockData.Industry,
+				stockData.Region,
+				stockData.Board,
+				stockData.TotalMV,
+				stockData.CircMV,
 			)
 
 			if err != nil {
@@ -464,6 +522,16 @@ func (s *StockMarketService) parseStockItem(item interface{}, updatedAt string) 
 		return 0
 	}
 
+	// 解析字符串字段
+	parseString := func(key string) string {
+		if val, ok := data[key]; ok {
+			if s, ok := val.(string); ok {
+				return s
+			}
+		}
+		return "-"
+	}
+
 	stock := &StockMarketData{
 		Code:         code,
 		Name:         name,
@@ -471,20 +539,25 @@ func (s *StockMarketService) parseStockItem(item interface{}, updatedAt string) 
 		FullCode:     market + code,
 		Type:         stockType,
 		IsActive:     1,
-		Price:        parseFloat("f2"),          // f2: 最新价
-		ChangeRate:   parseFloat("f3"),          // f3: 涨跌幅
-		ChangeAmount: parseFloat("f4"),          // f4: 涨跌额
-		Volume:       parseInt("f5"),            // f5: 总手（VOL）/成交量
-		Amount:       parseInt("f6"),            // f6: 成交额
-		Amplitude:    parseFloat("f7"),          // f7: 振幅
-		High:         parseFloat("f15"),         // f15: 今日最高
-		Low:          parseFloat("f16"),         // f16: 今日最低
-		Open:         parseFloat("f17"),         // f17: 今开
-		PreClose:     parseFloat("f18"),         // f18: 昨收
-		Turnover:     parseFloat("f8"),          // f8: 换手率
-		VolumeRatio:  parseFloat("f10"),         // f10: 量比
-		PE:           parseFloat("f9"),          // f9: 市盈率(动态)
-		WarrantRatio: parseFloat("f33"),         // f33: 委比
+		Price:        parseFloat("f2"),    // f2: 最新价
+		ChangeRate:   parseFloat("f3"),    // f3: 涨跌幅
+		ChangeAmount: parseFloat("f4"),    // f4: 涨跌额
+		Volume:       parseInt("f5"),      // f5: 总手（VOL）/成交量
+		Amount:       parseInt("f6"),      // f6: 成交额
+		Amplitude:    parseFloat("f7"),    // f7: 振幅
+		High:         parseFloat("f15"),   // f15: 今日最高
+		Low:          parseFloat("f16"),   // f16: 今日最低
+		Open:         parseFloat("f17"),   // f17: 今开
+		PreClose:     parseFloat("f18"),   // f18: 昨收
+		Turnover:     parseFloat("f8"),    // f8: 换手率
+		VolumeRatio:  parseFloat("f10"),   // f10: 量比
+		PE:           parseFloat("f9"),    // f9: 市盈率(动态)
+		WarrantRatio: parseFloat("f33"),   // f33: 委比
+		Industry:     parseString("f100"), // f100: 行业
+		Region:       parseString("f102"), // f102: 地区
+		Board:        parseString("f103"), // f103: 板块/备注
+		TotalMV:      parseInt("f20"),     // f20: 总市值
+		CircMV:       parseInt("f21"),     // f21: 流通市值
 		UpdatedAt:    updatedAt,
 	}
 
@@ -497,7 +570,7 @@ func (s *StockMarketService) parseStockItem(item interface{}, updatedAt string) 
 }
 
 // GetStocksList 获取股票列表（分页）
-func (s *StockMarketService) GetStocksList(page int, pageSize int, search string) ([]StockMarketData, int, error) {
+func (s *StockMarketService) GetStocksList(page int, pageSize int, search string, industry string) ([]StockMarketData, int, error) {
 	offset := (page - 1) * pageSize
 
 	db := s.dbService.GetDB()
@@ -509,6 +582,11 @@ func (s *StockMarketService) GetStocksList(page int, pageSize int, search string
 	if search != "" {
 		whereClause += " AND (code LIKE ? OR name LIKE ?)"
 		args = append(args, "%"+search+"%", "%"+search+"%")
+	}
+
+	if industry != "" {
+		whereClause += " AND industry = ?"
+		args = append(args, industry)
 	}
 
 	// 查询总数
@@ -524,7 +602,9 @@ func (s *StockMarketService) GetStocksList(page int, pageSize int, search string
 		SELECT id, code, name, market, full_code, type, is_active,
 		       price, change_rate, change_amount, volume, amount,
 		       amplitude, high, low, open, pre_close, turnover,
-		       volume_ratio, pe, warrant_ratio, updated_at
+		       volume_ratio, pe, warrant_ratio, 
+		       COALESCE(industry, ''), COALESCE(region, ''), COALESCE(board, ''), COALESCE(total_mv, 0), COALESCE(circ_mv, 0),
+		       updated_at
 		FROM stocks ` + whereClause + `
 		ORDER BY code ASC
 		LIMIT ? OFFSET ?
@@ -563,6 +643,11 @@ func (s *StockMarketService) GetStocksList(page int, pageSize int, search string
 			&stock.VolumeRatio,
 			&stock.PE,
 			&stock.WarrantRatio,
+			&stock.Industry,
+			&stock.Region,
+			&stock.Board,
+			&stock.TotalMV,
+			&stock.CircMV,
 			&stock.UpdatedAt,
 		)
 		if err != nil {
@@ -573,6 +658,27 @@ func (s *StockMarketService) GetStocksList(page int, pageSize int, search string
 	}
 
 	return stocks, total, nil
+}
+
+// GetAllStockCodes 获取所有活跃股票代码
+func (s *StockMarketService) GetAllStockCodes() ([]string, error) {
+	db := s.dbService.GetDB()
+	// 只查询当前在交易的股票
+	rows, err := db.Query("SELECT code FROM stocks WHERE is_active = 1 ORDER BY code ASC")
+	if err != nil {
+		return nil, fmt.Errorf("查询股票代码失败: %w", err)
+	}
+	defer rows.Close()
+
+	var codes []string
+	for rows.Next() {
+		var code string
+		if err := rows.Scan(&code); err != nil {
+			continue
+		}
+		codes = append(codes, code)
+	}
+	return codes, nil
 }
 
 // GetSyncStats 获取同步统计信息
@@ -608,7 +714,7 @@ func (s *StockMarketService) GetSyncStats() (map[string]interface{}, error) {
 
 	return map[string]interface{}{
 		"totalCount":  totalCount,
-		"lastUpdate":   lastUpdate,
-		"marketStats":  marketStats,
+		"lastUpdate":  lastUpdate,
+		"marketStats": marketStats,
 	}, nil
 }

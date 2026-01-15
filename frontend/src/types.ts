@@ -324,6 +324,11 @@ export interface StockMarketData {
   volumeRatio: number; // 量比
   pe: number; // 市盈率
   warrantRatio: number; // 委比(%)
+  industry: string; // 所属行业
+  region: string; // 地区
+  board: string; // 板块
+  totalMV: number; // 总市值
+  circMV: number; // 流通市值
   updatedAt: string; // 最后更新时间
 }
 
@@ -352,4 +357,33 @@ export interface BacktestResult {
   trades: TradeRecord[];
   equityCurve: number[];
   equityDates: string[];
+}
+
+/**
+ * 策略信号
+ */
+export interface StrategySignal {
+  id: number;
+  code: string;
+  stockName: string; // 股票名称
+  tradeDate: string;
+  signalType: string;
+  strategyName: string;
+  score: number;
+  details: string;
+  aiScore: number;
+  aiReason: string;
+  riskLevel?: string;
+  createdAt: string;
+}
+
+/**
+ * AI 分析详情 (用于 UI 展示)
+ */
+export interface AIAnalysisDetail {
+  score: number;
+  reason: string;
+  keywords: string[];
+  mainConcentration: number; // 主力持仓集中度 (0-100)
+  retailProfit: number;      // 散户获利盘 (0-100)
 }

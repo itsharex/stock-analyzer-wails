@@ -5,7 +5,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"math"
 	"runtime/debug"
 	"stock-analyzer-wails/controllers"
 	"stock-analyzer-wails/models"
@@ -37,6 +36,7 @@ type App struct {
 	alertConfigMutex  sync.RWMutex
 	alertConfig       models.AlertConfig
 	klineSyncService  *services.KLineSyncService // K线同步服务
+	syncService       *services.SyncService      // 全量同步服务
 	priceAlertMonitor *services.AlertMonitor     // 价格预警监控引擎
 
 	// Controllers (Wails Bindings)
@@ -52,6 +52,8 @@ type App struct {
 	// Services (for internal use)
 	watchlistService  *services.WatchlistService  // 保持，用于内部逻辑调用
 	priceAlertService *services.PriceAlertService // 价格预警服务（内部使用）
+	backtestService   *services.BacktestService   // 回测服务
+	strategyService   *services.StrategyService   // 策略服务
 }
 
 // NewApp 创建新的App应用程序
@@ -102,19 +104,22 @@ func NewApp() *App {
 	syncHistoryRepo := repositories.NewSQLiteSyncHistoryRepository(dbSvc.GetDB())
 	strategyRepo := repositories.NewStrategyRepository(dbSvc.GetDB())
 	priceAlertRepo := repositories.NewPriceAlertRepository(dbSvc.GetDB())
+	moneyFlowRepo := repositories.NewMoneyFlowRepository(dbSvc.GetDB()) // 新增 MoneyFlowRepository
 
 	// 2. Service 层
 	watchlistSvc := services.NewWatchlistService(watchlistRepo)
 	alertSvc := services.NewAlertService(alertRepo)
 	positionSvc := services.NewPositionService(positionRepo)
 	configSvc := services.NewConfigService(configRepo)
-	strategySvc := services.NewStrategyService(strategyRepo)
+	strategySvc := services.NewStrategyService(strategyRepo, moneyFlowRepo) // 注入 MoneyFlowRepository
 	stockMarketSvc := services.NewStockMarketService(dbSvc)
 	priceAlertSvc := services.NewPriceAlertService(priceAlertRepo)
 
 	var klineSyncSvc *services.KLineSyncService
+	var syncSvc *services.SyncService
 	if dbSvc != nil {
 		klineSyncSvc = services.NewKLineSyncService(dbSvc)
+		syncSvc = services.NewSyncService(dbSvc, stockMarketSvc, moneyFlowRepo)
 	}
 
 	// 3. Controller 层 (Wails 绑定)
@@ -141,11 +146,16 @@ func NewApp() *App {
 	//var alertMonitor *services.AlertMonitor
 	// 注意：AlertMonitor 需要传入 context，所以在 startup 中创建
 
+	// 4. 回测服务
+	backtestSvc := services.NewBacktestService(stockSvc)
+
 	return &App{
 		stockService:     stockSvc,
 		aiService:        nil,
 		dbService:        dbSvc,        // 存储 DBService
 		klineSyncService: klineSyncSvc, // K线同步服务
+		syncService:      syncSvc,      // 全量同步服务
+		backtestService:  backtestSvc,  // 回测服务
 
 		// Controllers
 		WatchlistController:   watchlistCtrl,
@@ -164,6 +174,7 @@ func NewApp() *App {
 		configService:     configSvc,
 		syncHistoryCtrl:   syncHistoryCtrl, // 内部引用
 		priceAlertService: priceAlertSvc,   // 价格预警服务
+		strategyService:   strategySvc,     // 策略服务
 		alertConfig: models.AlertConfig{
 			Sensitivity: 0.005, // 默认 0.5%
 			Cooldown:    1,     // 默认 1 小时
@@ -180,6 +191,9 @@ func (a *App) startup(ctx context.Context) {
 	a.stockService.Startup(ctx)
 	if a.klineSyncService != nil {
 		a.klineSyncService.SetContext(ctx)
+	}
+	if a.syncService != nil {
+		a.syncService.SetContext(ctx)
 	}
 
 	// 迁移旧的 AI 配置（数据库不可用时 configService 为空，需要安全跳过）
@@ -683,6 +697,14 @@ func (a *App) StreamIntradayData(code string) {
 	a.stockService.StreamIntradayData(code)
 }
 
+// StopIntradayStream 停止分时 SSE 流
+func (a *App) StopIntradayStream(code string) {
+	if code == "" {
+		return
+	}
+	a.stockService.StopIntradayStream(code)
+}
+
 // GetMoneyFlowData 获取资金流向数据
 func (a *App) GetMoneyFlowData(code string) (*models.MoneyFlowResponse, error) {
 	if code == "" {
@@ -971,6 +993,269 @@ func (a *App) UpdateGlobalStrategyConfig(config services.GlobalStrategyConfig) e
 
 // --- Config 转发器 结束 ---
 
+// RunStrategyScan 运行策略扫描
+func (a *App) RunStrategyScan(codes []string) []map[string]interface{} {
+	if a.strategyService == nil {
+		logger.Error("策略服务未初始化")
+		return nil
+	}
+
+	var results []map[string]interface{}
+
+	for _, code := range codes {
+		signal, err := a.strategyService.CalculateBuildSignals(code)
+		if err != nil {
+			logger.Error("策略计算失败", zap.String("code", code), zap.Error(err))
+			continue
+		}
+
+		if signal != nil {
+			// 触发 AI 验证 (异步)
+			if a.aiService != nil {
+				go func(sig *models.StrategySignal) {
+					// 1. 获取最近 7 天资金流向
+					flows, err := a.strategyService.GetRecentMoneyFlows(sig.Code, 7)
+					if err != nil {
+						logger.Error("获取近期资金流向失败", zap.String("code", sig.Code), zap.Error(err))
+						return
+					}
+
+					// 2. 获取股票基本信息
+					stock, err := a.stockService.GetStockByCode(sig.Code)
+					if err != nil {
+						logger.Error("获取股票信息失败", zap.String("code", sig.Code), zap.Error(err))
+						// 构建一个临时的 StockData
+						stock = &models.StockData{Code: sig.Code, Name: sig.Code}
+					}
+
+					// 3. 调用 AI 验证
+					verifyChan := a.aiService.VerifySignalAsync(stock, flows)
+					res := <-verifyChan
+
+					if res != nil {
+						// 4. 更新数据库
+						err := a.strategyService.UpdateSignalAIResult(sig.Code, sig.TradeDate, sig.StrategyName, res.Score, res.Opinion)
+						if err != nil {
+							logger.Error("更新 AI 结果失败", zap.Error(err))
+						}
+
+						// 5. 通知前端
+						signalData := map[string]interface{}{
+							"code":         sig.Code,
+							"tradeDate":    sig.TradeDate,
+							"signalType":   sig.SignalType,
+							"score":        sig.Score,
+							"strategyName": sig.StrategyName,
+							"aiScore":      res.Score,
+							"aiReason":     res.Opinion,
+							"riskLevel":    res.RiskLevel,
+						}
+						runtime.EventsEmit(a.ctx, "signal_verified", signalData)
+						runtime.EventsEmit(a.ctx, "new_signal", signalData)
+					}
+				}(signal)
+			}
+
+			results = append(results, map[string]interface{}{
+				"code":         signal.Code,
+				"tradeDate":    signal.TradeDate,
+				"signalType":   signal.SignalType,
+				"score":        signal.Score,
+				"details":      signal.Details,
+				"strategyName": signal.StrategyName,
+			})
+		}
+	}
+
+	return results
+}
+
+// StartMassScan 启动全市场策略扫描
+// 前端调用此方法后会立即返回，扫描过程在后台进行，通过事件推送进度
+func (a *App) StartMassScan() {
+	go func() {
+		logger.Info("启动全市场扫描任务")
+
+		// 1. 获取所有待扫描股票
+		// 这里我们使用 stockMarketService 获取股票代码，而不是 stockService
+		// 因为 stockMarketService 包含完整的市场股票列表
+		if a.StockMarketController == nil || a.stockService == nil {
+			runtime.EventsEmit(a.ctx, "scan_error", "市场股票服务未初始化")
+			return
+		}
+
+		// 通过 service 直接获取，避免 controller 的封装
+		// 我们需要在 App 结构体中添加 stockMarketService 字段的直接访问，或者通过 Controller 获取
+		// 这里假设 App 结构体中有 stockMarketService 字段，但实际上是通过 NewApp 注入到了 Controller
+		// 我们需要修改 App 结构体或者直接使用 stockMarketCtrl 对应的 service
+		// 查看 App 结构体，发现没有直接保存 stockMarketService 的引用，只在 NewApp 局部变量里
+		// 所以我们需要先解决这个问题，或者暂时通过数据库直接查询
+
+		// 修正：App 结构体实际上没有保存 stockMarketService，只保存了 StockMarketController
+		// 但 NewApp 中确实初始化了 stockMarketSvc 并传给了 StockMarketController
+		// 为了简单起见，我们可以在 App 中增加一个 stockMarketService 字段，
+		// 或者直接在 NewApp 中把 stockMarketSvc 赋值给 App 的新字段。
+		// 不过，既然我们已经在 StockMarketService 中添加了 GetAllStockCodes，
+		// 我们最好是在 App 结构体中添加 stockMarketService 字段。
+		// 考虑到无法修改结构体定义（需要修改文件头部），我们尝试通过 StockMarketController 调用，
+		// 但 StockMarketController 可能没有暴露这个方法。
+
+		// 既然我们已经在前面的步骤中修改了 services/stock_market_service.go，
+		// 我们可以尝试通过 a.dbService 直接查询，但这重复了逻辑。
+		// 最好的办法是修改 App 结构体，添加 stockMarketService *services.StockMarketService 字段。
+		// 但由于我只能通过 SearchReplace 修改文件，添加字段比较麻烦。
+
+		// 替代方案：在 RunStrategyScan 中我们已经有现成的逻辑。
+		// 我们可以通过 dbService 获取所有股票代码。
+
+		// 让我们先尝试使用 dbService 获取所有代码，模拟 stockMarketService.GetAllStockCodes 的逻辑
+		if a.dbService == nil {
+			runtime.EventsEmit(a.ctx, "scan_error", "数据库服务未初始化")
+			return
+		}
+
+		db := a.dbService.GetDB()
+		rows, err := db.Query("SELECT code FROM stocks WHERE is_active = 1 ORDER BY code ASC")
+		if err != nil {
+			logger.Error("获取股票代码失败", zap.Error(err))
+			runtime.EventsEmit(a.ctx, "scan_error", fmt.Sprintf("获取股票列表失败: %v", err))
+			return
+		}
+		defer rows.Close()
+
+		var codes []string
+		for rows.Next() {
+			var code string
+			if err := rows.Scan(&code); err != nil {
+				continue
+			}
+			codes = append(codes, code)
+		}
+
+		total := len(codes)
+		foundCount := 0
+
+		// 发送扫描开始事件
+		runtime.EventsEmit(a.ctx, "scan_start", map[string]interface{}{
+			"total": total,
+		})
+
+		logger.Info("开始扫描股票", zap.Int("total", total))
+
+		// 2. 遍历扫描
+		for i, code := range codes {
+			// 检查上下文是否已取消（程序退出）
+			select {
+			case <-a.ctx.Done():
+				return
+			default:
+			}
+
+			// 计算策略信号
+			signal, err := a.strategyService.CalculateBuildSignals(code)
+			if err != nil {
+				// 单个失败不中断整体扫描，仅记录日志
+				// logger.Debug("策略计算跳过", zap.String("code", code), zap.Error(err))
+			}
+
+			// 3. 发现信号后的处理
+			if signal != nil {
+				foundCount++
+
+				// 立即发送基础信号发现事件
+				runtime.EventsEmit(a.ctx, "scan_signal_found", signal)
+
+				// 触发 AI 深度验证 (异步)
+				if a.aiService != nil {
+					go func(sig *models.StrategySignal) {
+						// 获取辅助数据
+						flows, _ := a.strategyService.GetRecentMoneyFlows(sig.Code, 7)
+						stock, err := a.stockService.GetStockByCode(sig.Code)
+						if err != nil {
+							stock = &models.StockData{Code: sig.Code, Name: sig.Code}
+						}
+
+						// 调用 AI 分析
+						verifyChan := a.aiService.VerifySignalAsync(stock, flows)
+						res := <-verifyChan
+
+						if res != nil {
+							// 更新 AI 评分结果
+							_ = a.strategyService.UpdateSignalAIResult(sig.Code, sig.TradeDate, sig.StrategyName, res.Score, res.Opinion)
+
+							// 组装完整数据推送到前端
+							signalData := map[string]interface{}{
+								"code":         sig.Code,
+								"tradeDate":    sig.TradeDate,
+								"signalType":   sig.SignalType,
+								"score":        sig.Score,
+								"strategyName": sig.StrategyName,
+								"aiScore":      res.Score,
+								"aiReason":     res.Opinion,
+								"riskLevel":    res.RiskLevel,
+								"details":      sig.Details,
+							}
+
+							// 推送 AI 验证完成事件
+							runtime.EventsEmit(a.ctx, "signal_verified", signalData)
+							// 兼容旧的信号事件
+							runtime.EventsEmit(a.ctx, "new_signal", signalData)
+						}
+					}(signal)
+				} else {
+					// 无 AI 服务时，直接推送原始信号
+					runtime.EventsEmit(a.ctx, "new_signal", map[string]interface{}{
+						"code":         signal.Code,
+						"tradeDate":    signal.TradeDate,
+						"signalType":   signal.SignalType,
+						"score":        signal.Score,
+						"strategyName": signal.StrategyName,
+						"details":      signal.Details,
+					})
+				}
+			}
+
+			// 4. 发送进度事件 (每 20 个或最后一个发送一次，减少前端渲染压力)
+			if (i+1)%20 == 0 || i == total-1 {
+				runtime.EventsEmit(a.ctx, "scan_progress", map[string]interface{}{
+					"current":  i + 1,
+					"total":    total,
+					"found":    foundCount,
+					"lastCode": code,
+				})
+			}
+
+			// 简单的限流，防止瞬间 CPU 占用过高
+			if i%100 == 0 {
+				time.Sleep(5 * time.Millisecond)
+			}
+		}
+
+		// 5. 扫描完成
+		logger.Info("全市场扫描完成", zap.Int("total", total), zap.Int("found", foundCount))
+		runtime.EventsEmit(a.ctx, "scan_complete", map[string]interface{}{
+			"total": total,
+			"found": foundCount,
+		})
+	}()
+}
+
+// GetLatestSignals 获取最新的策略信号
+func (a *App) GetLatestSignals(limit int) ([]models.StrategySignal, error) {
+	if a.strategyService == nil {
+		return nil, fmt.Errorf("策略服务未初始化")
+	}
+	return a.strategyService.GetLatestSignals(limit)
+}
+
+// GetSignalsByStockCode 根据股票代码获取历史信号
+func (a *App) GetSignalsByStockCode(code string) ([]models.StrategySignal, error) {
+	if a.strategyService == nil {
+		return nil, fmt.Errorf("策略服务未初始化")
+	}
+	return a.strategyService.GetSignalsByStockCode(code)
+}
+
 // shutdown 在应用程序退出时调用
 func (a *App) shutdown(ctx context.Context) {
 	// 关闭数据库连接
@@ -1048,444 +1333,6 @@ func (a *App) ClearStockCache(code string) error {
 }
 
 // --- 数据同步功能 结束 ---
-
-// --- 回测功能 开始 ---
-// BacktestSimpleMA 使用简单双均线策略（SMA short/long 金叉做多，死叉清仓）进行回测
-// 参数：
-// - code: 股票代码（6位，或 SH/SZ 前缀均可，内部统一处理）
-// - shortPeriod: 短均线窗口，如 5/10
-// - longPeriod: 长均线窗口，如 20/60
-// - initialCapital: 初始资金
-// - startDate/endDate: 回测区间（YYYY-MM-DD），为空则不裁剪
-// 返回：BacktestResult，包含交易记录、净值曲线、收益指标等
-func (a *App) BacktestSimpleMA(code string, shortPeriod int, longPeriod int, initialCapital float64, startDate string, endDate string) (*models.BacktestResult, error) {
-	code = strings.TrimSpace(code)
-	if code == "" {
-		return nil, fmt.Errorf("股票代码不能为空")
-	}
-	if shortPeriod <= 0 || longPeriod <= 0 || shortPeriod >= longPeriod {
-		return nil, fmt.Errorf("参数错误: shortPeriod 必须 > 0 且 < longPeriod")
-	}
-	if initialCapital <= 0 {
-		return nil, fmt.Errorf("初始资金必须大于 0")
-	}
-
-	// 获取尽量多的历史数据，后续按区间过滤
-	klines, err := a.stockService.GetKLineData(code, 5000, "daily")
-	if err != nil {
-		return nil, fmt.Errorf("获取K线失败: %w", err)
-	}
-	if len(klines) == 0 {
-		return nil, fmt.Errorf("无K线数据")
-	}
-
-	// 过滤区间
-	var dates []string
-	var closes []float64
-	for _, k := range klines {
-		if (startDate == "" || k.Time >= startDate) && (endDate == "" || k.Time <= endDate) {
-			dates = append(dates, k.Time)
-			closes = append(closes, k.Close)
-		}
-	}
-	if len(closes) == 0 {
-		return nil, fmt.Errorf("指定日期范围内没有数据")
-	}
-
-	// 计算 SMA
-	sma := func(src []float64, win int) []float64 {
-		res := make([]float64, len(src))
-		if win <= 0 {
-			return res
-		}
-		var sum float64
-		for i := 0; i < len(src); i++ {
-			sum += src[i]
-			if i >= win {
-				sum -= src[i-win]
-			}
-			if i >= win-1 {
-				res[i] = sum / float64(win)
-			} else {
-				res[i] = 0 // 还未形成
-			}
-		}
-		return res
-	}
-	shortMA := sma(closes, shortPeriod)
-	longMA := sma(closes, longPeriod)
-
-	// 回测循环
-	cash := initialCapital
-	units := 0.0
-	inPosition := false
-	entryPrice := 0.0
-	trades := make([]models.TradeRecord, 0)
-	equityCurve := make([]float64, 0, len(closes))
-
-	for i := 0; i < len(closes); i++ {
-		price := closes[i]
-		// 只有当两条均线都已形成后才能产生信号
-		if i > 0 && shortMA[i-1] > 0 && longMA[i-1] > 0 && shortMA[i] > 0 && longMA[i] > 0 {
-			prevCrossUp := shortMA[i-1] <= longMA[i-1] && shortMA[i] > longMA[i]
-			prevCrossDown := shortMA[i-1] >= longMA[i-1] && shortMA[i] < longMA[i]
-
-			if prevCrossUp && !inPosition {
-				// 全仓买入
-				if price > 0 {
-					units = cash / price
-					cash = 0
-					inPosition = true
-					entryPrice = price
-					trades = append(trades, models.TradeRecord{
-						Time: dates[i], Type: "BUY", Price: price, Volume: 0, Amount: units * price,
-					})
-				}
-			} else if prevCrossDown && inPosition {
-				// 全部卖出
-				cash = cash + units*price
-				profit := (price - entryPrice) * units
-				trades = append(trades, models.TradeRecord{
-					Time: dates[i], Type: "SELL", Price: price, Volume: 0, Amount: units * price, Profit: profit,
-				})
-				units = 0
-				inPosition = false
-			}
-		}
-
-		// 记录每日净值
-		equity := cash + units*price
-		equityCurve = append(equityCurve, equity)
-	}
-
-	// 如果最后仍持仓，按最后一天价格平仓
-	if inPosition {
-		lastPrice := closes[len(closes)-1]
-		cash = cash + units*lastPrice
-		profit := (lastPrice - entryPrice) * units
-		trades = append(trades, models.TradeRecord{
-			Time: dates[len(dates)-1], Type: "SELL", Price: lastPrice, Volume: 0, Amount: units * lastPrice, Profit: profit,
-		})
-		units = 0
-		inPosition = false
-	}
-
-	final := cash
-	ret := final/initialCapital - 1
-
-	// 年化收益（按交易日 252 估算）
-	annualized := 0.0
-	if len(equityCurve) > 0 {
-		days := len(equityCurve)
-		if days > 0 {
-			annualized = math.Pow(final/initialCapital, 252.0/float64(days)) - 1
-		}
-	}
-
-	// 最大回撤
-	peak := equityCurve[0]
-	maxDD := 0.0
-	for _, v := range equityCurve {
-		if v > peak {
-			peak = v
-		}
-		dd := 0.0
-		if peak > 0 {
-			dd = (peak - v) / peak
-		}
-		if dd > maxDD {
-			maxDD = dd
-		}
-	}
-
-	// 胜率
-	wins := 0
-	finishedTrades := 0
-	for _, t := range trades {
-		if t.Type == "SELL" {
-			finishedTrades++
-			if t.Profit > 0 {
-				wins++
-			}
-		}
-	}
-	winRate := 0.0
-	if finishedTrades > 0 {
-		winRate = float64(wins) / float64(finishedTrades)
-	}
-
-	res := &models.BacktestResult{
-		StrategyName: fmt.Sprintf("SMA(%d,%d)", shortPeriod, longPeriod),
-		StockCode:    code,
-		StartDate: func() string {
-			if len(dates) > 0 {
-				return dates[0]
-			}
-			return startDate
-		}(),
-		EndDate: func() string {
-			if len(dates) > 0 {
-				return dates[len(dates)-1]
-			}
-			return endDate
-		}(),
-		InitialCapital:   initialCapital,
-		FinalCapital:     final,
-		TotalReturn:      ret,
-		AnnualizedReturn: annualized,
-		MaxDrawdown:      maxDD,
-		WinRate:          winRate,
-		TradeCount:       finishedTrades,
-		Trades:           trades,
-		EquityCurve:      equityCurve,
-		EquityDates:      dates,
-	}
-
-	logger.Info("回测完成",
-		zap.String("module", "app.backtest"),
-		zap.String("code", code),
-		zap.Int("short", shortPeriod),
-		zap.Int("long", longPeriod),
-		zap.Float64("init", initialCapital),
-		zap.Float64("final", final),
-		zap.Float64("ret", ret),
-		zap.Float64("maxDD", maxDD),
-		zap.Float64("winRate", winRate),
-	)
-
-	return res, nil
-}
-
-// BacktestMACD 使用MACD策略（DIF上穿DEA做多，DIF下穿DEA清仓）进行回测
-// 参数：
-// - code: 股票代码（6位，或 SH/SZ 前缀均可，内部统一处理）
-// - fastPeriod: 快线周期，通常为12
-// - slowPeriod: 慢线周期，通常为26
-// - signalPeriod: 信号线周期，通常为9
-// - initialCapital: 初始资金
-// - startDate/endDate: 回测区间（YYYY-MM-DD），为空则不裁剪
-// 返回：BacktestResult，包含交易记录、净值曲线、收益指标等
-func (a *App) BacktestMACD(code string, fastPeriod int, slowPeriod int, signalPeriod int, initialCapital float64, startDate string, endDate string) (*models.BacktestResult, error) {
-	code = strings.TrimSpace(code)
-	if code == "" {
-		return nil, fmt.Errorf("股票代码不能为空")
-	}
-	if fastPeriod <= 0 || slowPeriod <= 0 || fastPeriod >= slowPeriod {
-		return nil, fmt.Errorf("参数错误: fastPeriod 必须 > 0 且 < slowPeriod")
-	}
-	if signalPeriod <= 0 {
-		return nil, fmt.Errorf("参数错误: signalPeriod 必须 > 0")
-	}
-	if initialCapital <= 0 {
-		return nil, fmt.Errorf("初始资金必须大于 0")
-	}
-
-	// 获取尽量多的历史数据，后续按区间过滤
-	klines, err := a.stockService.GetKLineData(code, 5000, "daily")
-	if err != nil {
-		return nil, fmt.Errorf("获取K线失败: %w", err)
-	}
-	if len(klines) == 0 {
-		return nil, fmt.Errorf("无K线数据")
-	}
-
-	// 过滤区间
-	var dates []string
-	var closes []float64
-	for _, k := range klines {
-		if (startDate == "" || k.Time >= startDate) && (endDate == "" || k.Time <= endDate) {
-			dates = append(dates, k.Time)
-			closes = append(closes, k.Close)
-		}
-	}
-	if len(closes) == 0 {
-		return nil, fmt.Errorf("指定日期范围内没有数据")
-	}
-
-	// 计算EMA（指数移动平均）
-	ema := func(src []float64, period int) []float64 {
-		res := make([]float64, len(src))
-		if period <= 0 || len(src) == 0 {
-			return res
-		}
-
-		// 第一个EMA值等于第一个收盘价
-		res[0] = src[0]
-
-		// 计算平滑系数
-		multiplier := 2.0 / (float64(period) + 1.0)
-
-		// 后续的EMA值
-		for i := 1; i < len(src); i++ {
-			res[i] = (src[i]-res[i-1])*multiplier + res[i-1]
-		}
-
-		return res
-	}
-
-	// 计算MACD
-	// DIF = EMA(快线周期) - EMA(慢线周期)
-	// DEA = EMA(DIF, 信号线周期)
-	// BAR = (DIF - DEA) * 2
-	fastEMA := ema(closes, fastPeriod)
-	slowEMA := ema(closes, slowPeriod)
-
-	dif := make([]float64, len(closes))
-	for i := 0; i < len(closes); i++ {
-		dif[i] = fastEMA[i] - slowEMA[i]
-	}
-
-	dea := ema(dif, signalPeriod)
-
-	bar := make([]float64, len(closes))
-	for i := 0; i < len(closes); i++ {
-		bar[i] = (dif[i] - dea[i]) * 2
-	}
-
-	// 回测循环
-	cash := initialCapital
-	units := 0.0
-	inPosition := false
-	entryPrice := 0.0
-	trades := make([]models.TradeRecord, 0)
-	equityCurve := make([]float64, 0, len(closes))
-
-	for i := 1; i < len(closes); i++ {
-		price := closes[i]
-
-		// 只有当DIF和DEA都已形成后才能产生信号
-		if dif[i-1] != 0 && dea[i-1] != 0 && dif[i] != 0 && dea[i] != 0 {
-			// 金叉：DIF上穿DEA（DIF从低于DEA变为高于DEA）
-			crossUp := dif[i-1] <= dea[i-1] && dif[i] > dea[i]
-			// 死叉：DIF下穿DEA（DIF从高于DEA变为低于DEA）
-			crossDown := dif[i-1] >= dea[i-1] && dif[i] < dea[i]
-
-			if crossUp && !inPosition {
-				// 全仓买入
-				if price > 0 {
-					units = cash / price
-					cash = 0
-					inPosition = true
-					entryPrice = price
-					trades = append(trades, models.TradeRecord{
-						Time: dates[i], Type: "BUY", Price: price, Volume: 0, Amount: units * price,
-					})
-				}
-			} else if crossDown && inPosition {
-				// 全部卖出
-				cash = cash + units*price
-				profit := (price - entryPrice) * units
-				trades = append(trades, models.TradeRecord{
-					Time: dates[i], Type: "SELL", Price: price, Volume: 0, Amount: units * price, Profit: profit,
-				})
-				units = 0
-				inPosition = false
-			}
-		}
-
-		// 记录每日净值
-		equity := cash + units*price
-		equityCurve = append(equityCurve, equity)
-	}
-
-	// 如果最后仍持仓，按最后一天价格平仓
-	if inPosition {
-		lastPrice := closes[len(closes)-1]
-		cash = cash + units*lastPrice
-		profit := (lastPrice - entryPrice) * units
-		trades = append(trades, models.TradeRecord{
-			Time: dates[len(dates)-1], Type: "SELL", Price: lastPrice, Volume: 0, Amount: units * lastPrice, Profit: profit,
-		})
-		units = 0
-		inPosition = false
-	}
-
-	final := cash
-	ret := final/initialCapital - 1
-
-	// 年化收益（按交易日 252 估算）
-	annualized := 0.0
-	if len(equityCurve) > 0 {
-		days := len(equityCurve)
-		if days > 0 {
-			annualized = math.Pow(final/initialCapital, 252.0/float64(days)) - 1
-		}
-	}
-
-	// 最大回撤
-	peak := equityCurve[0]
-	maxDD := 0.0
-	for _, v := range equityCurve {
-		if v > peak {
-			peak = v
-		}
-		dd := 0.0
-		if peak > 0 {
-			dd = (peak - v) / peak
-		}
-		if dd > maxDD {
-			maxDD = dd
-		}
-	}
-
-	// 胜率
-	wins := 0
-	finishedTrades := 0
-	for _, t := range trades {
-		if t.Type == "SELL" {
-			finishedTrades++
-			if t.Profit > 0 {
-				wins++
-			}
-		}
-	}
-	winRate := 0.0
-	if finishedTrades > 0 {
-		winRate = float64(wins) / float64(finishedTrades)
-	}
-
-	res := &models.BacktestResult{
-		StrategyName: fmt.Sprintf("MACD(%d,%d,%d)", fastPeriod, slowPeriod, signalPeriod),
-		StockCode:    code,
-		StartDate: func() string {
-			if len(dates) > 0 {
-				return dates[0]
-			}
-			return startDate
-		}(),
-		EndDate: func() string {
-			if len(dates) > 0 {
-				return dates[len(dates)-1]
-			}
-			return endDate
-		}(),
-		InitialCapital:   initialCapital,
-		FinalCapital:     final,
-		TotalReturn:      ret,
-		AnnualizedReturn: annualized,
-		MaxDrawdown:      maxDD,
-		WinRate:          winRate,
-		TradeCount:       finishedTrades,
-		Trades:           trades,
-		EquityCurve:      equityCurve,
-		EquityDates:      dates,
-	}
-
-	logger.Info("MACD回测完成",
-		zap.String("module", "app.backtest"),
-		zap.String("code", code),
-		zap.Int("fastPeriod", fastPeriod),
-		zap.Int("slowPeriod", slowPeriod),
-		zap.Int("signalPeriod", signalPeriod),
-		zap.Float64("init", initialCapital),
-		zap.Float64("final", final),
-		zap.Float64("ret", ret),
-		zap.Float64("maxDD", maxDD),
-		zap.Float64("winRate", winRate),
-	)
-
-	return res, nil
-}
 
 // --- 回测功能 结束 ---
 
@@ -1640,11 +1487,19 @@ func (a *App) SyncAllStocks() (interface{}, error) {
 }
 
 // GetStocksList 获取股票列表
-func (a *App) GetStocksList(page int, pageSize int, search string) (interface{}, error) {
+func (a *App) GetStocksList(page int, pageSize int, search string, industry string) (interface{}, error) {
 	if a.StockMarketController == nil {
 		return nil, fmt.Errorf("市场股票控制器未初始化")
 	}
-	return a.StockMarketController.GetStocksList(page, pageSize, search)
+	return a.StockMarketController.GetStocksList(page, pageSize, search, industry)
+}
+
+// GetIndustries 获取行业列表
+func (a *App) GetIndustries() (interface{}, error) {
+	if a.StockMarketController == nil {
+		return nil, fmt.Errorf("市场股票控制器未初始化")
+	}
+	return a.StockMarketController.GetIndustries()
 }
 
 // GetSyncStats 获取同步统计信息
@@ -1679,4 +1534,12 @@ func (a *App) GetKLineSyncHistory(limit int) (interface{}, error) {
 		return nil, fmt.Errorf("K线同步服务未初始化")
 	}
 	return a.klineSyncService.GetKLineSyncHistory(limit)
+}
+
+// StartFullMarketSync 启动全市场资金流同步
+func (a *App) StartFullMarketSync() error {
+	if a.syncService == nil {
+		return fmt.Errorf("全量同步服务未初始化")
+	}
+	return a.syncService.StartFullMarketSync()
 }

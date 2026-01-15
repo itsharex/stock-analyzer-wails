@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useWailsAPI } from '../hooks/useWailsAPI'
 import type { StockData } from '../types'
 import BatchAnalyzeModal from './BatchAnalyzeModal'
 import { Brain } from 'lucide-react'
 import PositionMonitor from './PositionMonitor'
+import { EventsOn, EventsOff } from '../../wailsjs/runtime/runtime'
 
 interface WatchlistProps {
   onSelectStock: (code: string) => void
@@ -15,7 +16,8 @@ function Watchlist({ onSelectStock, refreshTrigger }: WatchlistProps) {
   const [loading, setLoading] = useState(true)
   const [isBatchModalOpen, setIsBatchModalOpen] = useState(false)
   const [positions, setPositions] = useState<Record<string, any>>({})
-  const { getWatchlist, removeFromWatchlist, batchAnalyzeStocks, getPositions } = useWailsAPI()
+  const { getWatchlist, removeFromWatchlist, batchAnalyzeStocks, getPositions, streamIntradayData, stopIntradayStream } = useWailsAPI()
+  const handlersRef = useRef<Record<string, (payload: string[]) => void>>({})
 
   useEffect(() => {
     loadWatchlist()
@@ -25,16 +27,59 @@ function Watchlist({ onSelectStock, refreshTrigger }: WatchlistProps) {
     try {
       const data = await getWatchlist()
       setStocks(data)
-      
-      // 加载持仓数据
       const posMap = await getPositions()
       setPositions(posMap || {})
+      setupSSE(data)
     } catch (err) {
       console.error('Failed to load watchlist:', err)
     } finally {
       setLoading(false)
     }
   }
+
+  const setupSSE = (list: StockData[]) => {
+    cleanupSSE()
+    list.forEach((stock) => {
+      const eventName = `intradayDataUpdate:${stock.code}`
+      const handler = (newTrends: string[]) => {
+        if (!newTrends || newTrends.length === 0) return
+        const latest = newTrends[newTrends.length - 1]
+        const parts = latest.split(',')
+        if (parts.length < 8) return
+        const price = parseFloat(parts[2])
+        const preClose = stock.preClose
+        const change = price - preClose
+        const changeRate = preClose ? (change / preClose) * 100 : 0
+        setStocks((prev) =>
+          prev.map((s) =>
+            s.code === stock.code
+              ? { ...s, price, change, changeRate }
+              : s
+          )
+        )
+      }
+      handlersRef.current[eventName] = handler
+      streamIntradayData(stock.code)
+      EventsOn(eventName, handler)
+    })
+  }
+
+  const cleanupSSE = () => {
+    const codes = Object.keys(handlersRef.current)
+    codes.forEach((eventName) => {
+      EventsOff(eventName)
+    })
+    handlersRef.current = {}
+    stocks.forEach((s) => {
+      stopIntradayStream(s.code)
+    })
+  }
+
+  useEffect(() => {
+    return () => {
+      cleanupSSE()
+    }
+  }, [])
 
   const handleRemove = async (e: React.MouseEvent, code: string) => {
     e.stopPropagation()

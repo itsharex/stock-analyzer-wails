@@ -1,7 +1,7 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { StockData, KLineData, TechnicalAnalysisResult, IntradayData, MoneyFlowResponse, HealthCheckResult, EntryStrategyResult, TrailingStopConfig, StockDetail } from '../types'
+import { StockData, KLineData, TechnicalAnalysisResult, IntradayData, MoneyFlowResponse, HealthCheckResult, EntryStrategyResult, StockDetail } from '../types'
 import { EventsOn, EventsOff } from '../../wailsjs/runtime/runtime'
 import { parseError } from '../utils/errorHandler'
 import { useWailsAPI } from '../hooks/useWailsAPI'
@@ -16,641 +16,336 @@ import EntryStrategyPanel from './EntryStrategyPanel'
 import OrderBookPanel from './OrderBookPanel'
 import FinancialPanel from './FinancialPanel'
 import IndustryPanel from './IndustryPanel'
+import VolumePriceAnalysis from './VolumePriceAnalysis'
+import { useSmartSignalsModal } from '../hooks/useSmartSignalsModal'
 import { 
   Activity, 
-  Clock, 
-  ChevronDown,
   BrainCircuit,
   Loader2,
-  PencilRuler,
   ShieldCheck,
-  Zap,
   BarChart3,
-  Anchor,
-  Sword,
   Cpu,
-  TrendingUp,
-  AlertTriangle,
-  Info,
-  Wallet,
-  Target
+  Target,
+  Wallet
 } from 'lucide-react'
-import { GlossaryPanel, GlossaryTooltip } from './GlossaryTooltip'
-import { STOCK_GLOSSARY } from '../utils/glossary'
+import { GlossaryTooltip } from './GlossaryTooltip'
 
 interface WatchlistDetailProps {
   stock: StockData
 }
 
-function WatchlistDetail({ stock }: WatchlistDetailProps) {
-  const { getKLineData, analyzeTechnical, getStockDetail, getIntradayData, getMoneyFlowData, getStockHealthCheck, analyzeEntryStrategy, addPosition, streamIntradayData } = useWailsAPI()
-  const [klineData, setKlineData] = useState<KLineData[]>([])
+export default function WatchlistDetail({ stock }: WatchlistDetailProps) {
+  const { 
+    getStockDetail, 
+    getKLineData, 
+    getIntradayData, 
+    getMoneyFlowData, 
+    analyzeTechnical, 
+    getStockHealthCheck,
+    analyzeEntryStrategy,
+    streamIntradayData,
+    stopIntradayStream
+  } = useWailsAPI()
+
   const [stockDetail, setStockDetail] = useState<StockDetail | null>(null)
-  const [intradayData, setIntradayData] = useState<IntradayData[]>([])
-  const intradayDataRef = useRef<IntradayData[]>([])
-  const [moneyFlowResponse, setMoneyFlowResponse] = useState<MoneyFlowResponse | null>(null)
+  const [klines, setKlines] = useState<KLineData[]>([])
+  const [intraday, setIntraday] = useState<IntradayData[]>([])
+  const [moneyFlow, setMoneyFlow] = useState<MoneyFlowResponse | null>(null)
+  const [analysis, setAnalysis] = useState<TechnicalAnalysisResult | null>(null)
   const [healthCheck, setHealthCheck] = useState<HealthCheckResult | null>(null)
-  const [preClose, setPreClose] = useState<number>(0)
-  const [chartType, setChartType] = useState<'intraday' | 'kline'>('intraday')
-  const [period, setPeriod] = useState<string>('daily')
-  const [loading, setLoading] = useState(false)
-  const [analysisLoading, setAnalysisLoading] = useState(false)
-  const [analysisResult, setAnalysisResult] = useState<TechnicalAnalysisResult | null>(null)
   const [entryStrategy, setEntryStrategy] = useState<EntryStrategyResult | null>(null)
-  const [entryLoading, setEntryLoading] = useState(false)
-  const [role, setRole] = useState('technical')
-
-  const roles = [
-    { id: 'technical', name: '技术派大师', icon: Cpu, color: 'text-blue-500', bg: 'bg-blue-50' },
-    { id: 'conservative', name: '稳健老船长', icon: Anchor, color: 'text-emerald-600', bg: 'bg-emerald-50' },
-    { id: 'aggressive', name: '激进先锋官', icon: Sword, color: 'text-rose-600', bg: 'bg-rose-50' },
-  ]
+  const [loading, setLoading] = useState(false)
+  const [analyzing, setAnalyzing] = useState(false)
+  const [generatingStrategy, setGeneratingStrategy] = useState(false)
   
-  const [showMACD, setShowMACD] = useState(false)
-  const [showKDJ, setShowKDJ] = useState(false)
-  const [showRSI, setShowRSI] = useState(false)
-  const [showAIDrawings, setShowAIDrawings] = useState(true)
-  const [showMoneyFlow, setShowMoneyFlow] = useState(true)
-  const [entryAnalysisStatus, setEntryAnalysisStatus] = useState<'idle' | 'checking' | 'analyzing' | 'error'>('idle')
-  const [entryAnalysisError, setEntryAnalysisError] = useState<string>('')
+  const { 
+    SmartSignalsModal: ModalComponent, 
+    show: showSmartSignals, 
+    klines: sKlines, 
+    drawings: sDrawings, 
+    moneyFlow: sMoneyFlow, 
+    hide: sHide, 
+    onAddAlert, 
+    onCreatePosition 
+  } = useSmartSignalsModal({
+    code: stock.code,
+    name: stock.name,
+    price: stock.price
+  })
 
-  const loadKLineData = useCallback(async () => {
-    if (chartType !== 'kline') return
-    setLoading(true)
+  const handleAnalyze = async () => {
+    if (analyzing) return
+    setAnalyzing(true)
     try {
-      const data = await getKLineData(stock.code, 100, period)
-      setKlineData(data)
-    } catch (error) {
-      console.error('加载K线数据失败:', error)
+      // Use :force suffix to bypass cache and force re-analysis
+      const res = await analyzeTechnical(stock.code, 'daily', 'technical:force')
+      setAnalysis(res)
+    } catch (e) {
+      console.error(parseError(e))
     } finally {
-      setLoading(false)
+      setAnalyzing(false)
     }
-  }, [stock.code, period, chartType, getKLineData])
+  }
 
-  const loadIntradayData = useCallback(async () => {
-    setLoading(true)
+  const handleEntryStrategy = async () => {
+    if (generatingStrategy) return
+    setGeneratingStrategy(true)
     try {
-      // 1. 获取初始数据 (非实时部分)
-      const [detailResp, intraResp, flowResp, healthResp] = await Promise.all([
-        getStockDetail(stock.code),
-        getIntradayData(stock.code),
-        getMoneyFlowData(stock.code),
-        getStockHealthCheck(stock.code)
-      ])
-      setStockDetail(detailResp)
-      setIntradayData(intraResp.data)
-      intradayDataRef.current = intraResp.data // 更新 ref
-      setPreClose(intraResp.preClose)
-      setMoneyFlowResponse(flowResp)
-      setHealthCheck(healthResp)
-    } catch (error) {
-      console.error('加载详情数据失败:', error)
+      const res = await analyzeEntryStrategy(stock.code)
+      setEntryStrategy(res)
+    } catch (e) {
+      console.error(parseError(e))
     } finally {
-      setLoading(false)
+      setGeneratingStrategy(false)
     }
-  }, [stock.code, getStockDetail, getIntradayData, getMoneyFlowData, getStockHealthCheck])
+  }
 
   useEffect(() => {
-    setAnalysisResult(null)
-    setHealthCheck(null)
-    setEntryStrategy(null)
-    setEntryAnalysisStatus('idle')
-    setEntryAnalysisError('')
-  }, [stock.code])
+    let mounted = true
+    const fetchData = async () => {
+      setLoading(true)
+      try {
+        streamIntradayData(stock.code)
 
-  useEffect(() => {
-    if (chartType === 'kline') {
-      loadKLineData()
-    } else {
-      loadIntradayData()
+        const [detail, k, intra, mf, health] = await Promise.all([
+          getStockDetail(stock.code),
+          getKLineData(stock.code, 200, 'daily'),
+          getIntradayData(stock.code),
+          getMoneyFlowData(stock.code),
+          getStockHealthCheck(stock.code)
+        ])
+        
+        if (mounted) {
+          setStockDetail(detail)
+          // Sort klines ascending
+          const sortedKlines = (k || []).sort((a, b) => a.time.localeCompare(b.time))
+          setKlines(sortedKlines)
+          setIntraday(intra?.data || [])
+          setMoneyFlow(mf)
+          setHealthCheck(health)
+          
+          // Try to fetch cached technical analysis
+          analyzeTechnical(stock.code, 'daily').then(res => {
+             if (mounted) setAnalysis(res)
+          }).catch(console.error)
+        }
+      } catch (e) {
+        console.error(parseError(e))
+      } finally {
+        if (mounted) setLoading(false)
+      }
     }
-  }, [chartType, loadKLineData, loadIntradayData])
 
-  // SSE 实时数据监听
-  useEffect(() => {
-    if (chartType !== 'intraday') return
+    fetchData()
 
-    const eventName = `intradayDataUpdate:${stock.code}`
+    const handleIntradayUpdate = (data: any) => {
+       if (mounted && data && Array.isArray(data)) {
+          // Parse and update logic would go here
+       }
+    }
     
-    // 1. 启动 SSE 代理
-    streamIntradayData(stock.code)
-
-    // 2. 监听 Wails 事件
-    const handler = (newTrends: string[]) => {
-      // newTrends 是一个包含最新分时数据的字符串数组，例如 ["14:59,10.00,10.01,1000,1000000,100,10.00,10.00"]
-      if (newTrends.length === 0) return
-
-      // 简化处理：只取最新的一个点
-      const latestTrend = newTrends[newTrends.length - 1]
-      const parts = latestTrend.split(',')
-      if (parts.length < 8) return
-
-      const newPoint: IntradayData = {
-        time: parts[0],
-        price: parseFloat(parts[2]),
-        avgPrice: parseFloat(parts[7]),
-        volume: parseInt(parts[5]),
-        preClose: preClose, // 沿用初始的 preClose
-      }
-
-      // 检查最新点是否已存在 (以时间为准)
-      const currentData = intradayDataRef.current
-      const lastPoint = currentData[currentData.length - 1]
-
-      if (lastPoint && lastPoint.time === newPoint.time) {
-        // 时间相同，更新最后一个点
-        const updatedData = [...currentData.slice(0, -1), newPoint]
-        intradayDataRef.current = updatedData
-        setIntradayData(updatedData)
-      } else if (lastPoint && newPoint.time > lastPoint.time) {
-        // 时间更新，添加新点
-        const updatedData = [...currentData, newPoint]
-        intradayDataRef.current = updatedData
-        setIntradayData(updatedData)
-      } else if (!lastPoint) {
-        // 初始数据为空，直接设置
-        intradayDataRef.current = [newPoint]
-        setIntradayData([newPoint])
-      }
-    }
-
-    EventsOn(eventName, handler)
-
+    EventsOn("intradayDataUpdate:" + stock.code, handleIntradayUpdate)
+    
     return () => {
-      // 3. 清理监听器
-      EventsOff(eventName)
-      // 4. 停止 SSE 流 (通过 Wails Context 取消 Go 协程)
-      // Wails 会在组件卸载时自动取消 Go 协程的 Context，无需显式调用停止函数
+      mounted = false
+      EventsOff("intradayDataUpdate:" + stock.code)
+      stopIntradayStream(stock.code)
     }
-  }, [chartType, stock.code, preClose, streamIntradayData])
+  }, [stock.code, analyzeEntryStrategy, analyzeTechnical, getIntradayData, getKLineData, getMoneyFlowData, getStockDetail, getStockHealthCheck, stopIntradayStream, streamIntradayData])
 
-  const handleAnalyze = async (selectedRole = role) => {
-    setAnalysisLoading(true)
-    try {
-      const result = await analyzeTechnical(stock.code, period, selectedRole)
-      setAnalysisResult(result)
-      setShowAIDrawings(true)
-    } catch (error) {
-      console.error('技术分析失败:', error)
-    } finally {
-      setAnalysisLoading(false)
-    }
-  }
-
-  const handleDeepAnalyzeClick = async () => {
-    // 深度分析更适合在 K 线视图下展示（可看到 AI 绘图）
-    if (chartType !== 'kline') {
-      setChartType('kline')
-    }
-    return handleAnalyze(role)
-  }
-
-  const handleEntryAnalyze = async () => {
-    // 数据完整性检查
-    if (!stockDetail || !intradayData || intradayData.length === 0 || !moneyFlowResponse) {
-      setEntryAnalysisStatus('checking')
-      setEntryAnalysisError('正在同步深度数据...')
-      await loadIntradayData()
-      setTimeout(() => {
-        setEntryAnalysisStatus('idle')
-        setEntryAnalysisError('')
-      }, 1500)
-      return
-    }
-
-    setEntryLoading(true)
-    setEntryAnalysisStatus('analyzing')
-    setEntryAnalysisError('')
-    
-    try {
-      const result = await analyzeEntryStrategy(stock.code)
-      if (!result) {
-        throw new Error('不幸的是，AI 引擎暂时无法给出建议，请稍后再试')
-      }
-      setEntryStrategy(result)
-      setEntryAnalysisStatus('idle')
-    } catch (error) {
-      const parsed = parseError(error)
-      const errorMsg = parsed.suggestion ? `${parsed.message}，建议：${parsed.suggestion}` : parsed.message
-      console.error('建仓分析失败:', error)
-      setEntryAnalysisStatus('error')
-      setEntryAnalysisError(`分析失败：${errorMsg}`)
-      setTimeout(() => {
-        setEntryAnalysisStatus('idle')
-        setEntryAnalysisError('')
-      }, 3000)
-    } finally {
-      setEntryLoading(false)
-    }
-  }
-
-  const handleConfirmEntry = async (config: TrailingStopConfig) => {
-    if (!entryStrategy || !stock) return
-    try {
-      await addPosition({
-        stockCode: stock.code,
-        stockName: stock.name,
-        entryPrice: stock.price,
-        entryTime: new Date().toISOString(),
-        strategy: entryStrategy,
-        trailingConfig: config,
-        currentStatus: 'holding',
-        logicStatus: 'valid'
-      })
-      setEntryStrategy(null)
-      alert('建仓成功，系统已开始实时监控逻辑！')
-    } catch (error) {
-      console.error('确认建仓失败:', error)
-      alert('建仓失败，请重试')
-    }
-  }
-
-  const getActionColor = (advice: string) => {
-    switch (advice) {
-      case '买入': case '增持': return 'bg-red-500 text-white'
-      case '卖出': case '减持': return 'bg-green-500 text-white'
-      default: return 'bg-slate-500 text-white'
-    }
-  }
-
-  const getStatusIcon = (status: string) => {
-    switch (status) {
-      case '主力建仓': return <TrendingUp className="w-4 h-4 text-red-500" />
-      case '散户追高': return <AlertTriangle className="w-4 h-4 text-amber-500" />
-      case '机构洗盘': return <Activity className="w-4 h-4 text-blue-500" />
-      default: return <Info className="w-4 h-4 text-slate-500" />
-    }
-  }
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case '主力建仓': return 'bg-red-50 text-red-700 border-red-100'
-      case '散户追高': return 'bg-amber-50 text-amber-700 border-amber-100'
-      case '机构洗盘': return 'bg-blue-50 text-blue-700 border-blue-100'
-      default: return 'bg-slate-50 text-slate-700 border-slate-100'
-    }
+  if (loading && !stockDetail) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+      </div>
+    )
   }
 
   return (
-    <div className="flex flex-col h-full bg-slate-50 overflow-hidden">
-      <div className="bg-white p-4 border-b border-slate-200 flex items-center justify-between">
-        <div className="flex items-center space-x-4">
-          <div>
-            <h2 className="text-2xl font-bold text-slate-900">{stock.name}</h2>
-            <p className="text-sm text-slate-500">{stock.code}</p>
-          </div>
-          <div className="h-10 w-px bg-slate-200 mx-2" />
-          <div>
-            <div className={`text-2xl font-mono font-bold ${stock.change >= 0 ? 'text-red-500' : 'text-green-500'}`}>
-              {stock.price.toFixed(2)}
-            </div>
-            <div className={`text-sm font-medium ${stock.change >= 0 ? 'text-red-500' : 'text-green-500'}`}>
-              {stock.change >= 0 ? '+' : ''}{stock.change.toFixed(2)} ({stock.changeRate.toFixed(2)}%)
-            </div>
-          </div>
+    <div className="space-y-6 pb-20">
+      {/* Signal Ticker */}
+      <SignalTicker data={moneyFlow?.data || []} />
+
+      {/* Top Cards Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {/* Intraday Chart */}
+        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+           <div className="flex items-center justify-between mb-4">
+             <h3 className="font-bold text-slate-700 flex items-center gap-2">
+               <Activity className="w-5 h-5 text-blue-500" />
+               分时走势
+             </h3>
+             <span className="text-xs font-mono text-slate-400">{stock.code}</span>
+           </div>
+           <div className="h-64">
+             <IntradayChart data={intraday} preClose={stock.preClose} />
+           </div>
         </div>
 
-        <div className="grid grid-cols-4 gap-8">
-          <div className="text-center">
-            <p className="text-xs text-slate-400 uppercase tracking-wider">最高</p>
-            <p className="text-sm font-semibold text-slate-700">{stock.high.toFixed(2)}</p>
-          </div>
-	          <div className="text-center">
-	            <p className="text-xs text-slate-400 uppercase tracking-wider">成交量</p>
-	            <p className="text-sm font-semibold text-slate-700">{(stock.volume / 10000).toFixed(2)}万</p>
-	          </div>
-	          <div className="text-center">
-	            <p className="text-xs text-slate-400 uppercase tracking-wider">换手率</p>
-	            <p className="text-sm font-semibold text-slate-700">{stock.turnover.toFixed(2)}%</p>
-	          </div>
-	          <div className="text-center">
-	            <p className="text-xs text-slate-400 uppercase tracking-wider">量比</p>
-	            <p className="text-sm font-semibold text-slate-700">{((stockDetail?.stockData?.volumeRatio ?? stockDetail?.volumeRatio) != null) ? (stockDetail?.stockData?.volumeRatio ?? stockDetail?.volumeRatio)!.toFixed(2) : '--'}</p>
-	          </div>
-	          <div className="text-center">
-	            <p className="text-xs text-slate-400 uppercase tracking-wider">委比</p>
-	            <p className="text-sm font-semibold text-slate-700">{((stockDetail?.stockData?.warrantRatio ?? stockDetail?.warrantRatio) != null) ? (stockDetail?.stockData?.warrantRatio ?? stockDetail?.warrantRatio)!.toFixed(2) : '--'}</p>
-	          </div>
+        {/* Money Flow */}
+        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+           <div className="flex items-center justify-between mb-4">
+             <h3 className="font-bold text-slate-700 flex items-center gap-2">
+               <Wallet className="w-5 h-5 text-orange-500" />
+               资金流向
+             </h3>
+             <GlossaryTooltip term="资金流向">
+               <span className="text-xs text-slate-400 cursor-help">?</span>
+             </GlossaryTooltip>
+           </div>
+           <div className="h-64">
+             {moneyFlow && <MoneyFlowChart data={moneyFlow.data} />}
+           </div>
+        </div>
+
+        {/* Stock Health */}
+        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+           <div className="flex items-center justify-between mb-4">
+             <h3 className="font-bold text-slate-700 flex items-center gap-2">
+               <ShieldCheck className="w-5 h-5 text-green-500" />
+               健康体检
+             </h3>
+           </div>
+           {healthCheck && <StockHealthPanel data={healthCheck} />}
         </div>
       </div>
 
-      <div className="flex-1 flex overflow-hidden">
-	        <div className="flex-1 flex flex-col p-2 lg:p-4 overflow-y-auto">
-	          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
-	            <OrderBookPanel orderBook={stockDetail?.orderBook} />
-            <FinancialPanel financialSummary={stockDetail?.financial} />
-            <IndustryPanel industryInfo={stockDetail?.industry} />
-	          </div>
-		          <div className="flex-1 min-h-[400px] bg-white rounded-lg shadow-md p-4 mb-4">	            <div className="flex items-center justify-between mb-4">
-	              <div className="flex items-center space-x-2">
-	                <div className="flex bg-gray-700 rounded-lg p-1 mr-2">                 <button 
-	                    onClick={() => setChartType('intraday')}
-	                    className={`px-4 py-1.5 text-sm font-bold rounded-md transition-all ${chartType === 'intraday' ? 'bg-gray-900 text-blue-400 shadow-sm' : 'text-gray-400 hover:text-white'}`}
-	                  >
-                    分时
-                  </button>
-                  <button 
-	                    onClick={() => setChartType('kline')}
-	                    className={`px-4 py-1.5 text-sm font-bold rounded-md transition-all ${chartType === 'kline' ? 'bg-gray-900 text-blue-400 shadow-sm' : 'text-gray-400 hover:text-white'}`}
-	                  >
-                    K线
-                  </button>
-                </div>
-
-	                {chartType === 'kline' && (
-                  <>
-                    <div className="relative">
-	                      <select 
-	                        value={period}
-	                        onChange={(e) => setPeriod(e.target.value)}
-	                        className="appearance-none bg-gray-700 border-none rounded-lg px-4 py-2 pr-10 text-sm font-medium text-white focus:ring-2 focus:ring-blue-500 cursor-pointer"
-	                      >
-	                        <option value="daily">日线</option>
-	                        <option value="week">周线</option>
-	                        <option value="month">月线</option>
-	                      </select>
-	                      <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
-	                    </div>
-	                    <div className="h-6 w-px bg-gray-700 mx-2" />
-	                    <div className="flex bg-gray-700 rounded-lg p-1">
-	                      <button onClick={() => setShowMACD(!showMACD)} className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${showMACD ? 'bg-gray-900 text-blue-400 shadow-sm' : 'text-gray-400 hover:text-white'}`}>MACD</button>
-	      	                      <button onClick={() => setShowKDJ(!showKDJ)} className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${showKDJ ? 'bg-gray-900 text-purple-400 shadow-sm' : 'text-gray-400 hover:text-white'}`}>KDJ</button>
-	                      <button onClick={() => setShowRSI(!showRSI)} className={`px-3 py-1 text-xs font-bold rounded-md transition-all ${showRSI ? 'bg-gray-900 text-cyan-400 shadow-sm' : 'text-gray-400 hover:text-white'}`}>RSI</button>
-	                    </div>
-	                    {analysisResult && (
-	                      <button onClick={() => setShowAIDrawings(!showAIDrawings)} className={`flex items-center space-x-1 px-3 py-1 text-xs font-bold rounded-md transition-all ${showAIDrawings ? 'bg-red-900/50 text-red-400 shadow-sm' : 'bg-gray-700 text-gray-400 hover:text-white'}`}>
-	                        <PencilRuler className="w-3 h-3" />
-	                        <span>AI 绘图</span>
-	                      </button>
-	                    )}
-	                    <button onClick={() => setShowMoneyFlow(!showMoneyFlow)} className={`flex items-center space-x-1 px-3 py-1 text-xs font-bold rounded-md transition-all ${showMoneyFlow ? 'bg-green-900/50 text-green-400 shadow-sm' : 'bg-gray-700 text-gray-400 hover:text-white'}`}>
-	                      <Wallet className="w-3 h-3" />
-	                      <span>资金流向</span>
-	                    </button>
-	                  </>
-	                )}
-              </div>
-	              <div className="flex items-center text-gray-400 text-xs space-x-4">
-                <span className="flex items-center"><Clock className="w-3 h-3 mr-1" /> {chartType === 'intraday' ? '30秒自动刷新' : '实时更新'}</span>
-                <span className="flex items-center"><Activity className="w-3 h-3 mr-1" /> 东方财富数据源</span>
-              </div>
-            </div>
-
-	            {chartType === 'intraday' && moneyFlowResponse && (
-	              <div className="mb-4 rounded-lg overflow-hidden border border-gray-700">
-	                <SignalTicker data={moneyFlowResponse.data} />
-	              </div>
-	            )}
-
-            {healthCheck && (
-              <div className="mb-6">
-                <StockHealthPanel data={healthCheck} />
-              </div>
-            )}
-
-            {chartType === 'intraday' && moneyFlowResponse && (
-              <div className={`mb-4 p-3 rounded-xl border flex items-start space-x-3 transition-all ${getStatusColor(moneyFlowResponse.status)}`}>
-                <div className="mt-0.5">{getStatusIcon(moneyFlowResponse.status)}</div>
-                <div>
-                  <div className="flex items-center space-x-2">
-                    <span className="font-bold text-sm">智能资金识别：{moneyFlowResponse.status}</span>
-                    <span className="text-[10px] px-1.5 py-0.5 rounded-md bg-white/50 font-medium">实时监控中</span>
-                  </div>
-                  <p className="text-xs mt-1 opacity-90 leading-relaxed">{moneyFlowResponse.description}</p>
-                </div>
-              </div>
-            )}
-
-            <div className="flex-1 flex flex-col space-y-2 min-h-[500px]">
-              <div className="flex-[2] relative bg-slate-50 rounded-lg border border-slate-100 overflow-hidden">
-                {loading && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-white/80 z-10">
-                    <Loader2 className="w-8 h-8 text-blue-500 animate-spin" />
-                  </div>
-                )}
-                {chartType === 'kline' ? (
-                  <KLineChart data={klineData} drawings={showAIDrawings ? analysisResult?.drawings : []} showMACD={showMACD} showKDJ={showKDJ} showRSI={showRSI} />
-                ) : (
-                  <IntradayChart data={intradayData} moneyFlowData={moneyFlowResponse?.data} preClose={preClose} height={400} />
-                )}
-              </div>
-              {chartType === 'intraday' && showMoneyFlow && moneyFlowResponse && (
-                <div className="flex-1 relative bg-slate-50 rounded-lg border border-slate-100 overflow-hidden">
-                  <MoneyFlowChart data={moneyFlowResponse.data} height={180} />
-                </div>
-              )}
-            </div>
+      {/* Main KLine Chart */}
+      <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-bold text-slate-700 flex items-center gap-2">
+            <BarChart3 className="w-5 h-5 text-indigo-500" />
+            技术分析
+          </h3>
+          <div className="flex gap-2">
+            <button 
+              onClick={showSmartSignals}
+              className="px-3 py-1.5 bg-indigo-50 text-indigo-600 rounded-lg text-sm font-medium hover:bg-indigo-100 flex items-center gap-2"
+            >
+              <BrainCircuit className="w-4 h-4" />
+              智能信号
+            </button>
           </div>
         </div>
+        <div className="h-96">
+           <KLineChart 
+             data={klines} 
+             drawings={analysis?.drawings || []}
+             height={384}
+           />
+        </div>
+        <div className="mt-4">
+            <VolumePriceAnalysis stock={stock} />
+        </div>
+      </div>
 
-        <div className="w-[480px] bg-slate-50 border-l border-slate-200 flex flex-col shadow-[-10px_0_30px_rgba(0,0,0,0.03)] z-10">
-          <div className="p-5 border-b border-slate-200 flex flex-col space-y-4 bg-white/50 backdrop-blur-sm">
-            {chartType === 'intraday' && moneyFlowResponse && (
-              <div className="grid grid-cols-2 gap-3 mb-2">
-                <div className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
-                  <div className="flex items-center space-x-2 text-slate-400 mb-1">
-                    <Wallet className="w-3 h-3" />
-                    <span className="text-[10px] font-bold uppercase tracking-wider">主力净流入</span>
-                  </div>
-                  <div className={`text-lg font-black ${moneyFlowResponse.todayMain >= 0 ? 'text-red-500' : 'text-green-500'}`}>
-                    {moneyFlowResponse.todayMain >= 0 ? '+' : ''}{(moneyFlowResponse.todayMain / 10000).toFixed(2)}万
-                  </div>
-                </div>
-                <div className="bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
-                  <div className="flex items-center space-x-2 text-slate-400 mb-1">
-                    <Target className="w-3 h-3" />
-                    <span className="text-[10px] font-bold uppercase tracking-wider">主力占比</span>
-                  </div>
-                  <div className="text-lg font-black text-slate-700">
-                    {((moneyFlowResponse.todayMain / (Math.abs(moneyFlowResponse.todayMain) + Math.abs(moneyFlowResponse.todayRetail) || 1)) * 100).toFixed(1)}%
-                  </div>
-                </div>
-              </div>
-            )}
-
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-2">
-                <div className="p-2 bg-blue-600 rounded-xl shadow-lg shadow-blue-200">
-                  <BrainCircuit className="w-5 h-5 text-white" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-black text-slate-800">AI 智能分析师</h3>
-                  <p className="text-[10px] text-slate-400 font-medium">DeepSeek-V3 引擎驱动</p>
-                </div>
-              </div>
-              <div className="flex-1">
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    onClick={handleDeepAnalyzeClick}
-                    disabled={analysisLoading || entryLoading}
-                    className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-blue-100 disabled:opacity-50"
-                    title={chartType !== 'kline' ? '将自动切换到K线视图以展示AI绘图' : ''}
-                  >
-                    {analysisLoading ? (
-                      <>
-                        <Loader2 className="w-3 h-3 animate-spin" />
-                        <span>深度分析中...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Cpu className="w-3 h-3" />
-                        <span>深度分析</span>
-                      </>
-                    )}
-                  </button>
-                  <button
-                    onClick={handleEntryAnalyze}
-                    disabled={entryLoading || analysisLoading}
-                    className="w-full flex items-center justify-center space-x-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-lg shadow-indigo-100 disabled:opacity-50"
-                  >
-                    {entryLoading ? (
-                      <>
-                        <Loader2 className="w-3 h-3 animate-spin" />
-                        <span>建仓分析中...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Target className="w-3 h-3" />
-                        <span>建仓分析</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-                {/* 状态提示文字 */}
-                {entryAnalysisStatus !== 'idle' && (
-                  <div className={`mt-2 text-xs text-center font-medium px-2 py-1 rounded-lg transition-all ${
-                    entryAnalysisStatus === 'checking' ? 'text-blue-600 bg-blue-50' :
-                    entryAnalysisStatus === 'analyzing' ? 'text-indigo-600 bg-indigo-50' :
-                    'text-red-600 bg-red-50'
-                  }`}>
-                    {entryAnalysisError}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="flex p-1 bg-slate-100 rounded-2xl border border-slate-200">
-              {roles.map((r) => (
-                <button
-                  key={r.id}
-                  onClick={() => {
-                    setRole(r.id);
-                    handleAnalyze(r.id);
-                  }}
-                  disabled={analysisLoading}
-                  className={`flex-1 flex items-center justify-center space-x-2 py-2 rounded-xl transition-all ${
-                    role === r.id 
-                      ? 'bg-white shadow-sm text-slate-800' 
-                      : 'text-slate-500 hover:text-slate-700'
-                  }`}
-                >
-                  <r.icon className={`w-3.5 h-3.5 ${role === r.id ? r.color : 'text-slate-400'}`} />
-                  <span className={`text-[11px] font-bold ${role === r.id ? '' : 'opacity-70'}`}>{r.name}</span>
-                </button>
-              ))}
-            </div>
+      {/* Analysis Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Radar & Trade Plan */}
+        <div className="space-y-6">
+          <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+             <h3 className="font-bold text-slate-700 mb-4 flex items-center gap-2">
+               <Target className="w-5 h-5 text-purple-500" />
+               综合评分
+             </h3>
+             <div className="h-64">
+               {analysis?.radarData && <RadarChart data={analysis.radarData} />}
+             </div>
           </div>
+          
+          {analysis?.tradePlan && (
+            <TradePlanCard plan={analysis.tradePlan} currentPrice={stock.price} />
+          )}
+        </div>
 
-          <div className="flex-1 overflow-y-auto p-6 custom-scrollbar bg-gradient-to-b from-white/30 to-transparent">
-            {entryStrategy && (
-              <div className="mt-4 mb-8">
-                <EntryStrategyPanel 
-                  strategy={entryStrategy} 
-                  onConfirm={handleConfirmEntry}
-                />
-              </div>
-            )}
-
-            {analysisLoading ? (
-              <div className="flex flex-col items-center justify-center h-64 space-y-5 text-slate-400">
-                <div className="relative">
-                  <div className="absolute inset-0 bg-blue-500/10 rounded-full blur-xl animate-pulse" />
-                  <BrainCircuit className="w-14 h-14 text-blue-500/30 relative z-10" />
-                  <Loader2 className="absolute inset-0 w-14 h-14 text-blue-500 animate-spin relative z-20" />
-                </div>
-                <p className="text-sm font-medium animate-pulse">正在识别形态并评估风险...</p>
-              </div>
-            ) : analysisResult ? (
-              <div className="space-y-8">
-                {analysisResult.radarData && analysisResult.radarData.scores && Object.keys(analysisResult.radarData.scores).length > 0 && (
-                  <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm">
-                    <div className="flex items-center space-x-2 mb-4">
-                      <div className="p-1 bg-blue-50 rounded-lg">
-                        <BarChart3 className="w-4 h-4 text-blue-600" />
-                      </div>
-                      <h4 className="text-sm font-bold text-slate-800">多维度投资评分</h4>
-                    </div>
-                    <RadarChart data={analysisResult.radarData} />
-                  </div>
-                )}
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="bg-white border border-slate-200 rounded-2xl p-4 flex flex-col items-center justify-center shadow-sm hover:shadow-md transition-shadow">
-                    <p className="text-[10px] text-slate-400 uppercase tracking-widest font-bold mb-2">操盘建议</p>
-                    <div className={`px-5 py-1.5 rounded-full text-sm font-black shadow-sm ${getActionColor(analysisResult.actionAdvice)}`}>
-                      {analysisResult.actionAdvice}
-                    </div>
-                  </div>
-                  <div className="bg-white border border-slate-200 rounded-2xl p-4 flex flex-col items-center justify-center shadow-sm hover:shadow-md transition-shadow">
-                    <p className="text-[10px] text-slate-400 uppercase tracking-widest font-bold mb-2">风险得分</p>
-                    <div className="text-2xl font-black text-slate-800">
-                      {analysisResult.riskScore}
-                    </div>
-                  </div>
-                </div>
-
-                {analysisResult.tradePlan && (
-                  <TradePlanCard plan={analysisResult.tradePlan} currentPrice={stock.price} />
-                )}
-
-                <div className="bg-blue-600/5 border border-blue-600/10 rounded-2xl p-5 mb-6 relative overflow-hidden group">
-                  <div className="absolute top-0 left-0 w-1 h-full bg-blue-500" />
-                  <p className="text-blue-700 text-sm font-bold flex items-center mb-1">
-                    <Zap className="w-4 h-4 mr-2 fill-blue-500" />
-                    核心结论
-                  </p>
-                  <p className="text-slate-600 text-sm leading-relaxed">
-                    {analysisResult.analysis.split('\n')[0].replace(/^[#\s*]+/, '')}
-                  </p>
-                </div>
-
-                <div className="prose prose-slate prose-sm max-w-none prose-headings:text-slate-800 prose-p:text-slate-600 prose-strong:text-blue-600">
-                  <ReactMarkdown 
-                    remarkPlugins={[remarkGfm]}
-                    components={{
-                      strong: ({ children }) => {
-                        const content = String(children);
-                        if (STOCK_GLOSSARY[content]) {
-                          return <GlossaryTooltip term={content}>{children}</GlossaryTooltip>;
-                        }
-                        return <strong className="font-bold text-blue-600">{children}</strong>;
-                      }
-                    }}
-                  >
-                    {analysisResult.analysis}
-                  </ReactMarkdown>
-                </div>
-                <GlossaryPanel text={analysisResult.analysis} />
+        {/* AI Analysis Text */}
+        <div className="lg:col-span-2 bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-bold text-slate-700 flex items-center gap-2">
+              <Cpu className="w-5 h-5 text-blue-600" />
+              AI 深度分析
+            </h3>
+            <button 
+              onClick={handleAnalyze}
+              disabled={analyzing}
+              className="px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-sm font-medium hover:bg-blue-100 disabled:opacity-50 transition-colors flex items-center gap-2"
+            >
+              {analyzing ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  正在分析...
+                </>
+              ) : (
+                analysis ? '重新分析' : '开始分析'
+              )}
+            </button>
+          </div>
+          <div className="prose prose-slate max-w-none">
+            {analysis ? (
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {analysis.analysis}
+              </ReactMarkdown>
+            ) : analyzing ? (
+              <div className="flex flex-col items-center justify-center py-12 text-slate-400">
+                <Loader2 className="w-8 h-8 animate-spin mb-2 text-blue-500" />
+                <p>AI 正在深度分析市场数据...</p>
               </div>
             ) : (
-              <div className="flex flex-col items-center justify-center h-80 text-center space-y-5">
-                <div className="w-20 h-20 bg-white rounded-3xl shadow-sm border border-slate-100 flex items-center justify-center group hover:scale-105 transition-transform">
-                  <ShieldCheck className="w-10 h-10 text-slate-300 group-hover:text-blue-400 transition-colors" />
-                </div>
-                <div>
-                  <p className="text-slate-500 font-bold text-lg">暂无风险评估</p>
-                  <p className="text-sm text-slate-400 mt-2 leading-relaxed">
-                    点击上方按钮，获取 AI 深度<br/>
-                    <span className="text-blue-500 font-medium">风险评估与操盘建议</span>
-                  </p>
-                </div>
+              <div className="text-slate-400 text-center py-12">
+                点击“开始分析”获取 AI 深度研报
               </div>
             )}
           </div>
         </div>
       </div>
+
+      {/* Bottom Panels */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {entryStrategy ? (
+          <EntryStrategyPanel strategy={entryStrategy} />
+        ) : (
+          <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 flex flex-col items-center justify-center min-h-[300px]">
+             <Target className="w-12 h-12 text-slate-300 mb-4" />
+             <h3 className="font-bold text-slate-700 mb-2">AI 智能建仓方案</h3>
+             <p className="text-sm text-slate-500 mb-6 text-center">
+               基于技术面、资金面和基本面的多维度分析，<br/>生成科学的建仓与止损止盈策略。
+             </p>
+             <button 
+               onClick={handleEntryStrategy}
+               disabled={generatingStrategy}
+               className="px-6 py-2 bg-blue-600 text-white rounded-lg font-bold text-sm hover:bg-blue-700 transition-all shadow-md shadow-blue-200 disabled:opacity-50 flex items-center gap-2"
+             >
+               {generatingStrategy ? (
+                 <>
+                   <Loader2 className="w-4 h-4 animate-spin" />
+                   正在生成方案...
+                 </>
+               ) : (
+                 '生成建仓方案'
+               )}
+             </button>
+          </div>
+        )}
+        
+        <div className="space-y-6">
+          <OrderBookPanel orderBook={stockDetail?.orderBook} />
+          <FinancialPanel financialSummary={stockDetail?.financial} />
+          <IndustryPanel industryInfo={stockDetail?.industry} />
+        </div>
+      </div>
+
+      {/* Modals */}
+      {ModalComponent && (
+        <ModalComponent 
+          stock={stock}
+          klines={sKlines}
+          drawings={sDrawings}
+          moneyFlow={sMoneyFlow}
+          onClose={sHide}
+          onAddAlert={onAddAlert}
+          onCreatePosition={onCreatePosition}
+        />
+      )}
     </div>
   )
 }
-
-export default WatchlistDetail

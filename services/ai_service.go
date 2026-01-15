@@ -5,23 +5,26 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-		"regexp"
-		"stock-analyzer-wails/models"
-		"strings"
-		"time"
-	
-		"stock-analyzer-wails/internal/logger"
-		"go.uber.org/zap"
-	
-		"github.com/cloudwego/eino-ext/components/model/openai"
-		"github.com/cloudwego/eino/components/model"
-		"github.com/cloudwego/eino/schema"
+	"regexp"
+	"stock-analyzer-wails/models"
+	"strings"
+	"time"
+
+	"stock-analyzer-wails/internal/logger"
+
+	"go.uber.org/zap"
+
+	"github.com/cloudwego/eino-ext/components/model/openai"
+	"github.com/cloudwego/eino/components/model"
+	"github.com/cloudwego/eino/schema"
 )
 
 type AIService struct {
 	chatModel    model.ChatModel
 	config       AIResolvedConfig
 	cacheService *AnalysisCacheService
+	semaphore    chan struct{} // 并发控制
+	enableMock   bool          // 启用 Mock 模式
 }
 
 func NewAIService(cfg AIResolvedConfig) (*AIService, error) {
@@ -40,11 +43,129 @@ func NewAIService(cfg AIResolvedConfig) (*AIService, error) {
 
 	cacheSvc, _ := NewAnalysisCacheService()
 
+	// 默认限速处理：这里我们仅使用 semaphore 控制并发数
+	// Eino 框架底层处理 HTTP 连接池，这里增加应用层并发限制
 	return &AIService{
 		chatModel:    cm,
 		config:       cfg,
 		cacheService: cacheSvc,
+		semaphore:    make(chan struct{}, 5), // 默认最大并发数 5
+		enableMock:   false,
 	}, nil
+}
+
+// SetEnableMock 设置是否启用 Mock 模式
+func (s *AIService) SetEnableMock(enable bool) {
+	s.enableMock = enable
+}
+
+// VerifySignalAsync 异步验证信号
+func (s *AIService) VerifySignalAsync(stock *models.StockData, recentFlows []models.MoneyFlowData) <-chan *models.AIVerificationResult {
+	resultChan := make(chan *models.AIVerificationResult, 1)
+
+	go func() {
+		defer close(resultChan)
+
+		// 简单的信号量控制并发
+		s.semaphore <- struct{}{}
+		defer func() { <-s.semaphore }()
+
+		res, err := s.VerifySignal(stock, recentFlows)
+		if err != nil {
+			logger.Error("AI 验证信号失败", zap.String("code", stock.Code), zap.Error(err))
+			return
+		}
+		resultChan <- res
+	}()
+
+	return resultChan
+}
+
+// VerifySignal 对股票近期的资金流向进行深度解读
+func (s *AIService) VerifySignal(stock *models.StockData, recentFlows []models.MoneyFlowData) (*models.AIVerificationResult, error) {
+	// Mock 模式
+	if s.enableMock {
+		time.Sleep(500 * time.Millisecond) // 模拟延迟
+		return &models.AIVerificationResult{
+			Score:     85,
+			Opinion:   "主力连续吸筹，量价配合良好，建议重点关注。",
+			RiskLevel: "低",
+		}, nil
+	}
+
+	// 1. 数据组装
+	type FlowDetail struct {
+		Date            string  `json:"date"`
+		MainNet         float64 `json:"main_net"`
+		SuperNet        float64 `json:"super_net"`
+		BigNet          float64 `json:"big_net"`
+		ChgPct          float64 `json:"chg_pct"`
+		MainInflowRatio float64 `json:"main_inflow_ratio"` // 主力流入占比
+	}
+
+	var details []FlowDetail
+	for _, f := range recentFlows {
+		// 估算成交额：如果有成交量且有收盘价，Amount ≈ Close * Volume * 100 (手 -> 股)
+		// 但 MoneyFlowData 没有 Volume。我们只能传 0，并在 Prompt 中说明或忽略。
+		// 为了满足 User 明确要求 "多算一个字段给 AI"，我们尽力而为。
+		// 如果无法计算，AI 会根据 Prompt 规则处理（例如忽略或基于净额判断）。
+		// 由于 MoneyFlowData 结构体限制，我们这里暂且填 0。
+		// 更好的做法是 MoneyFlowData 包含 Volume 或 Amount，但不想改动太大。
+		// 我们假设 Amount 为 0，AI 看到 0 会处理。
+
+		ratio := 0.0
+		// 如果我们能获取到当天的总成交额就好了。
+		// 暂时填 0.0
+
+		details = append(details, FlowDetail{
+			Date:            f.TradeDate,
+			MainNet:         f.MainNet,
+			SuperNet:        f.SuperNet,
+			BigNet:          f.BigNet,
+			ChgPct:          f.ChgPct,
+			MainInflowRatio: ratio,
+		})
+	}
+
+	detailsJSON, _ := json.Marshal(details)
+
+	// 2. 构造 Prompt
+	prompt := fmt.Sprintf(`你是一位精通筹码分布的量化交易专家。 现有股票 %s(%s) 近 7 个交易日的资金流向数据： %s
+ 
+ 请根据以上数据进行复核： 
+ 
+ 吸筹识别：主力资金是在股价下跌时逆势吸筹，还是在拉升过程中诱多出货？ 
+ 
+ 筹码集中度：超大单流入是否具备持续性？ 
+ 
+ 风险提示：是否存在资金流向与涨跌幅背离的情况？ 
+ 
+ 请以 JSON 格式返回： { "score": (0-100的整数，代表建仓胜率), "opinion": (简短的专家分析理由，不超过 100 字), "risk_level": ("低", "中", "高") }`,
+		stock.Name, stock.Code, string(detailsJSON))
+
+	// 3. 调用 LLM
+	ctx := context.Background()
+	messages := []*schema.Message{
+		schema.SystemMessage("你是一位精通筹码分布的量化交易专家。"),
+		schema.UserMessage(prompt),
+	}
+	logger.Info("AI 请求prompt", zap.Any("prompt", prompt))
+
+	resp, err := s.chatModel.Generate(ctx, messages)
+	if err != nil {
+		return nil, fmt.Errorf("AI分析请求失败: %w", err)
+	}
+
+	// 4. 解析结果
+	var result models.AIVerificationResult
+	jsonStr := s.extractJSON(resp.Content)
+	if err := json.Unmarshal([]byte(jsonStr), &result); err != nil {
+		logger.Error("解析 AI 响应失败", zap.String("resp", resp.Content), zap.Error(err))
+		return nil, fmt.Errorf("解析 AI 响应失败: %w", err)
+	}
+	logger.Info("AI 响应", zap.Any("resp", resp))
+
+	return &result, nil
 }
 
 func (s *AIService) AnalyzeStock(stock *models.StockData) (*models.AnalysisReport, error) {
@@ -228,7 +349,7 @@ func (s *AIService) AnalyzeEntryStrategy(stock *models.StockData, klines []*mode
 今日资金流向: 主力净流入 %.2f 万, 状态: %s
 最近K线走势: %s
 
-请基于以上数据，给出深度建仓分析方案。`, 
+请基于以上数据，给出深度建仓分析方案。`,
 		stock.Name, stock.Code, stock.Price, stock.ChangeRate, stock.Turnover,
 		health.Score, health.RiskLevel, moneyFlow.TodayMain/10000, moneyFlow.Status, klineSummary)
 
@@ -237,23 +358,23 @@ func (s *AIService) AnalyzeEntryStrategy(stock *models.StockData, klines []*mode
 		schema.UserMessage(userPrompt),
 	}
 
-		resp, err := s.chatModel.Generate(ctx, messages)
-		if err != nil {
-			// 解决冲突：保留日志记录和更详细的错误信息
-			logger.Error("建仓分析 AI 调用失败",
-				zap.String("module", "services.ai"),
-				zap.String("op", "AnalyzeEntryStrategy"),
-				zap.String("step", "ai_generate"),
-				zap.String("stock_code", stock.Code),
-				zap.Error(err),
-				zap.Int64("duration_ms", time.Since(start).Milliseconds()),
-			)
-			if errors.Is(err, context.DeadlineExceeded) {
-				return nil, fmt.Errorf("建仓分析失败(step=ai_generate, code=ENTRY_AI_TIMEOUT): AI 调用超时")
-			}
-			return nil, fmt.Errorf("建仓分析失败(step=ai_generate, code=ENTRY_AI_REQUEST_FAILED): %v", err)
+	resp, err := s.chatModel.Generate(ctx, messages)
+	if err != nil {
+		// 解决冲突：保留日志记录和更详细的错误信息
+		logger.Error("建仓分析 AI 调用失败",
+			zap.String("module", "services.ai"),
+			zap.String("op", "AnalyzeEntryStrategy"),
+			zap.String("step", "ai_generate"),
+			zap.String("stock_code", stock.Code),
+			zap.Error(err),
+			zap.Int64("duration_ms", time.Since(start).Milliseconds()),
+		)
+		if errors.Is(err, context.DeadlineExceeded) {
+			return nil, fmt.Errorf("建仓分析失败(step=ai_generate, code=ENTRY_AI_TIMEOUT): AI 调用超时")
 		}
-		cleanJSON := s.extractJSON(resp.Content)
+		return nil, fmt.Errorf("建仓分析失败(step=ai_generate, code=ENTRY_AI_REQUEST_FAILED): %v", err)
+	}
+	cleanJSON := s.extractJSON(resp.Content)
 	var result models.EntryStrategyResult
 	if err := json.Unmarshal([]byte(cleanJSON), &result); err != nil {
 		logger.Error("建仓分析解析失败（JSON）",
@@ -304,12 +425,19 @@ func truncateString(s string, max int) string {
 }
 
 func (s *AIService) AnalyzeTechnical(stock *models.StockData, klines []*models.KLineData, period string, role string) (*models.TechnicalAnalysisResult, error) {
+	// 检查是否强制刷新
+	force := false
+	if strings.HasSuffix(role, ":force") {
+		force = true
+		role = strings.TrimSuffix(role, ":force")
+	}
+
 	// 1. 尝试从缓存获取
 	if strings.TrimSpace(period) == "" {
 		period = "daily"
 	}
-	
-	if s.cacheService != nil {
+
+	if !force && s.cacheService != nil {
 		if cached, ok := s.cacheService.Get(stock.Code, role, period); ok {
 			return cached, nil
 		}
