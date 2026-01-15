@@ -1,5 +1,5 @@
 import { useCallback } from 'react'
-import type { StockData, AnalysisReport, AppConfig, KLineData, TechnicalAnalysisResult, IntradayResponse, MoneyFlowResponse, HealthCheckResult, EntryStrategyResult, StockDetail, BacktestResult, StrategySignal } from '../types'
+import type { StockData, AnalysisReport, AppConfig, KLineData, TechnicalAnalysisResult, IntradayResponse, MoneyFlowResponse, HealthCheckResult, EntryStrategyResult, StockDetail, BacktestResult, StrategySignal, SignalAnalysisResult } from '../types'
 import { StreamIntradayData } from '../../wailsjs/go/main/App'
 import { StopIntradayStream as StopIntradayStreamAPI } from '../../wailsjs/go/main/App'
 
@@ -146,6 +146,11 @@ const getIntradayData = useCallback(async (code: string): Promise<IntradayRespon
   const BacktestRSI = useCallback(async (code: string, period: number, buyThreshold: number, sellThreshold: number, initialCapital: number, startDate: string, endDate: string): Promise<BacktestResult> => {
     // @ts-ignore
     return window.go.main.App.BacktestRSI(code, period, buyThreshold, sellThreshold, initialCapital, startDate, endDate)
+  }, [])
+
+  const BacktestDecisionPioneer = useCallback(async (code: string, initialCapital: number, startDate: string, endDate: string): Promise<BacktestResult> => {
+    // @ts-ignore
+    return window.go.main.App.BacktestDecisionPioneer(code, initialCapital, startDate, endDate)
   }, [])
 
   const SyncStockData = useCallback(async (code: string, startDate: string, endDate: string): Promise<any> => {
@@ -373,6 +378,11 @@ const getIntradayData = useCallback(async (code: string): Promise<IntradayRespon
     return window.go.main.App.StartFullMarketSync()
   }, [])
 
+  const analyzePastSignals = useCallback(async (days: number): Promise<SignalAnalysisResult> => {
+    // @ts-ignore
+    return window.go.main.App.AnalyzePastSignals(days)
+  }, [])
+
   return {
     GetLatestSignals,
     GetSignalsByStockCode,
@@ -407,6 +417,7 @@ const getIntradayData = useCallback(async (code: string): Promise<IntradayRespon
     BacktestSimpleMA,
     BacktestMACD,
     BacktestRSI,
+    BacktestDecisionPioneer,
     SyncStockData,
     GetDataSyncStats,
     BatchSyncStockData,
@@ -441,6 +452,7 @@ const getIntradayData = useCallback(async (code: string): Promise<IntradayRespon
     deletePriceAlert,
     togglePriceAlert,
     createPriceAlertFromTemplate,
+    analyzePastSignals,
   }
 }
 

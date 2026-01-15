@@ -4,13 +4,13 @@ package models
 type MoneyFlowData struct {
 	Code       string  `json:"code"`
 	TradeDate  string  `json:"tradeDate"`
-	MainNet    float64 `json:"mainNet"`
-	SuperNet   float64 `json:"superNet"`
-	BigNet     float64 `json:"bigNet"`
-	MidNet     float64 `json:"midNet"`
-	SmallNet   float64 `json:"smallNet"`
+	MainNet    float64 `json:"mainNet"`  // 主力净额
+	SuperNet   float64 `json:"superNet"` // 超大单净额
+	BigNet     float64 `json:"bigNet"`   // 大单
+	MidNet     float64 `json:"midNet"`   // 中单
+	SmallNet   float64 `json:"smallNet"` // 小单净额
 	ClosePrice float64 `json:"closePrice"`
-	ChgPct     float64 `json:"chgPct"`
+	ChgPct     float64 `json:"chgPct"` // 涨跌幅
 }
 
 // StrategySignal 策略信号

@@ -18,7 +18,7 @@ interface BacktestPanelProps {
 }
 
 const BacktestPanel: React.FC<BacktestPanelProps> = ({ stockCode }) => {
-  const { BacktestSimpleMA, BacktestMACD, BacktestRSI, GetAllStrategies, CreateStrategy, UpdateStrategyBacktestResult } = useWailsAPI();
+  const { BacktestSimpleMA, BacktestMACD, BacktestRSI, BacktestDecisionPioneer, GetAllStrategies, CreateStrategy, UpdateStrategyBacktestResult } = useWailsAPI();
 
   const [shortPeriod, setShortPeriod] = useState<number>(5);
   const [longPeriod, setLongPeriod] = useState<number>(20);
@@ -76,6 +76,9 @@ const BacktestPanel: React.FC<BacktestPanelProps> = ({ stockCode }) => {
       } else if (activeStrategyType === 'rsi') {
         // RSI策略回测
         result = await BacktestRSI(stockCode, rsiPeriod, rsiBuyThreshold, rsiSellThreshold, initialCapital, startDate, endDate);
+      } else if (activeStrategyType === 'decision_pioneer') {
+        // 决策先锋策略回测
+        result = await BacktestDecisionPioneer(stockCode, initialCapital, startDate, endDate);
       } else {
         // 默认使用双均线策略回测
         result = await BacktestSimpleMA(stockCode, shortPeriod, longPeriod, initialCapital, startDate, endDate);
@@ -84,7 +87,7 @@ const BacktestPanel: React.FC<BacktestPanelProps> = ({ stockCode }) => {
       setBacktestResult(result);
 
       // 如果是从策略库执行的，更新策略的回测结果
-      if (selectedStrategy && ['simple_ma', 'macd', 'rsi'].includes(selectedStrategy.strategyType)) {
+      if (selectedStrategy && ['simple_ma', 'macd', 'rsi', 'decision_pioneer'].includes(selectedStrategy.strategyType)) {
         try {
           await UpdateStrategyBacktestResult(selectedStrategy.id, {
             totalReturn: result.totalReturn,
@@ -152,6 +155,8 @@ const BacktestPanel: React.FC<BacktestPanelProps> = ({ stockCode }) => {
         if (strategy.parameters.sellThreshold) {
           setRsiSellThreshold(Number(strategy.parameters.sellThreshold));
         }
+      } else if (strategy.strategyType === 'decision_pioneer') {
+        // 决策先锋没有特殊参数
       }
 
       // 通用参数
@@ -196,6 +201,8 @@ const BacktestPanel: React.FC<BacktestPanelProps> = ({ stockCode }) => {
           buyThreshold: rsiBuyThreshold,
           sellThreshold: rsiSellThreshold,
         };
+      } else if (strategyType === 'decision_pioneer') {
+        // 决策先锋没有特殊参数
       } else {
         parameters = {
           ...parameters,
@@ -250,8 +257,9 @@ const BacktestPanel: React.FC<BacktestPanelProps> = ({ stockCode }) => {
               const strategyTypeName = strategy.strategyType === 'simple_ma' ? '双均线' :
                                       strategy.strategyType === 'macd' ? 'MACD' :
                                       strategy.strategyType === 'rsi' ? 'RSI' :
+                                      strategy.strategyType === 'decision_pioneer' ? '决策先锋' :
                                       strategy.strategyType;
-              const isSupported = ['simple_ma', 'macd', 'rsi'].includes(strategy.strategyType);
+              const isSupported = ['simple_ma', 'macd', 'rsi', 'decision_pioneer'].includes(strategy.strategyType);
               return (
                 <option key={strategy.id} value={strategy.id.toString()} disabled={!isSupported}>
                   {strategy.name} ({strategyTypeName}) {!isSupported && '[暂不支持回测]'}
@@ -316,6 +324,19 @@ const BacktestPanel: React.FC<BacktestPanelProps> = ({ stockCode }) => {
             className="form-radio text-blue-600"
           />
           <span className="text-gray-300">RSI 策略</span>
+        </label>
+        <label className="flex items-center space-x-2 cursor-pointer">
+          <input
+            type="radio"
+            value="decision_pioneer"
+            checked={activeStrategyType === 'decision_pioneer'}
+            onChange={() => {
+              setActiveStrategyType('decision_pioneer');
+              setSelectedStrategy(null);
+            }}
+            className="form-radio text-blue-600"
+          />
+          <span className="text-gray-300 font-bold text-yellow-400">决策先锋 (AI)</span>
         </label>
       </div>
 
@@ -474,6 +495,14 @@ const BacktestPanel: React.FC<BacktestPanelProps> = ({ stockCode }) => {
       {backtestResult && (
         <div className="mt-6">
           <h3 className="text-xl font-bold mb-4">回测结果 ({backtestResult.strategyName})</h3>
+
+          {backtestResult.tradeCount === 0 && (
+            <div className="mb-4 p-4 bg-yellow-900/30 border border-yellow-700 rounded-md text-yellow-200">
+              <p className="font-bold">⚠️ 注意：未触发任何交易</p>
+              <p className="text-sm mt-1">在选定的时间范围内，策略没有发现符合条件的买入机会。</p>
+              <p className="text-sm mt-1">建议：1. 检查是否已同步足够的资金流数据；2. 尝试放宽策略条件；3. 扩大回测日期范围。</p>
+            </div>
+          )}
 
           {/* 结果摘要 */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">

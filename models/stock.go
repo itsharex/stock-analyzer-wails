@@ -419,3 +419,14 @@ type DataSyncStats struct {
 	StockList    []string `json:"stock_list"`
 	LastSyncTime string   `json:"last_sync_time"`
 }
+
+// SignalAnalysisResult 历史信号分析结果
+type SignalAnalysisResult struct {
+	TotalSignals int     `json:"totalSignals"` // 总信号数
+	WinRate      float64 `json:"winRate"`      // 胜率 (上涨比例)
+	AvgReturn    float64 `json:"avgReturn"`    // 平均收益率
+	MaxLoss      float64 `json:"maxLoss"`      // 最大亏损
+	BestStock    string  `json:"bestStock"`    // 表现最好的股票
+	WorstStock   string  `json:"worstStock"`   // 表现最差的股票
+	AnalysisDate string  `json:"analysisDate"` // 分析时间
+}

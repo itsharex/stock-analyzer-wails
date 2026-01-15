@@ -378,6 +378,19 @@ export interface StrategySignal {
 }
 
 /**
+ * 历史信号分析结果
+ */
+export interface SignalAnalysisResult {
+  totalSignals: number;
+  winRate: number;
+  avgReturn: number;
+  maxLoss: number;
+  bestStock: string;
+  worstStock: string;
+  analysisDate: string;
+}
+
+/**
  * AI 分析详情 (用于 UI 展示)
  */
 export interface AIAnalysisDetail {

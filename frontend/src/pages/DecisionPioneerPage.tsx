@@ -4,14 +4,17 @@ import EnhancedKLineChart from '../components/EnhancedKLineChart';
 import AIAnalysisPanel from '../components/AIAnalysisPanel';
 import ScanButton from '../components/ScanButton';
 import MoneyFlowSyncButton from '../components/MoneyFlowSyncButton';
+import StatsModal from '../components/StatsModal';
 import { StrategySignal } from '../types';
-import { Settings, BarChart2, Layers } from 'lucide-react';
 
 const DecisionPioneerPage: React.FC = () => {
   const [selectedSignal, setSelectedSignal] = useState<StrategySignal | null>(null);
+  const [showStats, setShowStats] = useState(false);
 
   return (
     <div className="w-full h-[calc(100vh-4rem)] bg-[#0D1117] text-white flex items-stretch justify-center overflow-hidden">
+      <StatsModal isOpen={showStats} onClose={() => setShowStats(false)} />
+      
       <div className="w-full h-full flex bg-[#0D1117]">
         {/* Left 80px Rail (Figma: Dw) */}
         {/*<div className="w-20 h-full flex flex-col border-r border-white/10 shrink-0 items-center py-4 gap-6">*/}
@@ -39,6 +42,12 @@ const DecisionPioneerPage: React.FC = () => {
                  <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
                  AI 引擎运行中
               </span>
+              <button
+                onClick={() => setShowStats(true)}
+                className="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-gray-300 rounded text-xs flex items-center gap-1 transition-colors border border-gray-700"
+              >
+                <span>📊</span> 历史统计
+              </button>
               <div className="flex items-center gap-3">
                 <MoneyFlowSyncButton />
                 <ScanButton />

@@ -101,6 +101,41 @@ func (r *MoneyFlowRepository) GetMoneyFlowHistory(code string, limit int) ([]mod
 	return flows, nil
 }
 
+// GetAllMoneyFlowHistory 获取所有的资金流向历史数据
+func (r *MoneyFlowRepository) GetAllMoneyFlowHistory(code string) ([]models.MoneyFlowData, error) {
+	rows, err := r.db.Query(`
+		SELECT code, trade_date, main_net, super_net, big_net, mid_net, small_net, close_price, chg_pct 
+		FROM stock_money_flow_hist 
+		WHERE code = ? 
+		ORDER BY trade_date ASC
+	`, code)
+	if err != nil {
+		return nil, fmt.Errorf("查询所有资金流向数据失败: %w", err)
+	}
+	defer rows.Close()
+
+	var flows []models.MoneyFlowData
+	for rows.Next() {
+		var flow models.MoneyFlowData
+		if err := rows.Scan(
+			&flow.Code,
+			&flow.TradeDate,
+			&flow.MainNet,
+			&flow.SuperNet,
+			&flow.BigNet,
+			&flow.MidNet,
+			&flow.SmallNet,
+			&flow.ClosePrice,
+			&flow.ChgPct,
+		); err != nil {
+			return nil, fmt.Errorf("扫描数据失败: %w", err)
+		}
+		flows = append(flows, flow)
+	}
+
+	return flows, nil
+}
+
 // GetStockCircMV 获取股票流通市值
 func (r *MoneyFlowRepository) GetStockCircMV(code string) (float64, error) {
 	var circMV float64
@@ -165,6 +200,8 @@ func (r *MoneyFlowRepository) GetLatestSignals(limit int) ([]models.StrategySign
 	for rows.Next() {
 		var sig models.StrategySignal
 		var createdAt sql.NullString
+		var aiReason sql.NullString // 使用 NullString 处理可能的 NULL 值
+
 		if err := rows.Scan(
 			&sig.ID,
 			&sig.Code,
@@ -175,10 +212,62 @@ func (r *MoneyFlowRepository) GetLatestSignals(limit int) ([]models.StrategySign
 			&sig.Score,
 			&sig.Details,
 			&sig.AIScore,
-			&sig.AIReason,
+			&aiReason, // 扫描到 NullString
 			&createdAt,
 		); err != nil {
 			return nil, fmt.Errorf("扫描信号数据失败: %w", err)
+		}
+
+		if aiReason.Valid {
+			sig.AIReason = aiReason.String
+		}
+		if createdAt.Valid {
+			sig.CreatedAt = createdAt.String
+		}
+		signals = append(signals, sig)
+	}
+
+	return signals, nil
+}
+
+// GetSignalsByDateRange 根据日期范围获取历史信号
+func (r *MoneyFlowRepository) GetSignalsByDateRange(startDate, endDate string) ([]models.StrategySignal, error) {
+	rows, err := r.db.Query(`
+		SELECT s.id, s.code, IFNULL(st.name, s.code) as stock_name, s.trade_date, s.signal_type, s.strategy_name, s.score, s.details, s.ai_score, s.ai_reason, s.created_at
+		FROM stock_strategy_signals s
+		LEFT JOIN stocks st ON s.code = st.code
+		WHERE s.trade_date >= ? AND s.trade_date <= ? AND s.strategy_name = '决策先锋'
+		ORDER BY s.trade_date DESC
+	`, startDate, endDate)
+	if err != nil {
+		return nil, fmt.Errorf("查询策略信号失败: %w", err)
+	}
+	defer rows.Close()
+
+	var signals []models.StrategySignal
+	for rows.Next() {
+		var sig models.StrategySignal
+		var createdAt sql.NullString
+		var aiReason sql.NullString // 使用 NullString 处理可能的 NULL 值
+
+		if err := rows.Scan(
+			&sig.ID,
+			&sig.Code,
+			&sig.StockName,
+			&sig.TradeDate,
+			&sig.SignalType,
+			&sig.StrategyName,
+			&sig.Score,
+			&sig.Details,
+			&sig.AIScore,
+			&aiReason, // 扫描到 NullString
+			&createdAt,
+		); err != nil {
+			return nil, fmt.Errorf("扫描信号数据失败: %w", err)
+		}
+
+		if aiReason.Valid {
+			sig.AIReason = aiReason.String
 		}
 		if createdAt.Valid {
 			sig.CreatedAt = createdAt.String
@@ -207,6 +296,8 @@ func (r *MoneyFlowRepository) GetSignalsByStockCode(code string) ([]models.Strat
 	for rows.Next() {
 		var sig models.StrategySignal
 		var createdAt sql.NullString
+		var aiReason sql.NullString // 使用 NullString 处理可能的 NULL 值
+
 		if err := rows.Scan(
 			&sig.ID,
 			&sig.Code,
@@ -217,10 +308,14 @@ func (r *MoneyFlowRepository) GetSignalsByStockCode(code string) ([]models.Strat
 			&sig.Score,
 			&sig.Details,
 			&sig.AIScore,
-			&sig.AIReason,
+			&aiReason, // 扫描到 NullString
 			&createdAt,
 		); err != nil {
 			return nil, fmt.Errorf("扫描信号数据失败: %w", err)
+		}
+
+		if aiReason.Valid {
+			sig.AIReason = aiReason.String
 		}
 		if createdAt.Valid {
 			sig.CreatedAt = createdAt.String

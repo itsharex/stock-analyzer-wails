@@ -123,6 +123,45 @@ func (s *StrategyService) CalculateBuildSignals(code string) (*models.StrategySi
 		return nil, nil // 数据不足，不报错，直接返回空
 	}
 
+	circMV, err := s.moneyFlowRepo.GetStockCircMV(code)
+	if err != nil {
+		circMV = 0
+	}
+
+	signal := s.CheckDecisionPioneerSignal(data, circMV)
+	if signal == nil {
+		return nil, nil
+	}
+	signal.Code = code // 确保 code 正确
+
+	// 持久化
+	if err := s.moneyFlowRepo.SaveStrategySignal(signal); err != nil {
+		logger.Error("保存策略信号失败", zap.Error(err))
+		return nil, err
+	}
+
+	// 日志输出
+	var details map[string]interface{}
+	_ = json.Unmarshal([]byte(signal.Details), &details)
+	netSum, _ := details["netSum"].(float64)
+
+	logger.Info(fmt.Sprintf("[信号发现] %s 均线回踩，主力近5日流入达%.2f万", code, netSum/10000),
+		zap.String("code", code),
+		zap.String("date", signal.TradeDate),
+		zap.Float64("score", signal.Score),
+	)
+
+	return signal, nil
+}
+
+// CheckDecisionPioneerSignal 核心选股逻辑 (纯函数，便于回测)
+// data: 必须按时间倒序排列 (data[0]是最新一天, data[1]是前一天...)
+// 至少需要 20 条数据
+func (s *StrategyService) CheckDecisionPioneerSignal(data []models.MoneyFlowData, circMV float64) *models.StrategySignal {
+	if len(data) < 20 {
+		return nil
+	}
+
 	// data[0] 是最新一天 (T-0)
 	// data[4] 是 T-4
 	// data[19] 是 T-19
@@ -143,19 +182,19 @@ func (s *StrategyService) CalculateBuildSignals(code string) (*models.StrategySi
 
 	// 1. 主力流入天数 >= 3
 	if positiveDays < 3 {
-		return nil, nil
+		return nil
 	}
 
 	// 2. 净额总和 > 0
 	if netSum <= 0 {
-		return nil, nil
+		return nil
 	}
 
 	// 3. 异动倍数 > 1.5
 	avgAbsNet := absNetSum / 5.0
 	currentAbsNet := math.Abs(data[0].MainNet)
 	if currentAbsNet <= 1.5*avgAbsNet {
-		return nil, nil
+		return nil
 	}
 
 	// === B. 技术面：趋势企稳回踩 (MA20) ===
@@ -168,28 +207,27 @@ func (s *StrategyService) CalculateBuildSignals(code string) (*models.StrategySi
 	currentClose := data[0].ClosePrice
 	// 1. 站稳均线
 	if currentClose < ma20 {
-		return nil, nil
+		return nil
 	}
 
 	// 2. 回踩不追高 (0% <= 偏离度 <= 3%)
 	deviation := (currentClose - ma20) / ma20
 	if deviation < 0 || deviation > 0.03 {
-		return nil, nil
+		return nil
 	}
 
 	// === C. 动能面：良性放量 ===
 	// 涨幅在 0.5% 到 5% 之间
 	currentChgPct := data[0].ChgPct
 	if currentChgPct < 0.5 || currentChgPct > 5.0 {
-		return nil, nil
+		return nil
 	}
 
 	// === 符合所有条件，生成信号 ===
 
 	// 计算评分 Score = (过去5日主力流入总额 / 流通市值) * 100
 	score := 0.0
-	circMV, err := s.moneyFlowRepo.GetStockCircMV(code)
-	if err == nil && circMV > 0 {
+	if circMV > 0 {
 		score = (netSum / circMV) * 100
 	} else {
 		// 如果无法获取流通市值，使用备用评分逻辑
@@ -207,29 +245,14 @@ func (s *StrategyService) CalculateBuildSignals(code string) (*models.StrategySi
 	}
 	detailsJSON, _ := json.Marshal(details)
 
-	signal := &models.StrategySignal{
-		Code:         code,
+	return &models.StrategySignal{
+		Code:         data[0].Code, // 使用数据中的 code
 		TradeDate:    data[0].TradeDate,
 		SignalType:   "B",
 		StrategyName: "决策先锋",
 		Score:        score,
 		Details:      string(detailsJSON),
 	}
-
-	// 持久化
-	if err := s.moneyFlowRepo.SaveStrategySignal(signal); err != nil {
-		logger.Error("保存策略信号失败", zap.Error(err))
-		return nil, err
-	}
-
-	// 日志输出
-	logger.Info(fmt.Sprintf("[信号发现] %s 均线回踩，主力近5日流入达%.2f万", code, netSum/10000),
-		zap.String("code", code),
-		zap.String("date", data[0].TradeDate),
-		zap.Float64("score", score),
-	)
-
-	return signal, nil
 }
 
 // GetRecentMoneyFlows 获取近期资金流向数据
@@ -256,10 +279,34 @@ func (s *StrategyService) GetSignalsByStockCode(code string) ([]models.StrategyS
 	return s.moneyFlowRepo.GetSignalsByStockCode(code)
 }
 
+// GetAllMoneyFlowHistory 获取所有资金流向历史数据
+func (s *StrategyService) GetAllMoneyFlowHistory(code string) ([]models.MoneyFlowData, error) {
+	if s.moneyFlowRepo == nil {
+		return nil, fmt.Errorf("MoneyFlowRepository 未初始化")
+	}
+	return s.moneyFlowRepo.GetAllMoneyFlowHistory(code)
+}
+
+// GetStockCircMV 获取股票流通市值
+func (s *StrategyService) GetStockCircMV(code string) (float64, error) {
+	if s.moneyFlowRepo == nil {
+		return 0, fmt.Errorf("MoneyFlowRepository 未初始化")
+	}
+	return s.moneyFlowRepo.GetStockCircMV(code)
+}
+
 // UpdateSignalAIResult 更新信号的 AI 分析结果
 func (s *StrategyService) UpdateSignalAIResult(code, tradeDate, strategyName string, aiScore int, aiReason string) error {
 	if s.moneyFlowRepo == nil {
 		return fmt.Errorf("MoneyFlowRepository 未初始化")
 	}
 	return s.moneyFlowRepo.UpdateStrategySignalAI(code, tradeDate, strategyName, aiScore, aiReason)
+}
+
+// GetSignalsByDateRange 根据日期范围获取历史信号
+func (s *StrategyService) GetSignalsByDateRange(startDate, endDate string) ([]models.StrategySignal, error) {
+	if s.moneyFlowRepo == nil {
+		return nil, fmt.Errorf("MoneyFlowRepository 未初始化")
+	}
+	return s.moneyFlowRepo.GetSignalsByDateRange(startDate, endDate)
 }

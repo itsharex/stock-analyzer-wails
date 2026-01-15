@@ -30,3 +30,11 @@ func (a *App) BacktestRSI(code string, period int, buyThreshold float64, sellThr
 	}
 	return a.backtestService.BacktestRSI(code, period, buyThreshold, sellThreshold, initialCapital, startDate, endDate)
 }
+
+// BacktestDecisionPioneer 使用决策先锋策略
+func (a *App) BacktestDecisionPioneer(code string, initialCapital float64, startDate string, endDate string) (*models.BacktestResult, error) {
+	if a.backtestService == nil {
+		return nil, fmt.Errorf("回测服务未初始化")
+	}
+	return a.backtestService.BacktestDecisionPioneer(code, initialCapital, startDate, endDate)
+}

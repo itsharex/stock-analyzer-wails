@@ -147,7 +147,7 @@ func NewApp() *App {
 	// 注意：AlertMonitor 需要传入 context，所以在 startup 中创建
 
 	// 4. 回测服务
-	backtestSvc := services.NewBacktestService(stockSvc)
+	backtestSvc := services.NewBacktestService(stockSvc, strategySvc)
 
 	return &App{
 		stockService:     stockSvc,
@@ -663,6 +663,14 @@ func (a *App) initAIService() error {
 // 	}
 // 	return a.initAIService()
 // }
+
+// AnalyzePastSignals 分析历史信号表现
+func (a *App) AnalyzePastSignals(days int) (*models.SignalAnalysisResult, error) {
+	if a.backtestService == nil {
+		return nil, fmt.Errorf("回测服务未初始化")
+	}
+	return a.backtestService.AnalyzePastSignals(days)
+}
 
 // GetStockData 获取股票数据
 func (a *App) GetStockData(code string) (*models.StockData, error) {

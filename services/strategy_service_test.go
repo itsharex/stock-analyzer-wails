@@ -92,3 +92,22 @@ func insertHist(t *testing.T, db *sql.DB, code, date string, mainNet, closePrice
 		t.Fatal(err)
 	}
 }
+
+func TestCalculateBuildSignalsByCode(t *testing.T) {
+	dbSvc, err := NewDBService()
+	if err != nil {
+		t.Fatal(err)
+		return
+	}
+	// Create repositories
+	strategyRepo := repositories.NewStrategyRepository(dbSvc.GetDB())
+	moneyFlowRepo := repositories.NewMoneyFlowRepository(dbSvc.GetDB())
+
+	strategySvc := NewStrategyService(strategyRepo, moneyFlowRepo)
+	sign, err := strategySvc.CalculateBuildSignals("002352")
+	if err != nil {
+		t.Fatalf("CalculateBuildSignals failed: %v", err)
+		return
+	}
+	t.Logf("sign: %+v", sign)
+}
