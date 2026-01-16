@@ -220,10 +220,14 @@ func (s *AIService) AnalyzeStock(stock *models.StockData) (*models.AnalysisRepor
 
 	resp, err := s.chatModel.Generate(ctx, messages)
 	if err != nil {
+		logger.Error("AI分析请求失败", zap.Error(err))
 		return nil, fmt.Errorf("AI分析请求失败: %w", err)
 	}
 
+	logger.Info("AI分析响应", zap.String("response", resp.Content))
+
 	analysis := resp.Content
+
 	report := &models.AnalysisReport{
 		StockCode:      stock.Code,
 		StockName:      stock.Name,

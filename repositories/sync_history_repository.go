@@ -45,7 +45,6 @@ func (r *SQLiteSyncHistoryRepository) Add(history *models.SyncHistory) error {
 		RecordsUpdated: history.RecordsUpdated,
 		Duration:       history.Duration,
 		ErrorMsg:       history.ErrorMsg,
-		CreatedAt:      time.Now(),
 	}
 
 	if err := r.db.Create(&entity).Error; err != nil {
@@ -53,6 +52,7 @@ func (r *SQLiteSyncHistoryRepository) Add(history *models.SyncHistory) error {
 	}
 
 	history.ID = int(entity.ID)
+	history.CreatedAt = entity.CreatedAt
 
 	logger.Info("成功添加同步历史记录",
 		zap.String("module", "repositories.sync_history"),

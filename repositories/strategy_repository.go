@@ -38,13 +38,13 @@ func (r *StrategyRepository) Create(strategy *models.StrategyConfig) error {
 	now := time.Now()
 
 	entity := models.StrategyConfigEntity{
-		Name:               strategy.Name,
-		Description:        strategy.Description,
-		StrategyType:       strategy.StrategyType,
-		Parameters:         string(parametersJSON),
+		Name:             strategy.Name,
+		Description:      strategy.Description,
+		StrategyType:     strategy.StrategyType,
+		Parameters:       string(parametersJSON),
 		LastBacktestResult: string(backtestJSON),
-		CreatedAt:          now,
-		UpdatedAt:          now,
+		CreatedAt:        now,
+		UpdatedAt:        now,
 	}
 
 	if err := r.db.Create(&entity).Error; err != nil {
@@ -76,12 +76,12 @@ func (r *StrategyRepository) Update(strategy *models.StrategyConfig) error {
 	now := time.Now()
 
 	updates := map[string]interface{}{
-		"name":                 strategy.Name,
-		"description":          strategy.Description,
-		"strategy_type":        strategy.StrategyType,
-		"parameters":           string(parametersJSON),
+		"name":               strategy.Name,
+		"description":         strategy.Description,
+		"strategy_type":       strategy.StrategyType,
+		"parameters":          string(parametersJSON),
 		"last_backtest_result": string(backtestJSON),
-		"updated_at":           now,
+		"updated_at":          now,
 	}
 
 	if err := r.db.Model(&models.StrategyConfigEntity{}).Where("id = ?", strategy.ID).Updates(updates).Error; err != nil {

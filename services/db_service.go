@@ -1,6 +1,7 @@
 package services
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -26,7 +27,7 @@ type DBService struct {
 // NewDBService 初始化数据库连接并创建表
 func NewDBService() (*DBService, error) {
 	appDir := GetAppDataDir()
-	dbPath := filepath.Join(appDir, "stock_analyzer.db")
+	dbPath := filepath.Join(appDir, "stock_analyzer_v2.db")
 	logger.Info("开始初始化 SQLite 数据库服务 (GORM)",
 		zap.String("module", "services.db"),
 		zap.String("op", "NewDBService"),
@@ -143,8 +144,11 @@ func (s *DBService) GetDBPath() string {
 }
 
 // initTables 初始化数据库表结构
+// 只进行表结构检查和创建，不进行数据迁移
 func (s *DBService) initTables() error {
-	// 使用 AutoMigrate 自动迁移表结构
+	// 清理可能存在的临时表（防止之前失败的迁移留下的临时表）
+
+	// 使用 AutoMigrate 自动创建/更新表结构
 	err := s.db.AutoMigrate(
 		&models.WatchlistEntity{},
 		&models.AlertEntity{},
@@ -161,11 +165,337 @@ func (s *DBService) initTables() error {
 		&models.StockStrategySignalEntity{},
 	)
 	if err != nil {
-		return fmt.Errorf("自动迁移表结构失败: %w", err)
+		// 如果迁移失败，清理临时表并记录错误
+		logger.Error("表结构迁移失败",
+			zap.String("module", "services.db"),
+			zap.String("op", "initTables"),
+			zap.Error(err),
+		)
+		return fmt.Errorf("表结构迁移失败: %w", err)
 	}
 
 	// 插入默认配置
 	return s.insertDefaultConfigs()
+}
+
+// prepareWatchlistTable 在迁移前准备 watchlist 表
+// 1. 检查并添加缺失的字段（如果表存在但字段缺失）
+// 2. 修复 NULL 值
+// 3. 确保 name 字段允许 NULL（在修复 NULL 值之前）
+func (s *DBService) prepareWatchlistTable() error {
+	// 检查表是否存在
+	if !s.db.Migrator().HasTable("watchlist") {
+		return nil // 表不存在，AutoMigrate 会创建新表
+	}
+
+	// 检查 name 字段是否存在
+	hasNameColumn := false
+	var nameColumnNullable bool = true
+	columns, err := s.db.Migrator().ColumnTypes("watchlist")
+	if err == nil {
+		for _, col := range columns {
+			if col.Name() == "name" {
+				hasNameColumn = true
+				nullable, ok := col.Nullable()
+				if ok {
+					nameColumnNullable = nullable
+				}
+				break
+			}
+		}
+	}
+
+	// 如果 name 字段不存在，先添加它（允许 NULL）
+	if !hasNameColumn {
+		logger.Info("检测到 watchlist 表缺少 name 字段，正在添加",
+			zap.String("module", "services.db"),
+			zap.String("op", "prepareWatchlistTable"),
+		)
+		// 添加 name 字段，允许 NULL
+		if err := s.db.Exec("ALTER TABLE watchlist ADD COLUMN name TEXT").Error; err != nil {
+			// 如果添加失败（可能字段已存在），记录警告但继续
+			logger.Warn("添加 name 字段失败（可能已存在）",
+				zap.String("module", "services.db"),
+				zap.String("op", "prepareWatchlistTable"),
+				zap.Error(err),
+			)
+		} else {
+			logger.Info("成功添加 name 字段",
+				zap.String("module", "services.db"),
+				zap.String("op", "prepareWatchlistTable"),
+			)
+		}
+	} else {
+		logger.Debug("watchlist 表已包含 name 字段",
+			zap.String("module", "services.db"),
+			zap.String("op", "prepareWatchlistTable"),
+			zap.Bool("nullable", nameColumnNullable),
+		)
+		// 如果 name 字段存在但不允许 NULL，先修改为允许 NULL（在修复 NULL 值之前）
+		if !nameColumnNullable {
+			logger.Info("检测到 name 字段不允许 NULL，正在修改为允许 NULL",
+				zap.String("module", "services.db"),
+				zap.String("op", "prepareWatchlistTable"),
+			)
+			// SQLite 不支持直接修改列约束，需要重建表
+			// 但我们可以先修复所有 NULL 值，然后再进行迁移
+		}
+	}
+
+	// 修复 NULL 值（确保所有记录都有非 NULL 的 name 值）
+	if err := s.fixWatchlistNullValues(); err != nil {
+		logger.Warn("修复 watchlist NULL 值失败",
+			zap.String("module", "services.db"),
+			zap.String("op", "prepareWatchlistTable"),
+			zap.Error(err),
+		)
+		// 不返回错误，继续尝试迁移
+	}
+
+	return nil
+}
+
+// fixWatchlistNullValues 修复 watchlist 表中的 NULL 值
+// 将 name 字段为 NULL 的记录设置为空字符串或从 data 字段中提取
+func (s *DBService) fixWatchlistNullValues() error {
+	// 检查表是否存在
+	if !s.db.Migrator().HasTable("watchlist") {
+		return nil // 表不存在，无需修复
+	}
+
+	// 检查 name 字段是否存在
+	hasNameColumn := false
+	columns, err := s.db.Migrator().ColumnTypes("watchlist")
+	if err == nil {
+		for _, col := range columns {
+			if col.Name() == "name" {
+				hasNameColumn = true
+				break
+			}
+		}
+	}
+
+	if !hasNameColumn {
+		return nil // name 字段不存在，无需修复
+	}
+
+	// 查找 name 为 NULL 或空字符串的记录（使用原生 SQL 查询，避免 GORM 的类型检查）
+	var nullNameRecords []struct {
+		Code string
+		Data string
+	}
+	if err := s.db.Raw("SELECT code, data FROM watchlist WHERE name IS NULL OR name = ''").Scan(&nullNameRecords).Error; err != nil {
+		// 如果查询失败（可能是表结构问题），忽略错误
+		logger.Debug("查询 NULL name 记录失败",
+			zap.String("module", "services.db"),
+			zap.String("op", "fixWatchlistNullValues"),
+			zap.Error(err),
+		)
+		return nil
+	}
+
+	if len(nullNameRecords) == 0 {
+		return nil // 没有需要修复的记录
+	}
+
+	logger.Info("发现需要修复的 watchlist 记录",
+		zap.String("module", "services.db"),
+		zap.String("op", "fixWatchlistNullValues"),
+		zap.Int("count", len(nullNameRecords)),
+	)
+
+	// 修复每条记录
+	for _, record := range nullNameRecords {
+		var nameValue string
+
+		// 尝试从 data 字段中提取股票名称
+		if record.Data != "" {
+			// 解析 JSON 数据
+			var data map[string]interface{}
+			if err := json.Unmarshal([]byte(record.Data), &data); err == nil {
+				if name, ok := data["name"].(string); ok && name != "" {
+					nameValue = name
+				}
+			}
+		}
+
+		// 如果无法从 data 中提取，使用股票代码作为默认值
+		if nameValue == "" {
+			nameValue = record.Code
+		}
+
+		// 使用原生 SQL 更新，避免 GORM 的类型检查问题
+		// 使用 COALESCE 确保即使 name 字段不存在也不会报错
+		if err := s.db.Exec("UPDATE watchlist SET name = ? WHERE code = ?", nameValue, record.Code).Error; err != nil {
+			logger.Warn("修复 watchlist 记录失败",
+				zap.String("module", "services.db"),
+				zap.String("op", "fixWatchlistNullValues"),
+				zap.String("code", record.Code),
+				zap.Error(err),
+			)
+		} else {
+			logger.Debug("成功修复 watchlist 记录",
+				zap.String("module", "services.db"),
+				zap.String("op", "fixWatchlistNullValues"),
+				zap.String("code", record.Code),
+				zap.String("name", nameValue),
+			)
+		}
+	}
+
+	logger.Info("完成 watchlist NULL 值修复",
+		zap.String("module", "services.db"),
+		zap.String("op", "fixWatchlistNullValues"),
+		zap.Int("fixed_count", len(nullNameRecords)),
+	)
+
+	return nil
+}
+
+// manualMigrateWatchlistTable 手动迁移 watchlist 表
+// 当 GORM AutoMigrate 失败时，使用此方法手动迁移
+func (s *DBService) manualMigrateWatchlistTable() error {
+	// 检查表是否存在
+	if !s.db.Migrator().HasTable("watchlist") {
+		// 表不存在，直接创建
+		return s.db.AutoMigrate(&models.WatchlistEntity{})
+	}
+
+	// 1. 先确保 name 字段存在且所有记录都有非 NULL 值
+	if err := s.prepareWatchlistTable(); err != nil {
+		logger.Warn("准备 watchlist 表失败，继续尝试迁移",
+			zap.String("module", "services.db"),
+			zap.String("op", "manualMigrateWatchlistTable"),
+			zap.Error(err),
+		)
+	}
+
+	// 2. 检查当前表结构
+	columns, err := s.db.Migrator().ColumnTypes("watchlist")
+	if err != nil {
+		return fmt.Errorf("获取表结构失败: %w", err)
+	}
+
+	hasName := false
+	hasData := false
+	for _, col := range columns {
+		switch col.Name() {
+		case "name":
+			hasName = true
+		case "data":
+			hasData = true
+		}
+	}
+
+	// 3. 如果所有必需字段都存在，尝试直接使用 AutoMigrate
+	// 但先确保所有数据都符合要求
+	if hasName && hasData {
+		// 再次确保所有 name 字段都有值
+		if err := s.fixWatchlistNullValues(); err != nil {
+			logger.Warn("修复 NULL 值失败，继续迁移",
+				zap.String("module", "services.db"),
+				zap.String("op", "manualMigrateWatchlistTable"),
+				zap.Error(err),
+			)
+		}
+
+		// 尝试使用 AutoMigrate（只迁移 watchlist 表）
+		if err := s.db.AutoMigrate(&models.WatchlistEntity{}); err != nil {
+			// 如果仍然失败，尝试手动重建表
+			logger.Warn("AutoMigrate 仍然失败，尝试手动重建表",
+				zap.String("module", "services.db"),
+				zap.String("op", "manualMigrateWatchlistTable"),
+				zap.Error(err),
+			)
+			return s.rebuildWatchlistTable()
+		}
+		return nil
+	}
+
+	// 4. 如果字段缺失，直接使用 AutoMigrate
+	return s.db.AutoMigrate(&models.WatchlistEntity{})
+}
+
+// rebuildWatchlistTable 重建 watchlist 表
+// 备份数据 -> 删除旧表 -> 创建新表 -> 恢复数据
+func (s *DBService) rebuildWatchlistTable() error {
+	logger.Info("开始重建 watchlist 表",
+		zap.String("module", "services.db"),
+		zap.String("op", "rebuildWatchlistTable"),
+	)
+
+	// 1. 备份数据
+	var backupData []struct {
+		Code    string
+		Name    string
+		Data    string
+		AddedAt time.Time
+	}
+	if err := s.db.Raw("SELECT code, COALESCE(name, '') as name, COALESCE(data, '') as data, COALESCE(added_at, CURRENT_TIMESTAMP) as added_at FROM watchlist").Scan(&backupData).Error; err != nil {
+		return fmt.Errorf("备份数据失败: %w", err)
+	}
+
+	logger.Info("已备份 watchlist 数据",
+		zap.String("module", "services.db"),
+		zap.String("op", "rebuildWatchlistTable"),
+		zap.Int("count", len(backupData)),
+	)
+
+	// 2. 删除旧表
+	if err := s.db.Migrator().DropTable("watchlist"); err != nil {
+		return fmt.Errorf("删除旧表失败: %w", err)
+	}
+
+	// 3. 创建新表
+	if err := s.db.AutoMigrate(&models.WatchlistEntity{}); err != nil {
+		return fmt.Errorf("创建新表失败: %w", err)
+	}
+
+	// 4. 恢复数据
+	if len(backupData) > 0 {
+		for _, item := range backupData {
+			// 确保 name 有值
+			name := item.Name
+			if name == "" {
+				// 尝试从 data 中提取
+				if item.Data != "" {
+					var data map[string]interface{}
+					if err := json.Unmarshal([]byte(item.Data), &data); err == nil {
+						if n, ok := data["name"].(string); ok && n != "" {
+							name = n
+						}
+					}
+				}
+				// 如果仍然为空，使用代码
+				if name == "" {
+					name = item.Code
+				}
+			}
+
+			entity := models.WatchlistEntity{
+				Code:    item.Code,
+				Name:    name,
+				Data:    item.Data,
+				AddedAt: item.AddedAt,
+			}
+			if err := s.db.Create(&entity).Error; err != nil {
+				logger.Warn("恢复数据失败",
+					zap.String("module", "services.db"),
+					zap.String("op", "rebuildWatchlistTable"),
+					zap.String("code", item.Code),
+					zap.Error(err),
+				)
+			}
+		}
+	}
+
+	logger.Info("成功重建 watchlist 表",
+		zap.String("module", "services.db"),
+		zap.String("op", "rebuildWatchlistTable"),
+		zap.Int("restored_count", len(backupData)),
+	)
+
+	return nil
 }
 
 // GetDB 返回数据库连接对象

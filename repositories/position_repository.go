@@ -86,16 +86,12 @@ func (r *SQLitePositionRepository) GetPositions() (map[string]*models.Position, 
 			UpdatedAt:     entity.UpdatedAt,
 		}
 
-		// 反序列化嵌套的 JSON 字段
-		if err := json.Unmarshal([]byte(entity.StrategyJSON), &pos.Strategy); err != nil {
-			logger.Error("反序列化 Strategy 失败", zap.String("code", pos.StockCode), zap.Error(err))
-			continue
+		if entity.StrategyJSON != "" {
+			_ = json.Unmarshal([]byte(entity.StrategyJSON), &pos.Strategy)
 		}
-		if err := json.Unmarshal([]byte(entity.TrailingConfigJSON), &pos.TrailingConfig); err != nil {
-			logger.Error("反序列化 TrailingConfig 失败", zap.String("code", pos.StockCode), zap.Error(err))
-			continue
+		if entity.TrailingConfigJSON != "" {
+			_ = json.Unmarshal([]byte(entity.TrailingConfigJSON), &pos.TrailingConfig)
 		}
-
 		positions[pos.StockCode] = pos
 	}
 

@@ -465,25 +465,25 @@ func (s *StockMarketService) parseStockItemToEntity(item interface{}, updatedAt 
 		FullCode:     market + code,
 		Type:         stockType,
 		IsActive:     1,
-		Price:        parseFloat("f2"),    // f2: 最新价
-		ChangeRate:   parseFloat("f3"),    // f3: 涨跌幅
-		ChangeAmount: parseFloat("f4"),    // f4: 涨跌额
-		Volume:       parseInt("f5"),      // f5: 总手（VOL）/成交量
-		Amount:       parseInt("f6"),      // f6: 成交额
-		Amplitude:    parseFloat("f7"),    // f7: 振幅
-		High:         parseFloat("f15"),   // f15: 今日最高
-		Low:          parseFloat("f16"),   // f16: 今日最低
-		Open:         parseFloat("f17"),   // f17: 今开
-		PreClose:     parseFloat("f18"),   // f18: 昨收
-		Turnover:     parseFloat("f8"),    // f8: 换手率
-		VolumeRatio:  parseFloat("f10"),   // f10: 量比
-		PE:           parseFloat("f9"),    // f9: 市盈率(动态)
-		WarrantRatio: parseFloat("f33"),   // f33: 委比
-		Industry:     parseString("f100"), // f100: 行业
-		Region:       parseString("f102"), // f102: 地区
-		Board:        parseString("f103"), // f103: 板块/备注
-		TotalMV:      parseInt("f20"),     // f20: 总市值
-		CircMV:       parseInt("f21"),     // f21: 流通市值
+		Price:        parseFloat("f2"),          // f2: 最新价
+		ChangeRate:   parseFloat("f3"),          // f3: 涨跌幅
+		ChangeAmount: parseFloat("f4"),          // f4: 涨跌额
+		Volume:       parseInt("f5"),            // f5: 总手（VOL）/成交量
+		Amount:       parseInt("f6"),            // f6: 成交额
+		Amplitude:    parseFloat("f7"),          // f7: 振幅
+		High:         parseFloat("f15"),         // f15: 今日最高
+		Low:          parseFloat("f16"),         // f16: 今日最低
+		Open:         parseFloat("f17"),         // f17: 今开
+		PreClose:     parseFloat("f18"),         // f18: 昨收
+		Turnover:     parseFloat("f8"),          // f8: 换手率
+		VolumeRatio:  parseFloat("f10"),         // f10: 量比
+		PE:           parseFloat("f9"),          // f9: 市盈率(动态)
+		WarrantRatio: parseFloat("f33"),         // f33: 委比
+		Industry:     parseString("f100"),        // f100: 行业
+		Region:       parseString("f102"),        // f102: 地区
+		Board:        parseString("f103"),        // f103: 板块/备注
+		TotalMV:      parseInt("f20"),            // f20: 总市值
+		CircMV:       parseInt("f21"),            // f21: 流通市值
 		UpdatedAt:    updatedAt,
 	}
 
@@ -522,6 +522,7 @@ func (s *StockMarketService) GetStocksList(page int, pageSize int, search string
 
 	stocks := make([]StockMarketData, len(entities))
 	for i, e := range entities {
+
 		stocks[i] = StockMarketData{
 			ID:           int64(e.ID),
 			Code:         e.Code,

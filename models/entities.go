@@ -7,8 +7,8 @@ import (
 // WatchlistEntity 对应 watchlist 表
 type WatchlistEntity struct {
 	Code    string    `gorm:"primaryKey;column:code" json:"code"`
-	Name    string    `gorm:"column:name;not null" json:"name"`
-	Data    string    `gorm:"column:data;not null" json:"data"` // 存储 StockData 的 JSON 字符串
+	Name    string    `gorm:"column:name" json:"name"`
+	Data    string    `gorm:"column:data" json:"data"` // 存储 StockData 的 JSON 字符串
 	AddedAt time.Time `gorm:"column:added_at;default:CURRENT_TIMESTAMP" json:"addedAt"`
 }
 
@@ -20,7 +20,7 @@ func (WatchlistEntity) TableName() string {
 type AlertEntity struct {
 	ID            uint      `gorm:"primaryKey;autoIncrement;column:id" json:"id"`
 	StockCode     string    `gorm:"column:stock_code;not null;uniqueIndex:idx_alert_unique" json:"stockCode"`
-	StockName     string    `gorm:"column:stock_name;not null" json:"stockName"`
+	StockName     string    `gorm:"column:stock_name" json:"stockName"`
 	Price         float64   `gorm:"column:price;not null;uniqueIndex:idx_alert_unique" json:"price"`
 	Type          string    `gorm:"column:type;not null;uniqueIndex:idx_alert_unique" json:"type"` // 'above' or 'below'
 	IsActive      bool      `gorm:"column:is_active;not null" json:"isActive"`
@@ -36,9 +36,9 @@ func (AlertEntity) TableName() string {
 type AlertHistoryEntity struct {
 	ID             uint      `gorm:"primaryKey;autoIncrement;column:id" json:"id"`
 	StockCode      string    `gorm:"column:stock_code;not null" json:"stockCode"`
-	StockName      string    `gorm:"column:stock_name;not null" json:"stockName"`
+	StockName      string    `gorm:"column:stock_name" json:"stockName"`
 	TriggeredPrice float64   `gorm:"column:triggered_price;not null" json:"triggeredPrice"`
-	Message        string    `gorm:"column:message;not null" json:"message"`
+	Message        string    `gorm:"column:message" json:"message"`
 	TriggeredAt    time.Time `gorm:"column:triggered_at;default:CURRENT_TIMESTAMP" json:"triggeredAt"`
 }
 
@@ -49,13 +49,13 @@ func (AlertHistoryEntity) TableName() string {
 // PositionEntity 对应 positions 表
 type PositionEntity struct {
 	StockCode          string    `gorm:"primaryKey;column:stock_code" json:"stockCode"`
-	StockName          string    `gorm:"column:stock_name;not null" json:"stockName"`
+	StockName          string    `gorm:"column:stock_name" json:"stockName"`
 	EntryPrice         float64   `gorm:"column:entry_price;not null" json:"entryPrice"`
 	EntryTime          time.Time `gorm:"column:entry_time;not null" json:"entryTime"`
-	CurrentStatus      string    `gorm:"column:current_status;not null" json:"currentStatus"` // 'holding', 'closed'
-	LogicStatus        string    `gorm:"column:logic_status;not null" json:"logicStatus"`     // 'valid', 'violated'
-	StrategyJSON       string    `gorm:"column:strategy_json;not null" json:"strategyJson"`           // 存储 EntryStrategyResult 的 JSON 字符串
-	TrailingConfigJSON string    `gorm:"column:trailing_config_json;not null" json:"trailingConfigJson"` // 存储 TrailingStopConfig 的 JSON 字符串
+	CurrentStatus      string    `gorm:"column:current_status;not null" json:"currentStatus"`   // 'holding', 'closed'
+	LogicStatus        string    `gorm:"column:logic_status;not null" json:"logicStatus"`       // 'valid', 'violated'
+	StrategyJSON       string    `gorm:"column:strategy_json" json:"strategyJson"`              // 存储 EntryStrategyResult 的 JSON 字符串
+	TrailingConfigJSON string    `gorm:"column:trailing_config_json" json:"trailingConfigJson"` // 存储 TrailingStopConfig 的 JSON 字符串
 	UpdatedAt          time.Time `gorm:"column:updated_at;default:CURRENT_TIMESTAMP" json:"updatedAt"`
 }
 
@@ -77,7 +77,7 @@ func (ConfigEntity) TableName() string {
 type SyncHistoryEntity struct {
 	ID             uint      `gorm:"primaryKey;autoIncrement;column:id" json:"id"`
 	StockCode      string    `gorm:"column:stock_code;not null" json:"stockCode"`
-	StockName      string    `gorm:"column:stock_name;not null" json:"stockName"`
+	StockName      string    `gorm:"column:stock_name" json:"stockName"`
 	SyncType       string    `gorm:"column:sync_type;not null" json:"syncType"` // 'single' or 'batch'
 	StartDate      string    `gorm:"column:start_date;not null" json:"startDate"`
 	EndDate        string    `gorm:"column:end_date;not null" json:"endDate"`
@@ -99,7 +99,7 @@ type StrategyConfigEntity struct {
 	Name               string    `gorm:"column:name;not null" json:"name"`
 	Description        string    `gorm:"column:description" json:"description"`
 	StrategyType       string    `gorm:"column:strategy_type;not null" json:"strategyType"`
-	Parameters         string    `gorm:"column:parameters;not null" json:"parameters"` // JSON 格式
+	Parameters         string    `gorm:"column:parameters;not null" json:"parameters"`          // JSON 格式
 	LastBacktestResult string    `gorm:"column:last_backtest_result" json:"lastBacktestResult"` // JSON
 	CreatedAt          time.Time `gorm:"column:created_at;default:CURRENT_TIMESTAMP" json:"createdAt"`
 	UpdatedAt          time.Time `gorm:"column:updated_at;default:CURRENT_TIMESTAMP" json:"updatedAt"`
@@ -113,8 +113,8 @@ func (StrategyConfigEntity) TableName() string {
 type StockEntity struct {
 	ID           uint      `gorm:"primaryKey;autoIncrement;column:id" json:"id"`
 	Code         string    `gorm:"column:code;not null;uniqueIndex" json:"code"`
-	Name         string    `gorm:"column:name;not null;index" json:"name"`
-	Market       string    `gorm:"column:market;not null;index" json:"market"`
+	Name         string    `gorm:"column:name;index" json:"name"`
+	Market       string    `gorm:"column:market;index" json:"market"`
 	FullCode     string    `gorm:"column:full_code;not null;uniqueIndex" json:"fullCode"`
 	Type         string    `gorm:"column:type" json:"type"`
 	IsActive     int       `gorm:"column:is_active;default:1" json:"isActive"`
@@ -146,21 +146,21 @@ func (StockEntity) TableName() string {
 
 // PriceThresholdAlertEntity 对应 price_threshold_alerts 表
 type PriceThresholdAlertEntity struct {
-	ID                uint       `gorm:"primaryKey;autoIncrement;column:id" json:"id"`
-	StockCode         string     `gorm:"column:stock_code;not null;index" json:"stockCode"`
-	StockName         string     `gorm:"column:stock_name;not null" json:"stockName"`
-	AlertType         string     `gorm:"column:alert_type;not null" json:"alertType"`
-	Conditions        string     `gorm:"column:conditions;not null" json:"conditions"` // JSON
-	IsActive          bool       `gorm:"column:is_active;default:true;index" json:"isActive"`
-	Sensitivity       float64    `gorm:"column:sensitivity;default:0.001" json:"sensitivity"`
-	CooldownHours     int        `gorm:"column:cooldown_hours;default:1" json:"cooldownHours"`
-	PostTriggerAction string     `gorm:"column:post_trigger_action;default:'continue'" json:"postTriggerAction"`
-	EnableSound       bool       `gorm:"column:enable_sound;default:true" json:"enableSound"`
-	EnableDesktop     bool       `gorm:"column:enable_desktop;default:true" json:"enableDesktop"`
-	TemplateID        string     `gorm:"column:template_id" json:"templateId"`
-	CreatedAt         time.Time  `gorm:"column:created_at;default:CURRENT_TIMESTAMP" json:"createdAt"`
-	UpdatedAt         time.Time  `gorm:"column:updated_at;default:CURRENT_TIMESTAMP" json:"updatedAt"`
-	LastTriggeredAt   *time.Time `gorm:"column:last_triggered_at" json:"lastTriggeredAt"`
+	ID                uint      `gorm:"primaryKey;autoIncrement;column:id" json:"id"`
+	StockCode         string    `gorm:"column:stock_code;not null;index" json:"stockCode"`
+	StockName         string    `gorm:"column:stock_name" json:"stockName"`
+	AlertType         string    `gorm:"column:alert_type;not null" json:"alertType"`
+	Conditions        string    `gorm:"column:conditions;not null" json:"conditions"` // JSON
+	IsActive          bool      `gorm:"column:is_active;default:true;index" json:"isActive"`
+	Sensitivity       float64   `gorm:"column:sensitivity;default:0.001" json:"sensitivity"`
+	CooldownHours     int       `gorm:"column:cooldown_hours;default:1" json:"cooldownHours"`
+	PostTriggerAction string    `gorm:"column:post_trigger_action;default:'continue'" json:"postTriggerAction"`
+	EnableSound       bool      `gorm:"column:enable_sound;default:true" json:"enableSound"`
+	EnableDesktop     bool      `gorm:"column:enable_desktop;default:true" json:"enableDesktop"`
+	TemplateID        string    `gorm:"column:template_id" json:"templateId"`
+	CreatedAt         time.Time `gorm:"column:created_at;default:CURRENT_TIMESTAMP" json:"createdAt"`
+	UpdatedAt         time.Time `gorm:"column:updated_at;default:CURRENT_TIMESTAMP" json:"updatedAt"`
+	LastTriggeredAt   time.Time `gorm:"column:last_triggered_at" json:"lastTriggeredAt"`
 }
 
 func (PriceThresholdAlertEntity) TableName() string {
@@ -186,7 +186,7 @@ type PriceAlertTriggerHistoryEntity struct {
 	ID             uint      `gorm:"primaryKey;autoIncrement;column:id" json:"id"`
 	AlertID        uint      `gorm:"column:alert_id;not null;index" json:"alertId"`
 	StockCode      string    `gorm:"column:stock_code;not null;index" json:"stockCode"`
-	StockName      string    `gorm:"column:stock_name;not null" json:"stockName"`
+	StockName      string    `gorm:"column:stock_name" json:"stockName"`
 	AlertType      string    `gorm:"column:alert_type;not null" json:"alertType"`
 	TriggerPrice   float64   `gorm:"column:trigger_price" json:"triggerPrice"`
 	TriggerMessage string    `gorm:"column:trigger_message" json:"triggerMessage"`

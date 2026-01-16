@@ -41,9 +41,11 @@ func (r *SQLiteWatchlistRepository) GetAll() ([]*models.StockData, error) {
 	stocks := make([]*models.StockData, 0)
 	for _, entity := range entities {
 		var stock models.StockData
-		if err := json.Unmarshal([]byte(entity.Data), &stock); err != nil {
-			logger.Error("解析自选股 JSON 数据失败", zap.String("code", entity.Code), zap.Error(err))
-			continue
+		if entity.Data != "" {
+			if err := json.Unmarshal([]byte(entity.Data), &stock); err != nil {
+				logger.Error("解析自选股 JSON 数据失败", zap.String("code", entity.Code), zap.Error(err))
+				continue
+			}
 		}
 		stocks = append(stocks, &stock)
 	}

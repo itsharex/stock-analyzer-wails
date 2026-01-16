@@ -384,10 +384,7 @@ func (r *PriceAlertRepository) entityToAlert(entity *models.PriceThresholdAlertE
 		TemplateID:        entity.TemplateID,
 		CreatedAt:         entity.CreatedAt,
 		UpdatedAt:         entity.UpdatedAt,
-	}
-
-	if entity.LastTriggeredAt != nil {
-		alert.LastTriggeredAt = *entity.LastTriggeredAt
+		LastTriggeredAt:   entity.LastTriggeredAt,
 	}
 
 	return alert
