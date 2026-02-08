@@ -10,7 +10,10 @@ type MoneyFlowData struct {
 	MidNet     float64 `json:"midNet"`   // 中单
 	SmallNet   float64 `json:"smallNet"` // 小单净额
 	ClosePrice float64 `json:"closePrice"`
-	ChgPct     float64 `json:"chgPct"` // 涨跌幅
+	ChgPct     float64 `json:"chgPct"`   // 涨跌幅
+	Amount     float64 `json:"amount"`   // 成交金额
+	MainRate   float64 `json:"mainRate"` // 主力强度 (百分比)
+	Turnover   float64 `json:"turnover"` // 换手率
 }
 
 // StrategySignal 策略信号

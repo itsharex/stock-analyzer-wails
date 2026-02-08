@@ -201,13 +201,16 @@ func (PriceAlertTriggerHistoryEntity) TableName() string {
 type StockMoneyFlowHistEntity struct {
 	Code       string  `gorm:"primaryKey;column:code" json:"code"`
 	TradeDate  string  `gorm:"primaryKey;column:trade_date" json:"tradeDate"` // Composite Key part 2
-	MainNet    float64 `gorm:"column:main_net;default:0" json:"mainNet"`
-	SuperNet   float64 `gorm:"column:super_net;default:0" json:"superNet"`
-	BigNet     float64 `gorm:"column:big_net;default:0" json:"bigNet"`
+	MainNet    float64 `gorm:"column:main_net;default:0" json:"mainNet"`      // 主力净额 (f62)
+	SuperNet   float64 `gorm:"column:super_net;default:0" json:"superNet"`    // 超大单 (f56)
+	BigNet     float64 `gorm:"column:big_net;default:0" json:"bigNet"`        // 大单 (f55)
 	MidNet     float64 `gorm:"column:mid_net;default:0" json:"midNet"`
 	SmallNet   float64 `gorm:"column:small_net;default:0" json:"smallNet"`
-	ClosePrice float64 `gorm:"column:close_price;default:0" json:"closePrice"`
-	ChgPct     float64 `gorm:"column:chg_pct;default:0" json:"chgPct"`
+	ClosePrice float64 `gorm:"column:close_price;default:0" json:"closePrice"` // 收盘价 (f53)
+	ChgPct     float64 `gorm:"column:chg_pct;default:0" json:"chgPct"`         // 涨跌幅 (f59)
+	Amount     float64 `gorm:"column:amount;default:0" json:"amount"`          // 成交金额 (f54)
+	MainRate   float64 `gorm:"column:main_rate;default:0" json:"mainRate"`     // 主力强度 (f57)
+	Turnover   float64 `gorm:"column:turnover;default:0" json:"turnover"`      // 换手率 (f58)
 }
 
 func (StockMoneyFlowHistEntity) TableName() string {

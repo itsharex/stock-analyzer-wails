@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -183,7 +185,8 @@ func (s *SyncService) StartFullMarketSync() error {
 			time.Sleep(200 * time.Millisecond)
 
 			// 仅爬取数据，不写入数据库
-			flows, err := s.FetchHistoryFlowData(stockCode)
+			rawData, err := s.FetchHistoryFlowDataV2(stockCode, 120)
+			flows := AlignStockData2MoneyFlow(stockCode, GetSortedData(rawData))
 			if err != nil {
 				logger.Error("同步资金流失败", zap.String("code", stockCode), zap.Error(err))
 				// 失败时，发送空切片以通知 Saver 继续计数
@@ -241,9 +244,10 @@ func (s *SyncService) FetchHistoryFlowData(code string) ([]models.MoneyFlowData,
 
 	// 构造 URL (lmt=0 获取全部)
 	url := fmt.Sprintf(
-		"https://push2his.eastmoney.com/api/qt/stock/fflow/daykline/get?lmt=0&klt=101&fields1=f1,f2,f3,f7&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61,f62,f63,f64,f65&secid=%s",
+		"https://push2his.eastmoney.com/api/qt/stock/fflow/daykline/get?lmt=120&klt=101&fields1=f1,f2,f3,f7&fields2=f51,f52,f53,f54,f55,f56,f62&secid=%s",
 		secid,
 	)
+	logger.Info("请求资金流URL", zap.String("url", url))
 
 	resp, err := s.client.Get(url)
 	if err != nil {
@@ -325,4 +329,396 @@ func (s *SyncService) emitProgress(progress *SyncProgress) {
 	if s.ctx != nil {
 		runtime.EventsEmit(s.ctx, "sync_progress", progress)
 	}
+}
+
+// AlignedStockData 决策先锋专用结构体
+type AlignedStockData struct {
+	TradeDate  string  // 日期
+	ClosePrice float64 // 收盘价
+	Amount     float64 // 总成交额
+	MainNet    float64 // 主力净流入 (f52)
+	SuperNet   float64 // 超大单 (f56)
+	BigNet     float64 // 大单 (f55)
+	ChgPct     float64 // 涨跌幅
+	Turnover   float64 // 换手率
+	MainRate   float64 // 主力强度 (主力净额/总成交额)
+}
+
+// ParseAndMerge 手动解析并合并两个接口的数据
+func ParseAndMerge(klineData []string, fflowData []string) map[string]*AlignedStockData {
+	result := make(map[string]*AlignedStockData)
+
+	// 1. 解析行情数据 (kline)
+	// 假设 fields2=f51,f53,f56,f57,f59,f61
+	for _, line := range klineData {
+		parts := strings.Split(line, ",")
+		if len(parts) < 6 {
+			continue
+		}
+
+		date := parts[0]
+		closeP, _ := strconv.ParseFloat(parts[1], 64)
+		amount, _ := strconv.ParseFloat(parts[3], 64)
+		chgPct, _ := strconv.ParseFloat(parts[4], 64)
+		turnover, _ := strconv.ParseFloat(parts[5], 64)
+
+		result[date] = &AlignedStockData{
+			TradeDate:  date,
+			ClosePrice: closeP,
+			Amount:     amount,
+			ChgPct:     chgPct,
+			Turnover:   turnover,
+		}
+	}
+
+	// 2. 解析并合并资金流数据 (fflow)
+	// 假设 fields2=f51,f52,f53,f54,f55,f56,f62
+	for _, line := range fflowData {
+		parts := strings.Split(line, ",")
+		if len(parts) < 7 {
+			continue
+		}
+
+		date := parts[0]
+		if data, ok := result[date]; ok {
+			mainNet, _ := strconv.ParseFloat(parts[1], 64)  // f52 主力
+			bigNet, _ := strconv.ParseFloat(parts[4], 64)   // f55 大单
+			superNet, _ := strconv.ParseFloat(parts[5], 64) // f56 超大单
+
+			data.MainNet = mainNet
+			data.BigNet = bigNet
+			data.SuperNet = superNet
+
+			// 计算核心指标：主力强度
+			if data.Amount > 0 {
+				data.MainRate = (mainNet / data.Amount) * 100
+			}
+		}
+
+	}
+	logger.Info("解析并合并数据完成，条目数:", zap.Int("count", len(result)), zap.Any("result", result))
+	return result
+}
+
+func (s *SyncService) FetchHistoryFlowDataV2(code string, limit int) (map[string]*AlignedStockData, error) {
+	// 1. 判断市场前缀 (严谨逻辑)
+	secid := "0." + code // 默认深市
+	if strings.HasPrefix(code, "6") {
+		secid = "1." + code // 沪市
+	}
+
+	// 2. 构造 URL (严格按照 ParseAndMerge 的索引顺序)
+	// 行情：f51(日期),f53(收),f56(量),f57(额),f59(幅),f61(换)
+	klineURL := fmt.Sprintf("https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=%s&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f53,f56,f57,f59,f61&klt=101&fqt=1&end=20500101&lmt=%d", secid, limit)
+	// 资金流：f51(日期),f52(主力),f53(小),f54(中),f55(大),f56(超),f62(占比)
+
+	fflowURL := fmt.Sprintf("https://push2his.eastmoney.com/api/qt/stock/fflow/daykline/get?secid=%s&fields1=f1,f2,f3,f7&fields2=f51,f52,f53,f54,f55,f56,f62&klt=101&lmt=%d", secid, limit)
+
+	// 3. 执行请求
+	klineLines, err := httpGetKlines(klineURL)
+	if err != nil {
+		return nil, fmt.Errorf("行情请求失败: %v", err)
+	}
+	fflowLines, err := httpGetKlines(fflowURL)
+	if err != nil {
+		return nil, fmt.Errorf("资金流请求失败: %v", err)
+	}
+
+	// 4. 调用我们上一轮写的对齐逻辑
+	return ParseAndMerge(klineLines, fflowLines), nil
+}
+
+// EastMoneyResp 东财标准响应外层
+type EastMoneyResp struct {
+	Data struct {
+		Klines []string `json:"klines"`
+		Code   string   `json:"code"`
+		Name   string   `json:"name"`
+	} `json:"data"`
+}
+
+// 内部辅助函数：执行 GET 并解析 JSON
+func httpGetKlines(url string) ([]string, error) {
+	resp, err := http.Get(url)
+	if err != nil {
+		logger.Error("获取历史资金流数据失败", zap.Any("err", err), zap.String("url", url))
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(resp.Body)
+	var emResp EastMoneyResp
+	if err := json.Unmarshal(body, &emResp); err != nil {
+		return nil, err
+	}
+	return emResp.Data.Klines, nil
+}
+func RunDecisionSignal(sortedData []AlignedStockData) {
+	if len(sortedData) < 20 {
+		return
+	}
+
+	for i := 19; i < len(sortedData); i++ {
+		curr := sortedData[i]
+		prev := sortedData[i-1]
+
+		// 1. 生命线（操盘线）
+		ma20 := calculateMAV(sortedData, i, 20)
+
+		// 2. 资金动能：今日主力强度 vs 昨日主力强度
+		// 决策先锋喜欢“资金反转”，即昨天流出，今天突然暴增
+		moneySurge := curr.MainRate - prev.MainRate
+
+		// 3. 决策先锋 B 点核心逻辑（回归版）
+		// - 条件 A: 股价上穿 MA20（或者已经在 MA20 之上运行）
+		// - 条件 B: 主力强度显著（> 3.0%）
+		// - 条件 C: 资金动能向上（今天的钱比昨天多）
+
+		isCrossing := curr.ClosePrice >= ma20 && prev.ClosePrice < ma20
+		isStrongAbove := curr.ClosePrice > ma20 && curr.MainRate > 5.0
+
+		if (isCrossing || isStrongAbove) && curr.MainRate > 3.0 && moneySurge > 0 {
+			fmt.Printf("🎯 [决策先锋-B点] %s | 价格: %.2f | 主力占比: %.2f%% | 动能: %.2f\n",
+				curr.TradeDate, curr.ClosePrice, curr.MainRate, moneySurge)
+		}
+
+		// 4. 决策先锋 S 点核心逻辑
+		// - 条件 A: 股价跌破 MA20 且 资金不给力
+		// - 条件 B: 股价虽在 MA20 之上，但主力资金出现“断崖式”流出（MainRate < -8%）
+
+		if (curr.ClosePrice < ma20 && curr.MainRate < 0) || curr.MainRate < -8.0 {
+			fmt.Printf("⚠️ [决策先锋-S点] %s | 价格: %.2f | 警告原因: %s\n",
+				curr.TradeDate, curr.ClosePrice, getReason(curr, ma20))
+		}
+
+		if curr.TradeDate >= "2026-01-05" && curr.TradeDate <= "2026-01-12" {
+			fmt.Printf("📅 日期: %s | 涨幅: %.2f%% | 主力强度: %.2f%%\n",
+				curr.TradeDate, curr.ChgPct, curr.MainRate)
+		}
+	}
+}
+
+func getReason(d AlignedStockData, ma float64) string {
+	if d.ClosePrice < ma {
+		return "破位下行"
+	}
+	return "主力砸盘"
+}
+
+// 辅助函数：计算指定位置的MA
+func calculateMAV(data []AlignedStockData, index int, period int) float64 {
+	if index < period-1 {
+		return 0
+	}
+	var sum float64
+	for i := index - period + 1; i <= index; i++ {
+		sum += data[i].ClosePrice
+	}
+	return sum / float64(period)
+}
+
+// 辅助函数：简单估算最近一次买入后的盈亏（仅用于日志展示）
+func calculateProfit(data []AlignedStockData, currentIndex int) float64 {
+	// 这里逻辑可以根据你的需要记录上次买入价，暂时简单返回0
+	return 0
+}
+func CalculateSignals(data []AlignedStockData) {
+	// 决策先锋通常需要至少 20 天的数据来计算均线
+	if len(data) < 20 {
+		return
+	}
+
+	for i := 20; i < len(data); i++ {
+		// 1. 计算 MA20
+		var sum float64
+		for j := i - 19; j <= i; j++ {
+			sum += data[j].ClosePrice
+		}
+		ma20 := sum / 20
+
+		// 2. 计算 5 日资金流向
+		var moneySum float64
+		for j := i - 4; j <= i; j++ {
+			moneySum += data[j].MainNet
+		}
+
+		// 3. 执行 B 点判定逻辑
+		checkBPoint(data[i], ma20, moneySum)
+	}
+}
+
+func checkBPoint(current AlignedStockData, ma20 float64, fiveDayMoney float64) {
+	// 严谨逻辑闭环
+	isInstitutionalBuying := current.MainRate > 3.0
+	isTrendSafe := current.ClosePrice > ma20 && current.ClosePrice < ma20*1.15 // 别追太高
+	isAccumulating := fiveDayMoney > 0
+	isPriceStrong := current.ChgPct > 1.5
+
+	if isInstitutionalBuying && isTrendSafe && isAccumulating && isPriceStrong {
+		fmt.Printf("🔥 [B点信号] 日期: %s | 价格: %.2f | 主力强度: %.2f%% | 偏离MA20: %.2f%%\n",
+			current.TradeDate,
+			current.ClosePrice,
+			current.MainRate,
+			(current.ClosePrice-ma20)/ma20*100,
+		)
+	}
+}
+
+// GetSortedData 将 map 转换为按时间升序排列的切片
+func GetSortedData(dataMap map[string]*AlignedStockData) []AlignedStockData {
+	keys := make([]string, 0, len(dataMap))
+	for k := range dataMap {
+		keys = append(keys, k)
+	}
+	// 严格按日期升序排序
+	sort.Strings(keys)
+
+	sortedList := make([]AlignedStockData, 0, len(keys))
+	for _, k := range keys {
+		sortedList = append(sortedList, *dataMap[k])
+	}
+	return sortedList
+}
+
+func AlignStockData2MoneyFlow(stockCode string, data []AlignedStockData) []models.MoneyFlowData {
+	moneyFlows := make([]models.MoneyFlowData, 0, len(data))
+	for _, d := range data {
+		moneyFlows = append(moneyFlows, models.MoneyFlowData{
+			Code:       stockCode,
+			TradeDate:  d.TradeDate,
+			ClosePrice: d.ClosePrice,
+			Amount:     d.Amount,
+			MainNet:    d.MainNet,
+			SuperNet:   d.SuperNet,
+			BigNet:     d.BigNet,
+			ChgPct:     d.ChgPct,
+			MainRate:   d.MainRate,
+			Turnover:   d.Turnover,
+		})
+	}
+	return moneyFlows
+}
+
+type TickData struct {
+	Time      string  // 成交时间
+	Price     float64 // 成交价格
+	Volume    int64   // 成交量(手)
+	Orders    int64   // 成交笔数 (第4个元素)
+	Direction int     // 成交方向 (1:主买, 2:主卖, 4:中性)
+}
+
+type OrderFlowStats struct {
+	Symbol        string
+	TotalVolume   int64   // 总成交量
+	ActiveBuy     int64   // 明盘流入
+	ActiveSell    int64   // 明盘流出
+	HiddenFlow    int64   // 暗盘(中性大单)
+	MainForceVol  int64   // 主力核心成交(高浓度单)
+	MainForceRate float64 // 主力参与度
+	NetMoneyFlow  int64   // 综合净流入
+}
+
+// 抓取全天交易笔数
+func FetchAllDayTicks(code string) (*OrderFlowStats, error) {
+	stats := &OrderFlowStats{}
+
+	// 构造 secid
+	secid := ""
+	if strings.HasPrefix(code, "6") {
+		secid = "1." + code
+	} else {
+		secid = "0." + code
+	}
+	pos := -0
+	ticks, err := fetchTickBatch(secid, pos)
+	if err != nil {
+		return nil, err
+	}
+
+	tickData := parseRawTicks(ticks)
+	stats = AnalyzeL2Market(tickData)
+	return stats, nil
+}
+
+func AnalyzeL2Market(ticks []TickData) *OrderFlowStats {
+	res := OrderFlowStats{}
+	for _, tick := range ticks {
+		// 严谨逻辑：过滤非交易时段
+		if tick.Time < "09:30:00" || (tick.Time > "11:30:00" && tick.Time < "13:00:00") {
+			continue
+		}
+
+		res.TotalVolume += tick.Volume
+		avgVol := 0.0
+		if tick.Orders > 0 {
+			avgVol = float64(tick.Volume) / float64(tick.Orders)
+		}
+
+		// 严格复刻同花顺明暗盘分类
+		switch tick.Direction {
+		case 1:
+			res.ActiveBuy += tick.Volume
+		case 2:
+			res.ActiveSell += tick.Volume
+		case 4:
+			// 暗盘逻辑：中性盘且单笔均量较大
+			if avgVol >= 50 {
+				res.HiddenFlow += tick.Volume
+			}
+		}
+
+		// 主力逻辑：单笔均量超过门槛（高浓度成交）
+		if avgVol >= 100 {
+			res.MainForceVol += tick.Volume
+		}
+	}
+
+	res.NetMoneyFlow = res.ActiveBuy - res.ActiveSell + res.HiddenFlow
+	if res.TotalVolume > 0 {
+		res.MainForceRate = (float64(res.MainForceVol) / float64(res.TotalVolume)) * 100
+	}
+	return &res
+}
+
+// 封装的批量获取tick数据方法
+func fetchTickBatch(secid string, pos int) ([]string, error) {
+	url := fmt.Sprintf("https://push2.eastmoney.com/api/qt/stock/details/get?secid=%s&pos=%d&fields1=f1,f2,f3,f4,f5&fields2=f51,f52,f53,f54,f55", secid, pos)
+	resp, err := http.Get(url)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	var result struct {
+		Data struct {
+			Details []string `json:"details"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, err
+	}
+	return result.Data.Details, nil
+}
+
+func parseRawTicks(rawTicks []string) []TickData {
+	var ticks []TickData
+	for _, line := range rawTicks {
+		p := strings.Split(line, ",")
+		if len(p) < 5 {
+			continue
+		}
+
+		vol, _ := strconv.ParseInt(p[2], 10, 64)
+		orders, _ := strconv.ParseInt(p[3], 10, 64)
+		price, _ := strconv.ParseFloat(p[1], 64)
+		dir, _ := strconv.Atoi(p[4])
+
+		ticks = append(ticks, TickData{
+			Time: p[0], Price: price, Volume: vol, Orders: orders, Direction: dir,
+		})
+	}
+	return ticks
 }

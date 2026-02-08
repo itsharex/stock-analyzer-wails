@@ -32,6 +32,9 @@ func (r *MoneyFlowRepository) SaveMoneyFlows(flows []models.MoneyFlowData) error
 			SmallNet:   flow.SmallNet,
 			ClosePrice: flow.ClosePrice,
 			ChgPct:     flow.ChgPct,
+			Amount:     flow.Amount,
+			MainRate:   flow.MainRate,
+			Turnover:   flow.Turnover,
 		})
 	}
 

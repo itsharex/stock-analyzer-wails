@@ -163,6 +163,7 @@ func (s *DBService) initTables() error {
 		&models.PriceAlertTriggerHistoryEntity{},
 		&models.StockMoneyFlowHistEntity{},
 		&models.StockStrategySignalEntity{},
+		&models.StockMoneyFlowHistEntity{},
 	)
 	if err != nil {
 		// 如果迁移失败，清理临时表并记录错误
