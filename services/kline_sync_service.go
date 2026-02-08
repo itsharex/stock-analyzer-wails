@@ -2,10 +2,8 @@ package services
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"math/rand"
-	"net/http"
 	"strconv"
 	"strings"
 	"sync"
@@ -14,6 +12,7 @@ import (
 	"stock-analyzer-wails/internal/logger"
 	"stock-analyzer-wails/models"
 
+	"github.com/go-resty/resty/v2"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 
 	"go.uber.org/zap"
@@ -22,6 +21,7 @@ import (
 // KLineSyncService K线数据同步服务
 type KLineSyncService struct {
 	dbService *DBService
+	client    *resty.Client
 	ctx       context.Context
 	running   bool
 	mu        sync.Mutex
@@ -29,8 +29,16 @@ type KLineSyncService struct {
 
 // NewKLineSyncService 创建K线同步服务
 func NewKLineSyncService(dbService *DBService) *KLineSyncService {
+	client := resty.New()
+	client.SetTimeout(30 * time.Second)
+	client.SetHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+	client.SetHeader("Referer", "https://quote.eastmoney.com/")
+	client.SetRetryCount(3)
+	client.SetCloseConnection(true) // 短连接
+
 	return &KLineSyncService{
 		dbService: dbService,
+		client:    client,
 		running:   false,
 	}
 }
@@ -297,14 +305,6 @@ func (s *KLineSyncService) fetchKLineData(task *KLineSyncTask, days int) ([]map[
 	)
 
 	// 发送请求
-	client := &http.Client{Timeout: 30 * time.Second}
-	resp, err := client.Get(url)
-	if err != nil {
-		return nil, fmt.Errorf("请求K线API失败: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// 解析响应
 	var result struct {
 		RC   int `json:"rc"`
 		RT   int `json:"rt"`
@@ -313,8 +313,16 @@ func (s *KLineSyncService) fetchKLineData(task *KLineSyncTask, days int) ([]map[
 		} `json:"data"`
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("解析K线响应失败: %w", err)
+	resp, err := s.client.R().
+		SetResult(&result).
+		Get(url)
+
+	if err != nil {
+		return nil, fmt.Errorf("请求K线API失败: %w", err)
+	}
+
+	if resp.IsError() {
+		return nil, fmt.Errorf("API请求失败: %s", resp.Status())
 	}
 
 	if result.RC != 0 {

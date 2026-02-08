@@ -383,6 +383,11 @@ const getIntradayData = useCallback(async (code: string): Promise<IntradayRespon
     return window.go.main.App.AnalyzePastSignals(days)
   }, [])
 
+  const ScanSingleStock = useCallback(async (code: string): Promise<StrategySignal[]> => {
+    // @ts-ignore
+    return window.go.main.App.ScanSingleStock(code)
+  }, [])
+
   return {
     GetLatestSignals,
     GetSignalsByStockCode,
@@ -453,6 +458,7 @@ const getIntradayData = useCallback(async (code: string): Promise<IntradayRespon
     togglePriceAlert,
     createPriceAlertFromTemplate,
     analyzePastSignals,
+    ScanSingleStock,
   }
 }
 

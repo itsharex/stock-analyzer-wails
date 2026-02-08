@@ -1,9 +1,7 @@
 package services
 
 import (
-	"encoding/json"
 	"fmt"
-	"net/http"
 	"stock-analyzer-wails/internal/logger"
 	"stock-analyzer-wails/models"
 	"stock-analyzer-wails/repositories"
@@ -11,22 +9,27 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-resty/resty/v2"
 	"go.uber.org/zap"
 )
 
 // MoneyFlowService 资金流向服务
 type MoneyFlowService struct {
 	repo   *repositories.MoneyFlowRepository
-	client *http.Client
+	client *resty.Client
 }
 
 // NewMoneyFlowService 创建资金流向服务
 func NewMoneyFlowService(repo *repositories.MoneyFlowRepository) *MoneyFlowService {
+	client := resty.New()
+	client.SetTimeout(30 * time.Second)
+	client.SetHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+	client.SetHeader("Referer", "https://quote.eastmoney.com/")
+	client.SetRetryCount(3)
+
 	return &MoneyFlowService{
-		repo: repo,
-		client: &http.Client{
-			Timeout: 30 * time.Second,
-		},
+		repo:   repo,
+		client: client,
 	}
 }
 
@@ -37,42 +40,40 @@ func (s *MoneyFlowService) FetchAndSaveHistory(code string) error {
 	// 1. 生成 secid
 	secid := s.generateSecid(code)
 
-	// 2. 构建 API URL
-	url := fmt.Sprintf("https://push2his.eastmoney.com/api/qt/stock/fflow/daykline/get?lmt=100&klt=101&fields1=f1,f2,f3,f7&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61,f62,f63,f64,f65&secid=%s", secid)
+	url := fmt.Sprintf(
+		"https://push2his.eastmoney.com/api/qt/stock/fflow/daykline/get?lmt=0&klt=101&fields1=f1,f2,f3,f7&fields2=f51,f52,f53,f54,f55,f56,f62&secid=%s",
+		secid,
+	)
 
-	// 3. 发起请求
-	req, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return fmt.Errorf("创建请求失败: %w", err)
-	}
-	req.Header.Set("Referer", "https://quote.eastmoney.com/")
-
-	resp, err := s.client.Do(req)
-	if err != nil {
-		return fmt.Errorf("请求 API 失败: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// 4. 解析响应
-	var apiResp struct {
+	var emResp struct {
 		RC   int `json:"rc"`
 		Data struct {
 			Klines []string `json:"klines"`
 		} `json:"data"`
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
-		return fmt.Errorf("解析响应失败: %w", err)
+	resp, err := s.client.R().
+		SetResult(&emResp).
+		Get(url)
+
+	if err != nil {
+		return fmt.Errorf("HTTP请求失败: %w", err)
 	}
 
-	if apiResp.Data.Klines == nil {
-		logger.Warn("未获取到资金流向数据", zap.String("code", code))
+	if resp.IsError() {
+		return fmt.Errorf("HTTP请求返回错误状态: %s", resp.Status())
+	}
+
+	if emResp.RC != 0 {
+		return fmt.Errorf("API返回错误 RC=%d", emResp.RC)
+	}
+
+	if emResp.Data.Klines == nil {
 		return nil
 	}
 
-	// 5. 解析数据
 	var flows []models.MoneyFlowData
-	for _, line := range apiResp.Data.Klines {
+	for _, line := range emResp.Data.Klines {
 		parts := strings.Split(line, ",")
 		if len(parts) < 13 {
 			continue

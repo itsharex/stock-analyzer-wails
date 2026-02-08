@@ -1546,3 +1546,13 @@ func (a *App) StartFullMarketSync() error {
 	}
 	return a.syncService.StartFullMarketSync()
 }
+
+// ScanSingleStock 扫描单只股票 (支持按需同步)
+// 前端输入股票代码后调用此方法
+func (a *App) ScanSingleStock(code string) ([]models.StrategySignal, error) {
+	if a.syncService == nil {
+		return nil, fmt.Errorf("同步服务未初始化")
+	}
+	// 调用 syncService 的组合方法：同步 -> 扫描 -> 返回
+	return a.syncService.SyncAndScanSingleStock(code)
+}

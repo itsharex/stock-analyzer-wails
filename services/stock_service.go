@@ -18,62 +18,70 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/go-resty/resty/v2"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"go.uber.org/zap"
 )
 
-// StockService 股票数据服务
+// StockService 处理股票相关的业务逻辑
 type StockService struct {
-	ctx       context.Context // Wails Context
-	exactURL  string
-	listURL   string
-	klineURL  string
-	client    *http.Client
-	sseClient *http.Client
-
+	client       *resty.Client
+	sseClient    *resty.Client // 专门用于 SSE 的客户端（不超时）
+	ctx          context.Context
+	cancel       context.CancelFunc
 	streamMu     sync.Mutex
 	streams      map[string]context.CancelFunc
 	emitIntraday func(ctx context.Context, code string, trends []string)
 	dbService    *DBService // 数据库服务
 	warnMu       sync.Mutex
 	lastWarnAt   map[string]time.Time
+	exactURL     string
+	listURL      string
+	klineURL     string
 }
 
-// SetDBService 注入数据库服务。
-//
-// 为什么需要：StockService 的“历史数据同步/本地缓存”等功能依赖 SQLite。
-// 如果不注入 dbService，会导致 SyncStockData/GetDataSyncStats 直接报“数据库服务未初始化”，
-// 前端通常会把这类错误汇总展示为“自选股功能暂不可用”。
-func (s *StockService) SetDBService(db *DBService) {
-	s.dbService = db
-}
-
-// NewStockService 创建股票数据服务实例
+// NewStockService 创建股票服务实例
 func NewStockService() *StockService {
+	ctx, cancel := context.WithCancel(context.Background())
+
+	// 常规请求客户端
+	client := resty.New()
+	client.SetTimeout(10 * time.Second)
+	client.SetHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+	client.SetHeader("Referer", "https://quote.eastmoney.com/")
+	client.SetRetryCount(3)
+
+	// SSE 专用客户端 (无超时，不自动关闭连接)
+	sseClient := resty.New()
+	sseClient.SetTimeout(0) // 无超时
+	sseClient.SetHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+	sseClient.SetHeader("Accept", "text/event-stream")
+	sseClient.SetHeader("Cache-Control", "no-cache")
+	sseClient.SetCloseConnection(false) // 保持长连接
+
 	s := &StockService{
-		exactURL: "https://push2.eastmoney.com/api/qt/stock/get",
-		listURL:  "http://78.push2.eastmoney.com/api/qt/clist/get",
-		klineURL: "https://push2his.eastmoney.com/api/qt/stock/kline/get",
-		client: &http.Client{
-			Timeout: 10 * time.Second,
-		},
-		// SSE 是长连接：不能用短 Timeout，否则读 body 会被强制 cancel 导致 context deadline exceeded
-		sseClient: &http.Client{
-			Timeout: 0,
-			Transport: &http.Transport{
-				Proxy: http.ProxyFromEnvironment,
-				// 只限制“建连+拿到响应头”的时间，避免永不返回
-				ResponseHeaderTimeout: 10 * time.Second,
-			},
-		},
+		client:     client,
+		sseClient:  sseClient,
+		ctx:        ctx,
+		cancel:     cancel,
+		exactURL:   "https://push2.eastmoney.com/api/qt/stock/get",
+		listURL:    "http://78.push2.eastmoney.com/api/qt/clist/get",
+		klineURL:   "https://push2his.eastmoney.com/api/qt/stock/kline/get",
 		streams:    make(map[string]context.CancelFunc),
 		lastWarnAt: make(map[string]time.Time),
 	}
+
 	// 默认事件推送实现（生产环境）
 	s.emitIntraday = func(ctx context.Context, code string, trends []string) {
 		runtime.EventsEmit(ctx, "intradayDataUpdate:"+code, trends)
 	}
+
 	return s
+}
+
+// SetDBService 注入数据库服务。
+func (s *StockService) SetDBService(db *DBService) {
+	s.dbService = db
 }
 
 func (s *StockService) logWarnThrottled(code string, msg string, fields ...zap.Field) {
@@ -156,21 +164,20 @@ func (s *StockService) getOrderBook(code string) (*models.OrderBook, error) {
 	fields := "f68,f69,f70,f71,f72,f73,f74,f75,f76,f77,f78,f79,f80,f81,f82,f83,f84,f85"
 	fullURL := fmt.Sprintf("%s?secid=%s&fields=%s", s.exactURL, secid, fields)
 
-	req, _ := http.NewRequest("GET", fullURL, nil)
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-
-	resp, err := s.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("请求盘口数据失败: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, _ := io.ReadAll(resp.Body)
 	var result struct {
 		Data map[string]interface{} `json:"data"`
 	}
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("解析盘口响应失败: %w", err)
+
+	resp, err := s.client.R().
+		SetResult(&result).
+		Get(fullURL)
+
+	if err != nil {
+		return nil, fmt.Errorf("请求盘口数据失败: %w", err)
+	}
+
+	if resp.IsError() {
+		return nil, fmt.Errorf("HTTP error: %s", resp.Status())
 	}
 
 	if result.Data == nil {
@@ -245,23 +252,22 @@ func (s *StockService) GetStockByCode(code string) (*models.StockData, error) {
 	}
 
 	fields := "f58,f43,f169,f170,f47,f48,f44,f45,f46,f60,f171,f168,f162,f167,f116,f117,f12,f14,f19,f20"
-	fullURL := fmt.Sprintf("%s?secid=%s&fields=%s", s.exactURL, secid, fields)
+	url := fmt.Sprintf("%s?secid=%s&fields=%s", s.exactURL, secid, fields)
 
-	req, _ := http.NewRequest("GET", fullURL, nil)
-	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
-
-	resp, err := s.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("请求失败: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, _ := io.ReadAll(resp.Body)
 	var result struct {
 		Data map[string]interface{} `json:"data"`
 	}
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("解析响应失败: %w", err)
+
+	resp, err := s.client.R().
+		SetResult(&result).
+		Get(url)
+
+	if err != nil {
+		return nil, fmt.Errorf("请求失败: %w", err)
+	}
+
+	if resp.IsError() {
+		return nil, fmt.Errorf("HTTP error: %s", resp.Status())
 	}
 
 	if result.Data == nil {
@@ -318,20 +324,22 @@ func (s *StockService) GetKLineData(code string, limit int, period string) ([]*m
 	fetchLimit := limit + 50
 	url := fmt.Sprintf("%s?secid=%s&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56&klt=%s&fqt=1&end=20500101&lmt=%d", s.klineURL, secid, klt, fetchLimit)
 
-	resp, err := s.client.Get(url)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	body, _ := io.ReadAll(resp.Body)
 	var result struct {
 		Data struct {
 			Klines []string `json:"klines"`
 		} `json:"data"`
 	}
-	if err := json.Unmarshal(body, &result); err != nil {
+
+	resp, err := s.client.R().
+		SetResult(&result).
+		Get(url)
+
+	if err != nil {
 		return nil, err
+	}
+
+	if resp.IsError() {
+		return nil, fmt.Errorf("HTTP error: %s", resp.Status())
 	}
 
 	klines := make([]*models.KLineData, 0)
@@ -438,21 +446,23 @@ func (s *StockService) GetIntradayData(code string) (*models.IntradayResponse, e
 
 	url := fmt.Sprintf("https://push2.eastmoney.com/api/qt/stock/trends2/get?secid=%s&fields1=f1,f2,f3,f4,f5,f6,f7,f8,f9,f10,f11,f12,f13&fields2=f51,f52,f53,f54,f55,f56,f57,f58&ndays=1&iscr=0&ut=fa5fd1943c7b386f172d6893dbfba10b", secid)
 
-	resp, err := s.client.Get(url)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	body, _ := io.ReadAll(resp.Body)
 	var result struct {
 		Data struct {
 			PreClose float64  `json:"preClose"`
 			Trends   []string `json:"trends"`
 		} `json:"data"`
 	}
-	if err := json.Unmarshal(body, &result); err != nil {
+
+	resp, err := s.client.R().
+		SetResult(&result).
+		Get(url)
+
+	if err != nil {
 		return nil, err
+	}
+
+	if resp.IsError() {
+		return nil, fmt.Errorf("HTTP error: %s", resp.Status())
 	}
 
 	intradayData := make([]models.IntradayData, 0)
@@ -551,24 +561,14 @@ func (s *StockService) StreamIntradayData(code string) {
 			default:
 			}
 
+			// 2. 使用 Resty 的 sseClient 发起请求
+			// DoNotParseResponse: true -> 拿到原始 Response，自己处理流
 			attemptStart := time.Now()
-			req, err := http.NewRequestWithContext(sseCtx, "GET", sseURL, nil)
-			if err != nil {
-				logger.Error("创建 SSE 请求失败",
-					zap.String("module", "services.stock"),
-					zap.String("op", "StreamIntradayData"),
-					zap.String("code", code),
-					zap.String("url", sseURL),
-					zap.Error(err),
-				)
-				return
-			}
-			req.Header.Set("Accept", "text/event-stream")
-			req.Header.Set("Cache-Control", "no-cache")
-			req.Header.Set("Connection", "keep-alive")
-			req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+			resp, err := s.sseClient.R().
+				SetContext(sseCtx).
+				SetDoNotParseResponse(true).
+				Get(sseURL)
 
-			resp, err := s.sseClient.Do(req)
 			if err != nil {
 				// 取消（页面离开、应用退出等）属于正常退出，不需要报错
 				if sseCtx.Err() != nil {
@@ -597,18 +597,20 @@ func (s *StockService) StreamIntradayData(code string) {
 				continue
 			}
 
+			// 3. 处理响应体 (RawBody)
 			func() {
-				defer func() { _ = resp.Body.Close() }()
+				rawBody := resp.RawBody()
+				defer func() { _ = rawBody.Close() }()
 
-				if resp.StatusCode != http.StatusOK {
+				if resp.StatusCode() != http.StatusOK {
 					// 尽量读一点 body 帮助定位（例如被限流、被 WAF 拦截、返回错误 JSON 等）
-					b, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+					b, _ := io.ReadAll(io.LimitReader(rawBody, 2048))
 					s.logWarnThrottled(code, "SSE 接口返回非 200，准备重试",
 						zap.String("module", "services.stock"),
 						zap.String("op", "StreamIntradayData"),
 						zap.String("code", code),
 						zap.String("url", sseURL),
-						zap.Int("status", resp.StatusCode),
+						zap.Int("status", resp.StatusCode()),
 						zap.ByteString("body", b),
 						zap.Int("retry", retry),
 						zap.Int64("duration_ms", time.Since(attemptStart).Milliseconds()),
@@ -616,7 +618,7 @@ func (s *StockService) StreamIntradayData(code string) {
 					return
 				}
 
-				scanner := bufio.NewScanner(resp.Body)
+				scanner := bufio.NewScanner(rawBody)
 				// SSE 的单行 data 可能超过默认 64KB，必须放大 buffer，否则会 ErrTooLong
 				buf := make([]byte, 0, 64*1024)
 				scanner.Buffer(buf, 2*1024*1024)
@@ -919,20 +921,22 @@ func (s *StockService) GetMoneyFlowData(code string) (*models.MoneyFlowResponse,
 	// 使用东方财富的资金流接口
 	url := fmt.Sprintf("http://push2.eastmoney.com/api/qt/stock/fflow/daykline/get?secid=%s&fields1=f1,f2,f3,f7&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61,f62,f63,f64,f65&lmt=0&klt=101&fqt=1", secid)
 
-	resp, err := s.client.Get(url)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	body, _ := io.ReadAll(resp.Body)
 	var result struct {
 		Data struct {
 			Flows []string `json:"klines"`
 		} `json:"data"`
 	}
-	if err := json.Unmarshal(body, &result); err != nil {
+
+	resp, err := s.client.R().
+		SetResult(&result).
+		Get(url)
+
+	if err != nil {
 		return nil, err
+	}
+
+	if resp.IsError() {
+		return nil, fmt.Errorf("HTTP error: %s", resp.Status())
 	}
 
 	flowData := make([]models.MoneyFlowData2, 0)
@@ -978,15 +982,19 @@ func (s *StockService) SearchStock(keyword string) ([]*models.StockData, error) 
 // SearchStockLegacy 基于列表接口的模糊搜索
 func (s *StockService) SearchStockLegacy(keyword string) ([]*models.StockData, error) {
 	url := fmt.Sprintf("%s?pn=1&pz=1000&po=1&np=1&fltt=2&invt=2&fid=f3&fs=m:0+t:6,m:0+t:13,m:0+t:80,m:1+t:2,m:1+t:23&fields=f12,f14", s.listURL)
-	resp, err := s.client.Get(url)
+
+	var apiResp models.EastMoneyResponse
+	resp, err := s.client.R().
+		SetResult(&apiResp).
+		Get(url)
+
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = resp.Body.Close() }()
 
-	body, _ := io.ReadAll(resp.Body)
-	var apiResp models.EastMoneyResponse
-	_ = json.Unmarshal(body, &apiResp)
+	if resp.IsError() {
+		return nil, fmt.Errorf("HTTP error: %s", resp.Status())
+	}
 
 	kw := strings.ToLower(strings.TrimSpace(keyword))
 	results := make([]*models.StockData, 0)

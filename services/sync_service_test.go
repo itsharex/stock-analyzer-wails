@@ -18,7 +18,7 @@ func TestFetchAndAlignHistory(t *testing.T) {
 	moneyFlowRepository := repositories.NewMoneyFlowRepository(dbService.db)
 
 	s := NewSyncService(dbService, stockMarketService, moneyFlowRepository)
-	secid := "002202"
+	secid := "600686"
 	klines, err := s.FetchHistoryFlowDataV2(secid, 120)
 	if err != nil {
 		t.Fatalf("FetchAndAlignHistory failed: %v", err)
@@ -37,16 +37,18 @@ func TestFetchAndAlignHistory(t *testing.T) {
 	} else {
 		fmt.Println("未找到指定日期数据，请确认 limit 长度或当天是否停牌")
 	}
-	RunDecisionSignal(GetSortedData(klines))
+	sortedData := GetSortedData(klines)
+	flows := AlignStockData2MoneyFlow(secid, sortedData)
+	s.ScanAndSaveStrategySignals(secid, flows)
 }
 
-func TestFetchAllDayTicks(t *testing.T) {
-	// 1. 设置测试环境
-	ticks, err := FetchAllDayTicks("600686")
-	if err != nil {
-		t.Fatalf("FetchAllDayTicks failed: %v", err)
-		return
-	}
-	fmt.Println(ticks)
-
-}
+//func TestFetchAllDayTicks(t *testing.T) {
+//	// 1. 设置测试环境
+//	ticks, err := FetchAllDayTicks("600686")
+//	if err != nil {
+//		t.Fatalf("FetchAllDayTicks failed: %v", err)
+//		return
+//	}
+//	fmt.Println(ticks)
+//
+//}

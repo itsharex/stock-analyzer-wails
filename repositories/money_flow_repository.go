@@ -67,6 +67,9 @@ func (r *MoneyFlowRepository) GetMoneyFlowHistory(code string, limit int) ([]mod
 			SmallNet:   entity.SmallNet,
 			ClosePrice: entity.ClosePrice,
 			ChgPct:     entity.ChgPct,
+			Amount:     entity.Amount,   // 新增：成交金额
+			MainRate:   entity.MainRate, // 新增：主力强度
+			Turnover:   entity.Turnover, // 新增：换手率
 		})
 	}
 	return flows, nil
@@ -91,6 +94,9 @@ func (r *MoneyFlowRepository) GetAllMoneyFlowHistory(code string) ([]models.Mone
 			SmallNet:   entity.SmallNet,
 			ClosePrice: entity.ClosePrice,
 			ChgPct:     entity.ChgPct,
+			Amount:     entity.Amount,   // 新增：成交金额
+			MainRate:   entity.MainRate, // 新增：主力强度
+			Turnover:   entity.Turnover, // 新增：换手率
 		})
 	}
 	return flows, nil
@@ -186,6 +192,24 @@ func (r *MoneyFlowRepository) GetLatestSignals(limit int) ([]models.StrategySign
 	}
 
 	return signals, nil
+}
+
+// GetStockName 根据股票代码查询股票名称
+func (r *MoneyFlowRepository) GetStockName(code string) (string, error) {
+	var result struct {
+		Name string `gorm:"column:name"`
+	}
+
+	err := r.db.Table("stocks").
+		Select("name").
+		Where("code = ?", code).
+		First(&result).Error
+
+	if err != nil {
+		return "", fmt.Errorf("查询股票名称失败: %w", err)
+	}
+
+	return result.Name, nil
 }
 
 // GetSignalsByDateRange 根据日期范围获取历史信号

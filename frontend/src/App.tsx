@@ -15,6 +15,7 @@ import PriceAlertPage from './pages/PriceAlertPage'
 import DecisionPioneerPage from './pages/DecisionPioneerPage'
 import { AlertToast } from './components/AlertToast'
 import { AlertCenter } from './components/AlertCenter'
+import { Toaster } from 'react-hot-toast'
 import { useWailsAPI } from './hooks/useWailsAPI'
 import type { StockData, AnalysisReport as AnalysisReportType, AppConfig } from './types'
 
@@ -352,6 +353,9 @@ function App() {
 
       {/* 主内容区域 */}
       <main className="flex-1 flex flex-col min-w-0 bg-slate-50 relative">
+        {/* React Hot Toast 容器 */}
+        <Toaster position="top-center" reverseOrder={false} />
+
         {/* 顶部状态栏 */}
         <header className="h-16 bg-white border-b border-gray-200 flex items-center justify-between px-8 z-10">
           <h2 className="text-lg font-semibold text-gray-800">

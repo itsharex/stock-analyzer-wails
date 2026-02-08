@@ -96,26 +96,24 @@ func (s *AIService) VerifySignal(stock *models.StockData, recentFlows []models.M
 	// 1. 数据组装
 	type FlowDetail struct {
 		Date            string  `json:"date"`
-		MainNet         float64 `json:"main_net"`
-		SuperNet        float64 `json:"super_net"`
-		BigNet          float64 `json:"big_net"`
-		ChgPct          float64 `json:"chg_pct"`
-		MainInflowRatio float64 `json:"main_inflow_ratio"` // 主力流入占比
+		MainNet         float64 `json:"main_net"`          // 主力净额 (万元)
+		SuperNet        float64 `json:"super_net"`         // 超大单净额 (万元)
+		BigNet          float64 `json:"big_net"`           // 大单净额 (万元)
+		ChgPct          float64 `json:"chg_pct"`           // 涨跌幅 (%)
+		MainInflowRatio float64 `json:"main_inflow_ratio"` // 主力净额占成交额比例 (%)
+		MainRate        float64 `json:"main_rate"`         // 主力强度 (%)
+		Amount          float64 `json:"amount"`            // 成交金额 (万元)
+		Turnover        float64 `json:"turnover"`          // 换手率 (%)
 	}
 
 	var details []FlowDetail
 	for _, f := range recentFlows {
-		// 估算成交额：如果有成交量且有收盘价，Amount ≈ Close * Volume * 100 (手 -> 股)
-		// 但 MoneyFlowData 没有 Volume。我们只能传 0，并在 Prompt 中说明或忽略。
-		// 为了满足 User 明确要求 "多算一个字段给 AI"，我们尽力而为。
-		// 如果无法计算，AI 会根据 Prompt 规则处理（例如忽略或基于净额判断）。
-		// 由于 MoneyFlowData 结构体限制，我们这里暂且填 0。
-		// 更好的做法是 MoneyFlowData 包含 Volume 或 Amount，但不想改动太大。
-		// 我们假设 Amount 为 0，AI 看到 0 会处理。
-
-		ratio := 0.0
-		// 如果我们能获取到当天的总成交额就好了。
-		// 暂时填 0.0
+		// 计算主力流入占比 = (主力净额 / 成交金额) * 100%
+		// 防止除零错误
+		mainInflowRatio := 0.0
+		if f.Amount > 0 {
+			mainInflowRatio = (f.MainNet / f.Amount) * 100.0
+		}
 
 		details = append(details, FlowDetail{
 			Date:            f.TradeDate,
@@ -123,30 +121,65 @@ func (s *AIService) VerifySignal(stock *models.StockData, recentFlows []models.M
 			SuperNet:        f.SuperNet,
 			BigNet:          f.BigNet,
 			ChgPct:          f.ChgPct,
-			MainInflowRatio: ratio,
+			MainInflowRatio: mainInflowRatio,
+			MainRate:        f.MainRate,
+			Amount:          f.Amount,
+			Turnover:        f.Turnover,
 		})
 	}
 
 	detailsJSON, _ := json.Marshal(details)
 
 	// 2. 构造 Prompt
-	prompt := fmt.Sprintf(`你是一位精通筹码分布的量化交易专家。 现有股票 %s(%s) 近 7 个交易日的资金流向数据： %s
- 
- 请根据以上数据进行复核： 
- 
- 吸筹识别：主力资金是在股价下跌时逆势吸筹，还是在拉升过程中诱多出货？ 
- 
- 筹码集中度：超大单流入是否具备持续性？ 
- 
- 风险提示：是否存在资金流向与涨跌幅背离的情况？ 
- 
- 请以 JSON 格式返回： { "score": (0-100的整数，代表建仓胜率), "opinion": (简短的专家分析理由，不超过 100 字), "risk_level": ("低", "中", "高") }`,
+	prompt := fmt.Sprintf(`你是一位精通筹码分布的量化交易专家。现有股票 %s(%s) 近 7 个交易日的资金流向数据：
+
+%s
+
+数据字段说明：
+- main_net: 主力净额 (万元)，正数为流入，负数为流出
+- super_net: 超大单净额 (万元)
+- big_net: 大单净额 (万元)
+- chg_pct: 当日涨跌幅 (%%)
+- main_inflow_ratio: 主力净额占成交额比例 (%%)，越高越强，超过 10%% 为显著异动
+- main_rate: 主力强度 (%%)，东方财富官方指标
+- amount: 当日成交金额 (万元)
+- turnover: 换手率 (%%)
+
+请从以下维度进行深度分析：
+
+1. **吸筹识别**：对比涨跌幅与主力流向，判断是逆势吸筹(跌时买)还是诱多出货(涨时卖)?
+   - 逆势吸筹：chg_pct < 0 且 main_net > 0 且 main_inflow_ratio > 8%%
+   - 诱多出货：chg_pct > 3%% 且 main_net < 0
+
+2. **筹码集中度**：观察 super_net (超大单) 的持续性
+   - 高度集中：连续 3 天以上 super_net > 0 且递增
+   - 分散站岗：super_net 正负交替
+
+3. **资金背离**：检查量价背离风险
+   - 背离信号：股价上涨但主力持续流出 (连续 2 天 chg_pct > 0 且 main_net < 0)
+   - 健康信号：涨跌与资金同步
+
+4. **换手率分析**：turnover 超过 5%% 且 main_net > 0 说明活跃度高且主力介入
+
+**重要**：请以 JSON 格式返回，不要有任何额外的文本：
+{
+  "score": 0-100 的整数，代表建仓胜率，综合考虑以上 4 个维度,
+  "opinion": "简短的专家分析理由，不超过 80 字，直接说结论和关键逻辑",
+  "risk_level": "低" 或 "中" 或 "高"
+}`,
 		stock.Name, stock.Code, string(detailsJSON))
 
 	// 3. 调用 LLM
 	ctx := context.Background()
 	messages := []*schema.Message{
-		schema.SystemMessage("你是一位精通筹码分布的量化交易专家。"),
+		schema.SystemMessage(`你是一位资深的量化交易专家，擅长筹码分布分析、资金流向解读和风险控制。
+你的分析风格：
+1. 数据驱动：基于实际数据作出判断，不凭感觉
+2. 逻辑清晰：直接说结论和关键逻辑，不冗讯
+3. 风险意识：始终关注风险点，不盲目乐观
+4. 量化思维：用具体比例和阈值说明问题
+
+回复时必须严格遵守 JSON 格式，不要有任何其他内容。`),
 		schema.UserMessage(prompt),
 	}
 	logger.Info("AI 请求prompt", zap.Any("prompt", prompt))
@@ -160,10 +193,19 @@ func (s *AIService) VerifySignal(stock *models.StockData, recentFlows []models.M
 	var result models.AIVerificationResult
 	jsonStr := s.extractJSON(resp.Content)
 	if err := json.Unmarshal([]byte(jsonStr), &result); err != nil {
-		logger.Error("解析 AI 响应失败", zap.String("resp", resp.Content), zap.Error(err))
+		logger.Error("解析 AI 响应失败", 
+			zap.String("code", stock.Code),
+			zap.String("raw_response", resp.Content), 
+			zap.String("extracted_json", jsonStr),
+			zap.Error(err))
 		return nil, fmt.Errorf("解析 AI 响应失败: %w", err)
 	}
-	logger.Info("AI 响应", zap.Any("resp", resp))
+	
+	logger.Info("AI 验证完成", 
+		zap.String("code", stock.Code),
+		zap.Int("score", result.Score),
+		zap.String("risk_level", result.RiskLevel),
+		zap.String("opinion", result.Opinion))
 
 	return &result, nil
 }

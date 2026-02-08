@@ -94,12 +94,27 @@ const EnhancedKLineChart: React.FC<EnhancedKLineChartProps> = React.memo(({ stoc
       historySignals.forEach(sig => {
         // Only add marker if the date exists in current K-line data
         if (klineTimes.has(sig.tradeDate)) {
+          let markerColor = '#ef4444'; // 默认红色 (B)
+          let markerShape: 'arrowUp' | 'arrowDown' = 'arrowUp';
+          let markerText = 'B';
+          let markerPosition: 'aboveBar' | 'belowBar' = 'belowBar';
+
+          if (sig.signalType === 'B_Surge') {
+            markerColor = '#a855f7'; // 紫色 (资金强攻)
+            markerText = '🚀';
+          } else if (sig.signalType === 'S') {
+            markerColor = '#22c55e'; // 绿色 (卖出)
+            markerShape = 'arrowDown';
+            markerText = 'S';
+            markerPosition = 'aboveBar';
+          }
+
           markers.push({
             time: sig.tradeDate,
-            position: 'belowBar',
-            color: '#ef4444',
-            shape: 'arrowUp',
-            text: 'B',
+            position: markerPosition,
+            color: markerColor,
+            shape: markerShape,
+            text: markerText,
             size: 2,
             // @ts-ignore - custom property for click handling
             signalId: sig.id

@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useWailsAPI } from '../hooks/useWailsAPI';
 import { StrategySignal } from '../types';
 import { EventsOn, EventsOff } from '../../wailsjs/runtime/runtime';
 import { Clock, Activity } from 'lucide-react';
+import SignalFilter from './SignalFilter';
 
 interface SignalListProps {
   onSelect: (signal: StrategySignal) => void;
@@ -13,6 +14,8 @@ const SignalList: React.FC<SignalListProps> = ({ onSelect, selectedId }) => {
   const { GetLatestSignals } = useWailsAPI();
   const [signals, setSignals] = useState<StrategySignal[]>([]);
   const [loading, setLoading] = useState(true);
+  const [minScore, setMinScore] = useState(0);
+  const [selectedGrades, setSelectedGrades] = useState<string[]>([]);
 
   const fetchSignals = async () => {
     try {
@@ -59,6 +62,35 @@ const SignalList: React.FC<SignalListProps> = ({ onSelect, selectedId }) => {
     return '#60a5fa'; // blue-400
   };
 
+  // 获取信号质量等级
+  const getSignalGrade = (score: number) => {
+    if (score >= 90) return { label: 'S', color: 'text-yellow-400 border-yellow-400 bg-yellow-500/10', desc: '极优信号' };
+    if (score >= 80) return { label: 'A', color: 'text-green-400 border-green-400 bg-green-500/10', desc: '优质信号' };
+    if (score >= 70) return { label: 'B', color: 'text-blue-400 border-blue-400 bg-blue-500/10', desc: '常规信号' };
+    return { label: 'C', color: 'text-gray-400 border-gray-400 bg-gray-500/10', desc: '观察信号' };
+  };
+
+  // 筛选信号
+  const filteredSignals = useMemo(() => {
+    return signals.filter(signal => {
+      // 最低评分筛选
+      if (signal.aiScore < minScore) return false;
+      
+      // 等级筛选
+      if (selectedGrades.length > 0) {
+        const grade = getSignalGrade(signal.aiScore);
+        if (!selectedGrades.includes(grade.label)) return false;
+      }
+      
+      return true;
+    });
+  }, [signals, minScore, selectedGrades]);
+
+  const handleResetFilter = () => {
+    setMinScore(0);
+    setSelectedGrades([]);
+  };
+
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center h-full bg-[#0D1117] border-r border-white/10 w-[320px] shrink-0 text-gray-400">
@@ -68,6 +100,38 @@ const SignalList: React.FC<SignalListProps> = ({ onSelect, selectedId }) => {
         </div>
         <p className="text-sm font-medium">正在全 A 股扫描中...</p>
         <p className="text-xs text-gray-600 mt-1">AI 引擎正在分析市场数据</p>
+      </div>
+    );
+  }
+
+  if (filteredSignals.length === 0 && signals.length > 0) {
+    return (
+      <div className="flex flex-col h-full bg-[#0D1117] border-r border-white/10 w-[320px] shrink-0">
+        <div className="p-4 border-b border-white/10 bg-[#161b22]/80 backdrop-blur-md sticky top-0 z-10">
+          <div className="flex items-center gap-2 mb-1">
+            <Activity className="w-5 h-5 text-blue-400" />
+            <h2 className="text-lg font-semibold text-white">量化信号捕捉</h2>
+          </div>
+          <div className="flex justify-between items-center text-xs text-gray-400">
+            <div className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
+              实时监控中
+            </div>
+            <span>{signals.length} 个信号 (已筛选)</span>
+          </div>
+        </div>
+        <SignalFilter
+          minScore={minScore}
+          onMinScoreChange={setMinScore}
+          selectedGrades={selectedGrades}
+          onGradesChange={setSelectedGrades}
+          onReset={handleResetFilter}
+        />
+        <div className="flex-1 flex flex-col items-center justify-center text-gray-500 p-4 text-center">
+          <Activity className="w-12 h-12 mb-4 opacity-20" />
+          <p className="text-sm">没有符合筛选条件的信号</p>
+          <p className="text-xs text-gray-600 mt-2">尝试调整筛选条件...</p>
+        </div>
       </div>
     );
   }
@@ -109,12 +173,19 @@ const SignalList: React.FC<SignalListProps> = ({ onSelect, selectedId }) => {
             <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span>
             实时监控中
           </div>
-          <span>{signals.length} 个信号</span>
-        </div>
-      </div>
+          <span>{signals.length} 个信号{filteredSignals.length < signals.length ? ` (显示 ${filteredSignals.length})` : ''}</span>
+          </div>
+          </div>
+        <SignalFilter
+            minScore={minScore}
+          onMinScoreChange={setMinScore}
+          selectedGrades={selectedGrades}
+          onGradesChange={setSelectedGrades}
+          onReset={handleResetFilter}
+        />
 
-      <div className="flex-1 overflow-y-auto p-3 space-y-3 custom-scrollbar">
-        {signals.map((signal, index) => (
+        <div className="flex-1 overflow-y-auto p-3 space-y-3 custom-scrollbar">
+          {filteredSignals.map((signal, index) => (
           <div
             key={signal.id || index}
             onClick={() => onSelect(signal)}
@@ -138,6 +209,14 @@ const SignalList: React.FC<SignalListProps> = ({ onSelect, selectedId }) => {
                   }`}>
                     {signal.strategyName || 'AI量化'}
                   </span>
+                  {signal.aiScore > 0 && (() => {
+                    const grade = getSignalGrade(signal.aiScore);
+                    return (
+                      <span className={`text-xs px-1.5 py-0.5 rounded border font-bold ${grade.color}`} title={grade.desc}>
+                        {grade.label}
+                      </span>
+                    );
+                  })()}
                 </div>
               </div>
 

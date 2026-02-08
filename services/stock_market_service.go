@@ -3,16 +3,16 @@ package services
 import (
 	"encoding/json"
 	"fmt"
-	"net/http"
-	"stock-analyzer-wails/internal/logger"
-	"stock-analyzer-wails/models"
-	"strconv"
 	"strings"
 	"time"
 
-	"go.uber.org/zap"
 	"gorm.io/gorm"
+	"stock-analyzer-wails/internal/logger"
+	"github.com/go-resty/resty/v2"
+	"go.uber.org/zap"
 	"gorm.io/gorm/clause"
+	"stock-analyzer-wails/models"
+	"strconv"
 )
 
 // 东方财富API字段定义
@@ -118,16 +118,20 @@ const (
 // StockMarketService 市场股票服务
 type StockMarketService struct {
 	dbService *DBService
-	client    *http.Client
+	client    *resty.Client
 }
 
 // NewStockMarketService 创建市场股票服务
 func NewStockMarketService(dbService *DBService) *StockMarketService {
+	client := resty.New()
+	client.SetTimeout(30 * time.Second)
+	client.SetHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+	client.SetHeader("Referer", "https://quote.eastmoney.com/")
+	client.SetRetryCount(3)
+
 	return &StockMarketService{
 		dbService: dbService,
-		client: &http.Client{
-			Timeout: 30 * time.Second,
-		},
+		client:    client,
 	}
 }
 
@@ -141,12 +145,11 @@ type IndustryInfo struct {
 func (s *StockMarketService) GetIndustries() ([]IndustryInfo, error) {
 	url := "https://push2.eastmoney.com/api/qt/clist/get?pn=1&pz=200&po=1&np=1&ut=bd1d9ddb04089700cf9c27f6f7426281&fltt=2&invt=2&fid=f3&fs=m:90+t:2&fields=f12,f14"
 
-	resp, err := s.client.Get(url)
+	resp, err := s.client.R().Get(url)
 	if err != nil {
 		logger.Error("请求行业列表失败", zap.Error(err))
 		return nil, fmt.Errorf("请求行业列表失败: %w", err)
 	}
-	defer resp.Body.Close()
 
 	// 定义专用响应结构体
 	type IndustryListResponse struct {
@@ -160,7 +163,7 @@ func (s *StockMarketService) GetIndustries() ([]IndustryInfo, error) {
 	}
 
 	var apiResp IndustryListResponse
-	if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
+	if err := json.Unmarshal(resp.Body(), &apiResp); err != nil {
 		logger.Error("解析行业列表失败", zap.Error(err))
 		return nil, fmt.Errorf("解析行业列表失败: %w", err)
 	}
@@ -265,18 +268,18 @@ func (s *StockMarketService) SyncAllStocks() (*SyncStocksResult, error) {
 			logger.Info("开始同步市场股票", zap.String("url", url), zap.Int("page", pn))
 
 			// 请求接口
-			resp, err := s.client.Get(url)
+			var apiResp EastMoneyResponse
+			resp, err := s.client.R().
+				SetResult(&apiResp).
+				Get(url)
+
 			if err != nil {
 				logger.Error("请求东方财富API失败", zap.Error(err))
 				return fmt.Errorf("请求东方财富API失败: %w", err)
 			}
-			defer resp.Body.Close()
-
-			// 解析响应
-			var apiResp EastMoneyResponse
-			if err := json.NewDecoder(resp.Body).Decode(&apiResp); err != nil {
-				logger.Error("解析API响应失败", zap.Error(err))
-				return fmt.Errorf("解析API响应失败: %w", err)
+			
+			if resp.IsError() {
+				return fmt.Errorf("HTTP error: %s", resp.Status())
 			}
 
 			if apiResp.RC != 0 {
@@ -295,8 +298,8 @@ func (s *StockMarketService) SyncAllStocks() (*SyncStocksResult, error) {
 				break
 			}
 
-			// 处理当前页的数据
-			var stocks []models.StockEntity
+			// 2. 转换为内部模型并保存
+			stocks := make([]models.StockEntity, 0, len(apiResp.Data.Diff))
 			now := time.Now()
 
 			for _, item := range apiResp.Data.Diff {

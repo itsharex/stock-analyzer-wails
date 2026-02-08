@@ -67,6 +67,52 @@ const AIAnalysisPanel: React.FC<AIAnalysisPanelProps> = ({ signal }) => {
     }
   }, [signal]);
 
+  // 计算筹码分布数据
+  const chipData = useMemo(() => {
+    if (!details.close || !details.ma20) {
+      return {
+        costMin: 0,
+        costMax: 0,
+        currentPrice: 0,
+        ma20: 0,
+        profitRatio: 0,
+        mainCost: 0,
+        mainCostPosition: 50,
+        pricePosition: 50,
+      };
+    }
+
+    const currentPrice = details.close;
+    const ma20 = details.ma20;
+    
+    // 成本区间 = MA20 ± 10%
+    const costMin = ma20 * 0.9;
+    const costMax = ma20 * 1.1;
+    
+    // 获利比例 = (当前价 - 最低成本) / (最高成本 - 最低成本)
+    const profitRatio = Math.min(100, Math.max(0, ((currentPrice - costMin) / (costMax - costMin)) * 100));
+    
+    // 主力成本预估 = 当前价 * 0.92 (主力通常有 8% 左右的安全垫)
+    const mainCost = currentPrice * 0.92;
+    
+    // 主力成本在区间中的位置
+    const mainCostPosition = ((mainCost - costMin) / (costMax - costMin)) * 100;
+    
+    // 当前价在区间中的位置
+    const pricePosition = ((currentPrice - costMin) / (costMax - costMin)) * 100;
+
+    return {
+      costMin,
+      costMax,
+      currentPrice,
+      ma20,
+      profitRatio,
+      mainCost,
+      mainCostPosition: Math.min(100, Math.max(0, mainCostPosition)),
+      pricePosition: Math.min(100, Math.max(0, pricePosition)),
+    };
+  }, [details]);
+
   if (!signal) {
     return (
       <div className="w-[360px] bg-[#0D1117] border-l border-white/10 flex flex-col items-center justify-center text-gray-500 shrink-0">
@@ -161,9 +207,11 @@ const AIAnalysisPanel: React.FC<AIAnalysisPanelProps> = ({ signal }) => {
                   </span>
                 ))}
               </div>
-              <p className="text-xs text-gray-400 leading-relaxed">
-                当前主力资金介入明显，筹码集中度较高，上方套牢盘压力较小。
-              </p>
+              <div className="text-xs text-gray-400 leading-relaxed space-y-1">
+                <p>主力近 5 日流入: <span className="text-green-400 font-mono">{details.netSum ? (details.netSum / 10000).toFixed(2) : '-'}</span> 万元</p>
+                <p>主力流入天数: <span className="text-blue-400 font-mono">{details.positiveDays || 0}</span> 天</p>
+                <p>MA20 偏离度: <span className="text-purple-400 font-mono">{details.deviation ? (details.deviation * 100).toFixed(2) : '-'}</span>%</p>
+              </div>
             </div>
           )}
 
@@ -198,18 +246,29 @@ const AIAnalysisPanel: React.FC<AIAnalysisPanelProps> = ({ signal }) => {
               <span className="text-gray-400 flex items-center gap-1">
                 <Target className="w-3 h-3" /> 成本区间 (获利比例)
               </span>
-              <span className="text-green-400 font-mono">82%</span>
+              <span className="text-green-400 font-mono">{chipData.profitRatio.toFixed(0)}%</span>
             </div>
-            <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden flex">
-               {/* Mock distribution */}
-               <div className="w-[15%] bg-gray-600"></div>
-               <div className="w-[60%] bg-red-500/80"></div>
-               <div className="w-[25%] bg-gray-600"></div>
+            <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden flex relative">
+               {/* 低位筹码区 */}
+               <div 
+                 className="bg-gray-600" 
+                 style={{ width: `${Math.max(0, chipData.pricePosition - 30)}%` }}
+               ></div>
+               {/* 主力成本集中区 (红色) */}
+               <div 
+                 className="bg-red-500/80" 
+                 style={{ width: `${Math.min(60, chipData.pricePosition)}%` }}
+               ></div>
+               {/* 高位筹码区 */}
+               <div 
+                 className="bg-gray-600" 
+                 style={{ width: `${Math.max(0, 100 - chipData.pricePosition - 10)}%` }}
+               ></div>
             </div>
              <div className="flex justify-between text-[10px] text-gray-500 mt-1 font-mono">
-               <span>9.50</span>
-               <span>Current: {details.close || '-'}</span>
-               <span>12.80</span>
+               <span>{chipData.costMin.toFixed(2)}</span>
+               <span className="text-white">Current: {chipData.currentPrice.toFixed(2)}</span>
+               <span>{chipData.costMax.toFixed(2)}</span>
             </div>
           </div>
 
@@ -218,12 +277,17 @@ const AIAnalysisPanel: React.FC<AIAnalysisPanelProps> = ({ signal }) => {
               <span className="text-gray-400 flex items-center gap-1">
                 <Users className="w-3 h-3" /> 主力成本 (预估)
               </span>
-              <span className="text-blue-400 font-mono">{details.close ? (details.close * 0.92).toFixed(2) : '-'}</span>
+              <span className="text-blue-400 font-mono">{chipData.mainCost.toFixed(2)}</span>
             </div>
             <div className="relative h-6 bg-gray-800/50 rounded overflow-hidden flex items-center px-2">
                {/* Main cost bar relative to range */}
-               <div className="absolute left-0 top-0 bottom-0 bg-blue-500/20 w-[70%] border-r border-blue-500/50"></div>
-               <span className="relative text-[10px] text-blue-300 z-10">主力成本区支撑有效</span>
+               <div 
+                 className="absolute left-0 top-0 bottom-0 bg-blue-500/20 border-r border-blue-500/50"
+                 style={{ width: `${chipData.mainCostPosition}%` }}
+               ></div>
+               <span className="relative text-[10px] text-blue-300 z-10">
+                 {chipData.mainCostPosition < chipData.pricePosition ? '主力成本区支撑有效' : '当前价低于主力成本'}
+               </span>
             </div>
           </div>
         </div>

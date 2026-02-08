@@ -2,10 +2,7 @@ package services
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"sort"
 	"strconv"
 	"strings"
@@ -16,6 +13,7 @@ import (
 	"stock-analyzer-wails/models"
 	"stock-analyzer-wails/repositories"
 
+	"github.com/go-resty/resty/v2"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"go.uber.org/zap"
 )
@@ -25,7 +23,7 @@ type SyncService struct {
 	dbService          *DBService
 	stockMarketService *StockMarketService
 	moneyFlowRepo      *repositories.MoneyFlowRepository
-	client             *http.Client
+	client             *resty.Client
 	ctx                context.Context
 	running            bool
 	mu                 sync.Mutex
@@ -47,13 +45,23 @@ func NewSyncService(
 	stockMarketService *StockMarketService,
 	moneyFlowRepo *repositories.MoneyFlowRepository,
 ) *SyncService {
+	client := resty.New()
+	client.SetTimeout(30 * time.Second)
+	client.SetHeader("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+	client.SetHeader("Referer", "https://quote.eastmoney.com/")
+	client.SetRetryCount(3)
+	client.SetRetryWaitTime(1 * time.Second)
+	client.SetRetryMaxWaitTime(5 * time.Second)
+
+	// 设置 CloseConnection 为 true 以模拟短连接行为，避免 Keep-Alive 导致的 EOF
+	// 这是解决 Eastmoney API EOF 问题的关键
+	client.SetCloseConnection(true)
+
 	return &SyncService{
 		dbService:          dbService,
 		stockMarketService: stockMarketService,
 		moneyFlowRepo:      moneyFlowRepo,
-		client: &http.Client{
-			Timeout: 30 * time.Second,
-		},
+		client:             client,
 	}
 }
 
@@ -193,6 +201,8 @@ func (s *SyncService) StartFullMarketSync() error {
 				dataChan <- []models.MoneyFlowData{}
 			} else {
 				if len(flows) > 0 {
+					// 实时扫描策略信号
+					s.ScanAndSaveStrategySignals(stockCode, flows)
 					dataChan <- flows
 				} else {
 					// 爬取成功但无数据（如新股），也视为成功
@@ -228,18 +238,47 @@ func (s *SyncService) StartFullMarketSync() error {
 	return nil
 }
 
+// SyncAndScanSingleStock 同步并扫描单只股票
+// 供前端按需调用：输入代码 -> 同步数据 -> 扫描策略 -> 返回信号
+func (s *SyncService) SyncAndScanSingleStock(code string) ([]models.StrategySignal, error) {
+	logger.Info("开始单股同步与扫描", zap.String("code", code))
+
+	// 1. 同步最新数据 (抓取120天数据)
+	rawData, err := s.FetchHistoryFlowDataV2(code, 120)
+	if err != nil {
+		return nil, fmt.Errorf("抓取数据失败: %w", err)
+	}
+
+	// 2. 数据对齐与清洗
+	sortedData := GetSortedData(rawData)
+	flows := AlignStockData2MoneyFlow(code, sortedData)
+
+	if len(flows) == 0 {
+		return nil, fmt.Errorf("未获取到有效数据")
+	}
+
+	// 3. 保存数据到数据库 (确保下次查询有数据)
+	// 注意：SaveMoneyFlows 是 upsert 操作，安全的
+	if err := s.moneyFlowRepo.SaveMoneyFlows(flows); err != nil {
+		logger.Warn("保存资金流数据失败", zap.Error(err))
+		// 继续执行，不中断扫描
+	}
+
+	// 4. 执行策略扫描并保存信号
+	s.ScanAndSaveStrategySignals(code, flows)
+
+	// 5. 返回最新的信号列表 (供前端刷新)
+	return s.moneyFlowRepo.GetSignalsByStockCode(code)
+}
+
 // FetchHistoryFlowData 仅获取历史资金流数据，不保存
 func (s *SyncService) FetchHistoryFlowData(code string) ([]models.MoneyFlowData, error) {
-	// 构造 secid
+	// 转换代码格式
 	secid := ""
 	if strings.HasPrefix(code, "6") {
 		secid = "1." + code
-	} else if strings.HasPrefix(code, "0") || strings.HasPrefix(code, "3") {
-		secid = "0." + code
-	} else if strings.HasPrefix(code, "8") || strings.HasPrefix(code, "4") {
-		secid = "0." + code // 北交所通常也是0，需根据实际调整，这里暂时假设为0
 	} else {
-		return nil, fmt.Errorf("未知市场代码前缀: %s", code)
+		secid = "0." + code
 	}
 
 	// 构造 URL (lmt=0 获取全部)
@@ -249,35 +288,37 @@ func (s *SyncService) FetchHistoryFlowData(code string) ([]models.MoneyFlowData,
 	)
 	logger.Info("请求资金流URL", zap.String("url", url))
 
-	resp, err := s.client.Get(url)
-	if err != nil {
-		return nil, fmt.Errorf("HTTP请求失败: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// 解析响应
-	var result struct {
+	var emResp struct {
 		RC   int `json:"rc"`
 		Data struct {
 			Klines []string `json:"klines"`
 		} `json:"data"`
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return nil, fmt.Errorf("JSON解析失败: %w", err)
+	resp, err := s.client.R().
+		SetResult(&emResp).
+		Get(url)
+
+	if err != nil {
+		return nil, fmt.Errorf("HTTP请求失败: %w", err)
 	}
 
-	if result.RC != 0 {
-		return nil, fmt.Errorf("API返回错误 RC=%d", result.RC)
+	// 检查 HTTP 状态码 (Resty 不会把非 2xx 视为 error，除非设置了)
+	if resp.IsError() {
+		return nil, fmt.Errorf("HTTP请求返回错误状态: %s", resp.Status())
 	}
 
-	if result.Data.Klines == nil {
+	if emResp.RC != 0 {
+		return nil, fmt.Errorf("API返回错误 RC=%d", emResp.RC)
+	}
+
+	if emResp.Data.Klines == nil {
 		return nil, nil
 	}
 
 	// 转换数据
 	var flows []models.MoneyFlowData
-	for _, line := range result.Data.Klines {
+	for _, line := range emResp.Data.Klines {
 		parts := strings.Split(line, ",")
 		if len(parts) < 13 {
 			continue
@@ -415,11 +456,11 @@ func (s *SyncService) FetchHistoryFlowDataV2(code string, limit int) (map[string
 	fflowURL := fmt.Sprintf("https://push2his.eastmoney.com/api/qt/stock/fflow/daykline/get?secid=%s&fields1=f1,f2,f3,f7&fields2=f51,f52,f53,f54,f55,f56,f62&klt=101&lmt=%d", secid, limit)
 
 	// 3. 执行请求
-	klineLines, err := httpGetKlines(klineURL)
+	klineLines, err := s.httpGetKlinesWithHeaders(klineURL)
 	if err != nil {
 		return nil, fmt.Errorf("行情请求失败: %v", err)
 	}
-	fflowLines, err := httpGetKlines(fflowURL)
+	fflowLines, err := s.httpGetKlinesWithHeaders(fflowURL)
 	if err != nil {
 		return nil, fmt.Errorf("资金流请求失败: %v", err)
 	}
@@ -437,130 +478,105 @@ type EastMoneyResp struct {
 	} `json:"data"`
 }
 
-// 内部辅助函数：执行 GET 并解析 JSON
-func httpGetKlines(url string) ([]string, error) {
-	resp, err := http.Get(url)
-	if err != nil {
-		logger.Error("获取历史资金流数据失败", zap.Any("err", err), zap.String("url", url))
-		return nil, err
-	}
-	defer resp.Body.Close()
+// 内部辅助函数：执行 GET 并解析 JSON (带重试机制 - 依赖 Resty 内置重试)
+func (s *SyncService) httpGetKlinesWithHeaders(url string) ([]string, error) {
+	// Resty 客户端已经配置了重试 (RetryCount=3) 和短连接 (CloseConnection=true)
+	// 所以这里不需要手写循环和 sleep，直接发起请求即可
 
-	body, _ := io.ReadAll(resp.Body)
 	var emResp EastMoneyResp
-	if err := json.Unmarshal(body, &emResp); err != nil {
+	resp, err := s.client.R().
+		SetResult(&emResp).
+		Get(url)
+
+	if err != nil {
+		logger.Error("获取历史资金流数据失败", zap.Error(err), zap.String("url", url))
 		return nil, err
 	}
+
+	if resp.IsError() {
+		return nil, fmt.Errorf("HTTP请求返回错误状态: %s", resp.Status())
+	}
+
 	return emResp.Data.Klines, nil
 }
-func RunDecisionSignal(sortedData []AlignedStockData) {
-	if len(sortedData) < 20 {
+
+// ScanAndSaveStrategySignals 扫描并保存策略信号
+// 遍历给定的历史数据，对每一天进行策略判定，如果触发 B/S 点则保存到数据库
+func (s *SyncService) ScanAndSaveStrategySignals(code string, flows []models.MoneyFlowData) {
+	if len(flows) < 20 {
 		return
 	}
 
-	for i := 19; i < len(sortedData); i++ {
-		curr := sortedData[i]
-		prev := sortedData[i-1]
+	// 初始化策略服务 (复用逻辑)
+	// NewStrategyService 只需要 Repo 即可工作
+	strategySvc := NewStrategyService(nil, s.moneyFlowRepo)
 
-		// 1. 生命线（操盘线）
-		ma20 := calculateMAV(sortedData, i, 20)
+	// 获取流通市值 (用于 B 点评分)
+	circMV, _ := s.moneyFlowRepo.GetStockCircMV(code)
 
-		// 2. 资金动能：今日主力强度 vs 昨日主力强度
-		// 决策先锋喜欢“资金反转”，即昨天流出，今天突然暴增
-		moneySurge := curr.MainRate - prev.MainRate
-
-		// 3. 决策先锋 B 点核心逻辑（回归版）
-		// - 条件 A: 股价上穿 MA20（或者已经在 MA20 之上运行）
-		// - 条件 B: 主力强度显著（> 3.0%）
-		// - 条件 C: 资金动能向上（今天的钱比昨天多）
-
-		isCrossing := curr.ClosePrice >= ma20 && prev.ClosePrice < ma20
-		isStrongAbove := curr.ClosePrice > ma20 && curr.MainRate > 5.0
-
-		if (isCrossing || isStrongAbove) && curr.MainRate > 3.0 && moneySurge > 0 {
-			fmt.Printf("🎯 [决策先锋-B点] %s | 价格: %.2f | 主力占比: %.2f%% | 动能: %.2f\n",
-				curr.TradeDate, curr.ClosePrice, curr.MainRate, moneySurge)
+	// 遍历历史数据，从第20天开始 (因为需要前20天的数据计算 MA20)
+	// flows 是按时间升序排列的 (index 0 是最旧的)
+	for i := 19; i < len(flows); i++ {
+		// 构造倒序窗口 (当前点为 i)
+		// 策略服务要求 data[0] 是 T-0 (最新), data[1] 是 T-1...
+		// 我们需要截取 flows[i-19 ... i] 这 20 条数据，并反转
+		window := make([]models.MoneyFlowData, 20)
+		for j := 0; j < 20; j++ {
+			window[j] = flows[i-j]
 		}
 
-		// 4. 决策先锋 S 点核心逻辑
-		// - 条件 A: 股价跌破 MA20 且 资金不给力
-		// - 条件 B: 股价虽在 MA20 之上，但主力资金出现“断崖式”流出（MainRate < -8%）
+		// 1. 检查买入信号 (B点)
+		if bSignal := strategySvc.CheckDecisionPioneerSignal(window, circMV); bSignal != nil {
+			bSignal.Code = code
+			// 尝试获取名称，如果没有则用 Code
+			name, _ := s.moneyFlowRepo.GetStockName(code)
+			if name == "" {
+				name = code
+			}
+			bSignal.StockName = name
 
-		if (curr.ClosePrice < ma20 && curr.MainRate < 0) || curr.MainRate < -8.0 {
-			fmt.Printf("⚠️ [决策先锋-S点] %s | 价格: %.2f | 警告原因: %s\n",
-				curr.TradeDate, curr.ClosePrice, getReason(curr, ma20))
+			if err := s.moneyFlowRepo.SaveStrategySignal(bSignal); err != nil {
+				// 记录错误但不中断
+				logger.Warn("保存B点信号失败", zap.String("code", code), zap.Error(err))
+			} else {
+				// 仅在生成最新信号时打印日志，避免刷屏
+				if i == len(flows)-1 {
+					logger.Info("发现决策先锋B点信号", zap.String("code", code), zap.String("date", bSignal.TradeDate))
+				}
+			}
 		}
 
-		if curr.TradeDate >= "2026-01-05" && curr.TradeDate <= "2026-01-12" {
-			fmt.Printf("📅 日期: %s | 涨幅: %.2f%% | 主力强度: %.2f%%\n",
-				curr.TradeDate, curr.ChgPct, curr.MainRate)
-		}
-	}
-}
+		// 1.5 检查“资金强攻”激进买入信号 (B_Surge)
+		if surgeSignal := strategySvc.CheckMoneySurgeSignal(window); surgeSignal != nil {
+			surgeSignal.Code = code
+			name, _ := s.moneyFlowRepo.GetStockName(code)
+			if name == "" {
+				name = code
+			}
+			surgeSignal.StockName = name
 
-func getReason(d AlignedStockData, ma float64) string {
-	if d.ClosePrice < ma {
-		return "破位下行"
-	}
-	return "主力砸盘"
-}
-
-// 辅助函数：计算指定位置的MA
-func calculateMAV(data []AlignedStockData, index int, period int) float64 {
-	if index < period-1 {
-		return 0
-	}
-	var sum float64
-	for i := index - period + 1; i <= index; i++ {
-		sum += data[i].ClosePrice
-	}
-	return sum / float64(period)
-}
-
-// 辅助函数：简单估算最近一次买入后的盈亏（仅用于日志展示）
-func calculateProfit(data []AlignedStockData, currentIndex int) float64 {
-	// 这里逻辑可以根据你的需要记录上次买入价，暂时简单返回0
-	return 0
-}
-func CalculateSignals(data []AlignedStockData) {
-	// 决策先锋通常需要至少 20 天的数据来计算均线
-	if len(data) < 20 {
-		return
-	}
-
-	for i := 20; i < len(data); i++ {
-		// 1. 计算 MA20
-		var sum float64
-		for j := i - 19; j <= i; j++ {
-			sum += data[j].ClosePrice
-		}
-		ma20 := sum / 20
-
-		// 2. 计算 5 日资金流向
-		var moneySum float64
-		for j := i - 4; j <= i; j++ {
-			moneySum += data[j].MainNet
+			if err := s.moneyFlowRepo.SaveStrategySignal(surgeSignal); err != nil {
+				logger.Warn("保存资金强攻信号失败", zap.String("code", code), zap.Error(err))
+			} else {
+				if i == len(flows)-1 {
+					logger.Info("发现资金强攻信号", zap.String("code", code), zap.String("date", surgeSignal.TradeDate))
+				}
+			}
 		}
 
-		// 3. 执行 B 点判定逻辑
-		checkBPoint(data[i], ma20, moneySum)
-	}
-}
+		// 2. 检查卖出信号 (S点)
+		if sSignal := strategySvc.CheckDecisionPioneerSellSignal(window); sSignal != nil {
+			sSignal.Code = code
+			name, _ := s.moneyFlowRepo.GetStockName(code)
+			if name == "" {
+				name = code
+			}
+			sSignal.StockName = name
 
-func checkBPoint(current AlignedStockData, ma20 float64, fiveDayMoney float64) {
-	// 严谨逻辑闭环
-	isInstitutionalBuying := current.MainRate > 3.0
-	isTrendSafe := current.ClosePrice > ma20 && current.ClosePrice < ma20*1.15 // 别追太高
-	isAccumulating := fiveDayMoney > 0
-	isPriceStrong := current.ChgPct > 1.5
-
-	if isInstitutionalBuying && isTrendSafe && isAccumulating && isPriceStrong {
-		fmt.Printf("🔥 [B点信号] 日期: %s | 价格: %.2f | 主力强度: %.2f%% | 偏离MA20: %.2f%%\n",
-			current.TradeDate,
-			current.ClosePrice,
-			current.MainRate,
-			(current.ClosePrice-ma20)/ma20*100,
-		)
+			if err := s.moneyFlowRepo.SaveStrategySignal(sSignal); err != nil {
+				logger.Warn("保存S点信号失败", zap.String("code", code), zap.Error(err))
+			}
+		}
 	}
 }
 
@@ -619,7 +635,7 @@ type OrderFlowStats struct {
 }
 
 // 抓取全天交易笔数
-func FetchAllDayTicks(code string) (*OrderFlowStats, error) {
+func (s *SyncService) FetchAllDayTicks(code string) (*OrderFlowStats, error) {
 	stats := &OrderFlowStats{}
 
 	// 构造 secid
@@ -630,7 +646,7 @@ func FetchAllDayTicks(code string) (*OrderFlowStats, error) {
 		secid = "0." + code
 	}
 	pos := -0
-	ticks, err := fetchTickBatch(secid, pos)
+	ticks, err := s.fetchTickBatch(secid, pos)
 	if err != nil {
 		return nil, err
 	}
@@ -680,26 +696,28 @@ func AnalyzeL2Market(ticks []TickData) *OrderFlowStats {
 	return &res
 }
 
-// 封装的批量获取tick数据方法
-func fetchTickBatch(secid string, pos int) ([]string, error) {
+// 封装的批量获取tick数据方法 (带重试 - 依赖 Resty 内置重试)
+func (s *SyncService) fetchTickBatch(secid string, pos int) ([]string, error) {
 	url := fmt.Sprintf("https://push2.eastmoney.com/api/qt/stock/details/get?secid=%s&pos=%d&fields1=f1,f2,f3,f4,f5&fields2=f51,f52,f53,f54,f55", secid, pos)
-	resp, err := http.Get(url)
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
+
 	var result struct {
 		Data struct {
 			Details []string `json:"details"`
 		} `json:"data"`
 	}
-	if err := json.Unmarshal(body, &result); err != nil {
+
+	resp, err := s.client.R().
+		SetResult(&result).
+		Get(url)
+
+	if err != nil {
 		return nil, err
 	}
+
+	if resp.IsError() {
+		return nil, fmt.Errorf("HTTP请求返回错误状态: %s", resp.Status())
+	}
+
 	return result.Data.Details, nil
 }
 

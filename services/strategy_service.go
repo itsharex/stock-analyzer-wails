@@ -134,6 +134,18 @@ func (s *StrategyService) CalculateBuildSignals(code string) (*models.StrategySi
 	}
 	signal.Code = code // 确保 code 正确
 
+	// 查询股票名称
+	stockName, err := s.moneyFlowRepo.GetStockName(code)
+	if err != nil {
+		// 名称查询失败不影响主流程，使用代码作为后备
+		stockName = code
+		logger.Warn("查询股票名称失败",
+			zap.String("code", code),
+			zap.Error(err),
+		)
+	}
+	signal.StockName = stockName
+
 	// 持久化
 	if err := s.moneyFlowRepo.SaveStrategySignal(signal); err != nil {
 		logger.Error("保存策略信号失败", zap.Error(err))
@@ -145,8 +157,9 @@ func (s *StrategyService) CalculateBuildSignals(code string) (*models.StrategySi
 	_ = json.Unmarshal([]byte(signal.Details), &details)
 	netSum, _ := details["netSum"].(float64)
 
-	logger.Info(fmt.Sprintf("[信号发现] %s 均线回踩，主力近5日流入达%.2f万", code, netSum/10000),
+	logger.Info(fmt.Sprintf("[信号发现] %s(%s) 均线回踩，主力近5日流入达%.2f万", stockName, code, netSum/10000),
 		zap.String("code", code),
+		zap.String("name", stockName),
 		zap.String("date", signal.TradeDate),
 		zap.Float64("score", signal.Score),
 	)
@@ -254,6 +267,115 @@ func (s *StrategyService) CheckDecisionPioneerSignal(data []models.MoneyFlowData
 		Details:      string(detailsJSON),
 	}
 }
+
+// CheckDecisionPioneerSellSignal 检查卖出信号 (S点)
+// 逻辑来源: sync_service.go 中的 RunDecisionSignal
+func (s *StrategyService) CheckDecisionPioneerSellSignal(data []models.MoneyFlowData) *models.StrategySignal {
+	if len(data) < 20 {
+		return nil
+	}
+
+	// data[0] 是最新一天 (T-0)
+	current := data[0]
+
+	// 1. 计算 MA20
+	sumClose := 0.0
+	for _, d := range data {
+		sumClose += d.ClosePrice
+	}
+	ma20 := sumClose / 20.0
+
+	// 2. 卖出逻辑判定
+	// - 条件 A: 股价跌破 MA20 且 主力资金为流出状态 (MainRate < 0)
+	// - 条件 B: 股价虽在 MA20 之上，但主力资金出现“断崖式”流出（MainRate < -8%）
+
+	isBroken := current.ClosePrice < ma20 && current.MainRate < 0
+	isDump := current.MainRate < -8.0
+
+	if !isBroken && !isDump {
+		return nil
+	}
+
+	reason := ""
+	if isBroken {
+		reason = "破位下行"
+	} else {
+		reason = "主力砸盘"
+	}
+
+	details := map[string]interface{}{
+		"ma20":     ma20,
+		"close":    current.ClosePrice,
+		"mainRate": current.MainRate,
+		"reason":   reason,
+	}
+	detailsJSON, _ := json.Marshal(details)
+
+	return &models.StrategySignal{
+		Code:         current.Code,
+		TradeDate:    current.TradeDate,
+		SignalType:   "S",
+		StrategyName: "决策先锋",
+		Score:        current.MainRate, // S点使用主力强度作为负面评分
+		Details:      string(detailsJSON),
+	}
+}
+
+// CheckMoneySurgeSignal 检查“资金强攻”激进买入信号
+// 逻辑来源: 原 RunDecisionSignal 中的 B 点逻辑
+// 特征：刚突破 MA20 或 强势拉升 + 资金强度 > 3% + 资金动能向上
+func (s *StrategyService) CheckMoneySurgeSignal(data []models.MoneyFlowData) *models.StrategySignal {
+	if len(data) < 20 {
+		return nil
+	}
+
+	// data[0] 是最新一天 (T-0)
+	curr := data[0]
+	prev := data[1]
+
+	// 1. 计算 MA20
+	sumClose := 0.0
+	for _, d := range data {
+		sumClose += d.ClosePrice
+	}
+	ma20 := sumClose / 20.0
+
+	// 2. 资金动能：今日主力强度 vs 昨日主力强度
+	moneySurge := curr.MainRate - prev.MainRate
+
+	// 3. 核心判定逻辑
+	// - 条件 A: 股价上穿 MA20（或者已经在 MA20 之上运行）
+	// - 条件 B: 主力强度显著（> 3.0%）
+	// - 条件 C: 资金动能向上（今天的钱比昨天多）
+
+	isCrossing := curr.ClosePrice >= ma20 && prev.ClosePrice < ma20
+	isStrongAbove := curr.ClosePrice > ma20 && curr.MainRate > 5.0
+	isMoneyStrong := curr.MainRate > 3.0
+	isMomentumUp := moneySurge > 0
+
+	if (isCrossing || isStrongAbove) && isMoneyStrong && isMomentumUp {
+		details := map[string]interface{}{
+			"ma20":       ma20,
+			"close":      curr.ClosePrice,
+			"mainRate":   curr.MainRate,
+			"moneySurge": moneySurge,
+			"type":       "资金强攻",
+		}
+		detailsJSON, _ := json.Marshal(details)
+
+		return &models.StrategySignal{
+			Code:         curr.Code,
+			TradeDate:    curr.TradeDate,
+			SignalType:   "B_Surge", // 特殊标记：激进买入
+			StrategyName: "资金强攻",
+			Score:        curr.MainRate * 10, // 评分直接与主力强度挂钩
+			Details:      string(detailsJSON),
+		}
+	}
+
+	return nil
+}
+
 
 // GetRecentMoneyFlows 获取近期资金流向数据
 func (s *StrategyService) GetRecentMoneyFlows(code string, limit int) ([]models.MoneyFlowData, error) {
